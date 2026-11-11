@@ -109,6 +109,7 @@ ADB connection
 Add a new slot alongside the current Linux.
 Add a system
 Add a theme from a file
+Add another ZIP
 Add colors from a file
 Add shells and choose how the phone signs in.
 Added
@@ -117,6 +118,8 @@ Adding phone support
 Address %s
 Adjusting brightness.
 Africa
+Afterwards: restart the system
+Afterwards: stay in recovery
 All
 All phones
 All regions
@@ -138,6 +141,7 @@ An image inside a ZIP or a tar, by its name there (a ZIP: system.img or its only
 An incomplete import remains in /.a22x-systems/staging for inspection. No automatic cleanup is performed.
 An installation is unfinished
 An installation prepared in the A22x app.
+An installer ended with an error. Changed:
 An interrupted RECOVERY write can require Samsung Download mode and external recovery flashing.
 An SD card or a USB drive. A tap mounts it read-only.
 An X11 login screen with an on-screen keyboard, made for Xfce.
@@ -473,6 +477,7 @@ DURABLE JOURNAL
 Each shell is installed with its packages. Sxmo and Lomiri come from Debian and Ubuntu.
 Each shell is installed with its packages; the sign-in screen switches between them.
 Each system keeps its own /etc and /var. Shared /home requires matching account IDs. A full Linux backup includes all slots.
+Each ZIP's own script decides what is written. They can reach only these partitions:
 Edit text
 Editing disabled: file exceeds the 64 KiB UI limit.
 Efficiency cores
@@ -528,6 +533,7 @@ Export diagnostics
 ext4 filesystem image
 F2FS filesystem image
 Fade
+failed
 February
 Fedora
 FILE
@@ -541,6 +547,7 @@ Files
 FILES (FAT32)
 Files (FAT32)
 Files / mounts
+FILES, IN THIS ORDER
 Files, Linux and swap on an SD card
 Files: %s  /  %s to write
 FILESYSTEM
@@ -550,6 +557,7 @@ Filesystem unavailable; Android data may require decryption
 Finish moving the reviewed root directories into place. Shared /home remains in place.
 Finish the unfinished installation first
 Finished
+finished
 Finishing the archive
 Finishing the installation
 Firmware not reported
@@ -644,6 +652,7 @@ Hold 5 seconds to install stock
 Hold 5 seconds: erase and partition
 Hold 5 seconds: erase data, install root
 Hold 5 seconds: run the installer
+Hold 5 seconds: run the installers
 Hold the button to save this exact snapshot. Moving outside cancels confirmation.
 Hold to unmount and review
 Hold: check and repair
@@ -930,6 +939,7 @@ Not mounted: tap to mount and open
 Not now
 Not read yet
 not reported
+not run
 NOT WRITTEN
 Not written: unknown to this recovery
 Nothing
@@ -1334,6 +1344,7 @@ STARTED ON THIS PHONE
 Started on this phone
 State
 Status unavailable
+Stay in recovery (the system restarts in %u s)
 STAYS
 Step %u of %u
 Stock Android
@@ -1386,10 +1397,10 @@ Systems could not be read.
 Systems from the internet
 Take Samsung's BOOT out of the firmware: the way back from a custom kernel
 Tap a card above: it is mounted read-only and searched. A copy is made in Backup, Phone partitions.
-Tap a partition to leave it out, userdata to put the data back.
 Tap a partition to leave it out.
 Tap again to remove
 Tap destination to cycle mounted writable volumes.
+Tap leaves a partition out; userdata puts the data back.
 Tap New user to enter the password.
 Tap outside to close
 Tap Search to turn Wi-Fi on.
@@ -1462,6 +1473,7 @@ The card changed while it was opened
 The card does not show the partitions that were written
 The card helper did not return a result.
 The card is mounted read-only as backup storage: disconnect it in Storage first
+The card is not open for writing yet: the button above opens it.
 The card is too small for these partitions
 The card is too small to partition
 The card is write-protected
@@ -1562,6 +1574,7 @@ The installer in this ZIP is neither a script nor a program
 The installer of this ZIP did not end in time and was stopped
 The installer of this ZIP ended with an error
 The installer result did not match the requested environment or operation.
+The installers finished
 The interrupted transaction changed. Review the refreshed Systems screen.
 The kernel could not read the new partition table
 The kernel does not show the new partitions
@@ -1709,6 +1722,7 @@ The ZIP holds no image or several: keep one image in it
 The ZIP holds no system image
 The ZIP is damaged
 The ZIP's own script decides what is written. It can reach only these partitions:
+THEIR INSTALLERS RUN AS ROOT
 Theme
 Theme added
 Theme file
@@ -1798,6 +1812,7 @@ This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ex
 This volume is available for reading only.
 This volume is no longer available. Return to Files and refresh the list.
 This ZIP has no installer of its own. Images and ROM packages go through Android or Flash a partition
+This ZIP is in the list already
 Thursday
 Time zone
 TO

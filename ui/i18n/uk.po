@@ -336,6 +336,9 @@ msgstr "Додати систему"
 msgid "Add a theme from a file"
 msgstr "Додати тему з файлу"
 
+msgid "Add another ZIP"
+msgstr "Додати ще ZIP"
+
 msgid "Add colors from a file"
 msgstr "Додати кольори з файлу"
 
@@ -359,6 +362,12 @@ msgstr "Зміна яскравості."
 
 msgid "Africa"
 msgstr "Африка"
+
+msgid "Afterwards: restart the system"
+msgstr "Після цього: перезапустити систему"
+
+msgid "Afterwards: stay in recovery"
+msgstr "Після цього: лишитися в recovery"
 
 msgid "All"
 msgstr "Усі"
@@ -422,6 +431,9 @@ msgstr "Встановлення не завершено"
 
 msgid "An installation prepared in the A22x app."
 msgstr "Встановлення, підготоване в застосунку A22x."
+
+msgid "An installer ended with an error. Changed:"
+msgstr "Один з інсталяторів завершився з помилкою. Змінено:"
 
 msgid "An interrupted RECOVERY write can require Samsung Download mode and external recovery flashing."
 msgstr "Перерваний запис RECOVERY може потребувати режиму Samsung Download і зовнішньої прошивки recovery."
@@ -1428,6 +1440,9 @@ msgstr "Кожна оболонка встановлюється з її пак�
 msgid "Each system keeps its own /etc and /var. Shared /home requires matching account IDs. A full Linux backup includes all slots."
 msgstr "Кожна система має власні /etc і /var. Для спільного /home потрібні однакові ID облікових записів. Повна копія Linux містить усі слоти."
 
+msgid "Each ZIP's own script decides what is written. They can reach only these partitions:"
+msgstr "Що записати, вирішує власний скрипт кожного ZIP. Вони дістають лише до цих розділів:"
+
 msgid "Edit text"
 msgstr "Редагування тексту"
 
@@ -1593,6 +1608,9 @@ msgstr "Образ ФС F2FS"
 msgid "Fade"
 msgstr "Згасання"
 
+msgid "failed"
+msgstr "помилка"
+
 msgid "February"
 msgstr "лютого"
 
@@ -1632,6 +1650,9 @@ msgstr "Файли (FAT32)"
 msgid "Files / mounts"
 msgstr "Файли / монтування"
 
+msgid "FILES, IN THIS ORDER"
+msgstr "ФАЙЛИ, У ЦЬОМУ ПОРЯДКУ"
+
 msgid "Files, Linux and swap on an SD card"
 msgstr "Файли, Linux і підкачка на SD-картці"
 
@@ -1658,6 +1679,9 @@ msgstr "Спершу завершіть незакінчене встановл�
 
 msgid "Finished"
 msgstr "Завершено"
+
+msgid "finished"
+msgstr "готово"
 
 msgid "Finishing the archive"
 msgstr "Завершення архіву"
@@ -1940,6 +1964,9 @@ msgstr "Утримуйте 5 с: стерти дані, встановити roo
 
 msgid "Hold 5 seconds: run the installer"
 msgstr "Утримуйте 5 с: запустити інсталятор"
+
+msgid "Hold 5 seconds: run the installers"
+msgstr "Утримуйте 5 с: запустити інсталятори"
 
 msgid "Hold the button to save this exact snapshot. Moving outside cancels confirmation."
 msgstr "Утримуйте кнопку, щоб зберегти саме цей знімок. Рух за межі кнопки скасовує підтвердження."
@@ -2798,6 +2825,9 @@ msgstr "Ще не прочитано"
 
 msgid "not reported"
 msgstr "не повідомлено"
+
+msgid "not run"
+msgstr "не запускався"
 
 msgid "NOT WRITTEN"
 msgstr "НЕ ЗАПИСУЄТЬСЯ"
@@ -4011,6 +4041,9 @@ msgstr "Стан"
 msgid "Status unavailable"
 msgstr "Стан недоступний"
 
+msgid "Stay in recovery (the system restarts in %u s)"
+msgstr "Лишитися в recovery (перезапуск за %u с)"
+
 msgid "STAYS"
 msgstr "ЛИШАЄТЬСЯ"
 
@@ -4167,9 +4200,6 @@ msgstr "Витягти BOOT Samsung з прошивки: шлях назад в�
 msgid "Tap a card above: it is mounted read-only and searched. A copy is made in Backup, Phone partitions."
 msgstr "Торкніться картки вище: її буде змонтовано лише для читання й переглянуто. Копію роблять у «Резервна копія», «Розділи телефона»."
 
-msgid "Tap a partition to leave it out, userdata to put the data back."
-msgstr "Торкніться розділу, щоб пропустити його; userdata — щоб повернути й дані."
-
 msgid "Tap a partition to leave it out."
 msgstr "Торкніться розділу, щоб його пропустити."
 
@@ -4178,6 +4208,9 @@ msgstr "Натисніть ще раз, щоб вилучити"
 
 msgid "Tap destination to cycle mounted writable volumes."
 msgstr "Торкніться призначення, щоб перебрати змонтовані томи із записом."
+
+msgid "Tap leaves a partition out; userdata puts the data back."
+msgstr "Дотик пропускає розділ; userdata повертає дані."
 
 msgid "Tap New user to enter the password."
 msgstr "Торкніться «Новий користувач», щоб ввести пароль."
@@ -4394,6 +4427,9 @@ msgstr "Помічник картки не повернув результату
 
 msgid "The card is mounted read-only as backup storage: disconnect it in Storage first"
 msgstr "Картку змонтовано лише для читання як сховище копій: спершу від’єднайте її в «Носіях даних»"
+
+msgid "The card is not open for writing yet: the button above opens it."
+msgstr "Картку ще не відкрито для запису: це робить кнопка вище."
 
 msgid "The card is too small for these partitions"
 msgstr "Картка замала для таких розділів"
@@ -4694,6 +4730,9 @@ msgstr "Інсталятор цього ZIP завершився з помилк
 
 msgid "The installer result did not match the requested environment or operation."
 msgstr "Результат інсталятора не збігся із запитаним середовищем або операцією."
+
+msgid "The installers finished"
+msgstr "Інсталятори завершили роботу"
 
 msgid "The interrupted transaction changed. Review the refreshed Systems screen."
 msgstr "Перервана транзакція змінилася. Перегляньте оновлений екран Систем."
@@ -5136,6 +5175,9 @@ msgstr "ZIP пошкоджено"
 msgid "The ZIP's own script decides what is written. It can reach only these partitions:"
 msgstr "Що буде записано, вирішує власний скрипт ZIP. Йому доступні лише ці розділи:"
 
+msgid "THEIR INSTALLERS RUN AS ROOT"
+msgstr "ІНСТАЛЯТОРИ ПРАЦЮЮТЬ З ПРАВАМИ ROOT"
+
 msgid "Theme"
 msgstr "Тема"
 
@@ -5402,6 +5444,9 @@ msgstr "Цей том більше недоступний. Повернітьс�
 
 msgid "This ZIP has no installer of its own. Images and ROM packages go through Android or Flash a partition"
 msgstr "У цьому ZIP немає власного інсталятора. Образи й пакети ROM встановлюються через «Android» або «Прошити розділ»"
+
+msgid "This ZIP is in the list already"
+msgstr "Цей ZIP уже є в списку"
 
 msgid "Thursday"
 msgstr "Четвер"

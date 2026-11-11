@@ -336,6 +336,9 @@ msgstr "Añadir un sistema"
 msgid "Add a theme from a file"
 msgstr "Añadir un tema desde un archivo"
 
+msgid "Add another ZIP"
+msgstr "Añadir otro ZIP"
+
 msgid "Add colors from a file"
 msgstr "Añadir colores desde un archivo"
 
@@ -359,6 +362,12 @@ msgstr "Ajustando el brillo."
 
 msgid "Africa"
 msgstr "África"
+
+msgid "Afterwards: restart the system"
+msgstr "Después: reiniciar el sistema"
+
+msgid "Afterwards: stay in recovery"
+msgstr "Después: quedarse en recovery"
 
 msgid "All"
 msgstr "Todos"
@@ -422,6 +431,9 @@ msgstr "Hay una instalación sin terminar"
 
 msgid "An installation prepared in the A22x app."
 msgstr "Una instalación preparada en la app A22x."
+
+msgid "An installer ended with an error. Changed:"
+msgstr "Un instalador terminó con un error. Cambiado:"
 
 msgid "An interrupted RECOVERY write can require Samsung Download mode and external recovery flashing."
 msgstr "Una escritura de RECOVERY interrumpida puede requerir el modo Samsung Download y flashear el recovery desde fuera."
@@ -1428,6 +1440,9 @@ msgstr "Cada entorno se instala con sus paquetes; la pantalla de inicio cambia e
 msgid "Each system keeps its own /etc and /var. Shared /home requires matching account IDs. A full Linux backup includes all slots."
 msgstr "Cada sistema tiene sus propios /etc y /var. El /home compartido requiere los mismos ID de cuenta. Una copia completa de Linux incluye todos los slots."
 
+msgid "Each ZIP's own script decides what is written. They can reach only these partitions:"
+msgstr "El script de cada ZIP decide qué se escribe. Solo alcanzan estas particiones:"
+
 msgid "Edit text"
 msgstr "Editar texto"
 
@@ -1593,6 +1608,9 @@ msgstr "Imagen de sistema de archivos F2FS"
 msgid "Fade"
 msgstr "Fundido"
 
+msgid "failed"
+msgstr "falló"
+
 msgid "February"
 msgstr "febrero"
 
@@ -1632,6 +1650,9 @@ msgstr "Archivos (FAT32)"
 msgid "Files / mounts"
 msgstr "Archivos / montaje"
 
+msgid "FILES, IN THIS ORDER"
+msgstr "ARCHIVOS, EN ESTE ORDEN"
+
 msgid "Files, Linux and swap on an SD card"
 msgstr "Archivos, Linux e intercambio en una tarjeta SD"
 
@@ -1658,6 +1679,9 @@ msgstr "Termina primero la instalación sin acabar"
 
 msgid "Finished"
 msgstr "Terminado"
+
+msgid "finished"
+msgstr "terminado"
 
 msgid "Finishing the archive"
 msgstr "Terminando el archivo"
@@ -1940,6 +1964,9 @@ msgstr "Mantén 5 segundos: borrar datos, instalar root"
 
 msgid "Hold 5 seconds: run the installer"
 msgstr "Mantén 5 segundos: ejecutar el instalador"
+
+msgid "Hold 5 seconds: run the installers"
+msgstr "Mantén 5 segundos: ejecutar los instaladores"
 
 msgid "Hold the button to save this exact snapshot. Moving outside cancels confirmation."
 msgstr "Mantén el botón para guardar esta instantánea exacta. Salir del botón cancela la confirmación."
@@ -2798,6 +2825,9 @@ msgstr "Aún no leído"
 
 msgid "not reported"
 msgstr "sin datos"
+
+msgid "not run"
+msgstr "no ejecutado"
 
 msgid "NOT WRITTEN"
 msgstr "NO SE ESCRIBE"
@@ -4011,6 +4041,9 @@ msgstr "Estado"
 msgid "Status unavailable"
 msgstr "Estado no disponible"
 
+msgid "Stay in recovery (the system restarts in %u s)"
+msgstr "Quedarse en recovery (reinicio en %u s)"
+
 msgid "STAYS"
 msgstr "SE CONSERVA"
 
@@ -4167,9 +4200,6 @@ msgstr "Sacar el BOOT de Samsung del firmware: la vuelta desde un kernel persona
 msgid "Tap a card above: it is mounted read-only and searched. A copy is made in Backup, Phone partitions."
 msgstr "Toca una tarjeta arriba: se monta en solo lectura y se examina. Una copia se hace en «Copia de seguridad», «Particiones del teléfono»."
 
-msgid "Tap a partition to leave it out, userdata to put the data back."
-msgstr "Toca una partición para omitirla; userdata, para devolver los datos."
-
 msgid "Tap a partition to leave it out."
 msgstr "Toca una partición para dejarla fuera."
 
@@ -4178,6 +4208,9 @@ msgstr "Toca de nuevo para eliminar"
 
 msgid "Tap destination to cycle mounted writable volumes."
 msgstr "Toca el destino para alternar entre los volúmenes montados con escritura."
+
+msgid "Tap leaves a partition out; userdata puts the data back."
+msgstr "Toca para omitir; userdata devuelve los datos."
 
 msgid "Tap New user to enter the password."
 msgstr "Toca «Usuario nuevo» para introducir la contraseña."
@@ -4394,6 +4427,9 @@ msgstr "El ayudante de la tarjeta no devolvió ningún resultado."
 
 msgid "The card is mounted read-only as backup storage: disconnect it in Storage first"
 msgstr "La tarjeta está montada en solo lectura como almacén de copias: desconéctala primero en «Almacenamiento»"
+
+msgid "The card is not open for writing yet: the button above opens it."
+msgstr "La tarjeta aún no está abierta para escribir: el botón de arriba lo hace."
 
 msgid "The card is too small for these partitions"
 msgstr "La tarjeta es demasiado pequeña para estas particiones"
@@ -4694,6 +4730,9 @@ msgstr "El instalador de este ZIP terminó con un error"
 
 msgid "The installer result did not match the requested environment or operation."
 msgstr "El resultado del instalador no coincidió con el entorno o la operación solicitados."
+
+msgid "The installers finished"
+msgstr "Los instaladores han terminado"
 
 msgid "The interrupted transaction changed. Review the refreshed Systems screen."
 msgstr "La transacción interrumpida cambió. Revisa la pantalla de Sistemas actualizada."
@@ -5136,6 +5175,9 @@ msgstr "El ZIP está dañado"
 msgid "The ZIP's own script decides what is written. It can reach only these partitions:"
 msgstr "El propio script del ZIP decide qué se escribe. Solo alcanza estas particiones:"
 
+msgid "THEIR INSTALLERS RUN AS ROOT"
+msgstr "SUS INSTALADORES SE EJECUTAN COMO ROOT"
+
 msgid "Theme"
 msgstr "Tema"
 
@@ -5402,6 +5444,9 @@ msgstr "Este volumen ya no está disponible. Vuelve a Archivos y actualiza la li
 
 msgid "This ZIP has no installer of its own. Images and ROM packages go through Android or Flash a partition"
 msgstr "Este ZIP no tiene instalador propio. Las imágenes y los paquetes ROM van por Android o Flashear una partición"
+
+msgid "This ZIP is in the list already"
+msgstr "Este ZIP ya está en la lista"
 
 msgid "Thursday"
 msgstr "jueves"

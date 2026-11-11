@@ -336,6 +336,9 @@ msgstr "System hinzufügen"
 msgid "Add a theme from a file"
 msgstr "Design aus einer Datei hinzufügen"
 
+msgid "Add another ZIP"
+msgstr "Weiteres ZIP hinzufügen"
+
 msgid "Add colors from a file"
 msgstr "Farben aus einer Datei hinzufügen"
 
@@ -359,6 +362,12 @@ msgstr "Helligkeit wird angepasst."
 
 msgid "Africa"
 msgstr "Afrika"
+
+msgid "Afterwards: restart the system"
+msgstr "Danach: System neu starten"
+
+msgid "Afterwards: stay in recovery"
+msgstr "Danach: im Recovery bleiben"
 
 msgid "All"
 msgstr "Alle"
@@ -422,6 +431,9 @@ msgstr "Eine Installation ist nicht beendet"
 
 msgid "An installation prepared in the A22x app."
 msgstr "Eine in der A22x-App vorbereitete Installation."
+
+msgid "An installer ended with an error. Changed:"
+msgstr "Ein Installer endete mit einem Fehler. Geändert:"
 
 msgid "An interrupted RECOVERY write can require Samsung Download mode and external recovery flashing."
 msgstr "Ein unterbrochener RECOVERY-Schreibvorgang kann den Samsung-Download-Modus und externes Flashen des Recovery erfordern."
@@ -1428,6 +1440,9 @@ msgstr "Jede Oberfläche wird mit ihren Paketen installiert; der Anmeldebildschi
 msgid "Each system keeps its own /etc and /var. Shared /home requires matching account IDs. A full Linux backup includes all slots."
 msgstr "Jedes System hat eigene /etc und /var. Gemeinsames /home braucht gleiche Konto-IDs. Eine vollständige Linux-Sicherung enthält alle Slots."
 
+msgid "Each ZIP's own script decides what is written. They can reach only these partitions:"
+msgstr "Was geschrieben wird, entscheidet das eigene Skript jedes ZIPs. Sie erreichen nur diese Partitionen:"
+
 msgid "Edit text"
 msgstr "Text bearbeiten"
 
@@ -1593,6 +1608,9 @@ msgstr "F2FS-Dateisystem-Image"
 msgid "Fade"
 msgstr "Überblenden"
 
+msgid "failed"
+msgstr "fehlgeschlagen"
+
 msgid "February"
 msgstr "Februar"
 
@@ -1632,6 +1650,9 @@ msgstr "Dateien (FAT32)"
 msgid "Files / mounts"
 msgstr "Dateien / Einhängen"
 
+msgid "FILES, IN THIS ORDER"
+msgstr "DATEIEN, IN DIESER REIHENFOLGE"
+
 msgid "Files, Linux and swap on an SD card"
 msgstr "Dateien, Linux und Swap auf einer SD-Karte"
 
@@ -1658,6 +1679,9 @@ msgstr "Zuerst die unvollständige Installation abschließen"
 
 msgid "Finished"
 msgstr "Fertig"
+
+msgid "finished"
+msgstr "fertig"
 
 msgid "Finishing the archive"
 msgstr "Archiv wird abgeschlossen"
@@ -1940,6 +1964,9 @@ msgstr "5 Sekunden halten: Daten löschen, Root installieren"
 
 msgid "Hold 5 seconds: run the installer"
 msgstr "5 Sekunden halten: Installer ausführen"
+
+msgid "Hold 5 seconds: run the installers"
+msgstr "5 Sekunden halten: Installer starten"
 
 msgid "Hold the button to save this exact snapshot. Moving outside cancels confirmation."
 msgstr "Halten Sie die Taste, um genau diesen Snapshot zu speichern. Wegziehen bricht die Bestätigung ab."
@@ -2798,6 +2825,9 @@ msgstr "Noch nicht gelesen"
 
 msgid "not reported"
 msgstr "nicht gemeldet"
+
+msgid "not run"
+msgstr "nicht gestartet"
 
 msgid "NOT WRITTEN"
 msgstr "NICHT GESCHRIEBEN"
@@ -4011,6 +4041,9 @@ msgstr "Zustand"
 msgid "Status unavailable"
 msgstr "Status nicht verfügbar"
 
+msgid "Stay in recovery (the system restarts in %u s)"
+msgstr "Im Recovery bleiben (Neustart in %u s)"
+
 msgid "STAYS"
 msgstr "BLEIBT"
 
@@ -4167,9 +4200,6 @@ msgstr "Samsungs BOOT aus der Firmware holen: der Weg zurück von einem eigenen 
 msgid "Tap a card above: it is mounted read-only and searched. A copy is made in Backup, Phone partitions."
 msgstr "Tippen Sie oben auf eine Karte: Sie wird nur lesend eingehängt und durchsucht. Eine Kopie entsteht unter »Sicherung«, »Partitionen des Telefons«."
 
-msgid "Tap a partition to leave it out, userdata to put the data back."
-msgstr "Partition antippen, um sie auszulassen; userdata, um die Daten zurückzuschreiben."
-
 msgid "Tap a partition to leave it out."
 msgstr "Tippen Sie auf eine Partition, um sie auszulassen."
 
@@ -4178,6 +4208,9 @@ msgstr "Zum Entfernen erneut tippen"
 
 msgid "Tap destination to cycle mounted writable volumes."
 msgstr "Ziel antippen, um durch beschreibbar eingehängte Volumes zu wechseln."
+
+msgid "Tap leaves a partition out; userdata puts the data back."
+msgstr "Tippen lässt aus; userdata holt die Daten zurück."
 
 msgid "Tap New user to enter the password."
 msgstr "Tippen Sie auf »Neuer Benutzer«, um das Passwort einzugeben."
@@ -4394,6 +4427,9 @@ msgstr "Der Kartenhelfer hat kein Ergebnis geliefert."
 
 msgid "The card is mounted read-only as backup storage: disconnect it in Storage first"
 msgstr "Die Karte ist als Sicherungsspeicher nur lesbar eingehängt: Trenne sie zuerst unter »Speicher«"
+
+msgid "The card is not open for writing yet: the button above opens it."
+msgstr "Die Karte ist noch nicht zum Schreiben geöffnet: Das macht die Taste darüber."
 
 msgid "The card is too small for these partitions"
 msgstr "Die Karte ist für diese Partitionen zu klein"
@@ -4694,6 +4730,9 @@ msgstr "Der Installer dieses ZIP endete mit einem Fehler"
 
 msgid "The installer result did not match the requested environment or operation."
 msgstr "Das Installer-Ergebnis passte nicht zur angeforderten Umgebung oder zum Vorgang."
+
+msgid "The installers finished"
+msgstr "Die Installer sind fertig"
 
 msgid "The interrupted transaction changed. Review the refreshed Systems screen."
 msgstr "Die unterbrochene Transaktion hat sich geändert. Prüfen Sie den aktualisierten Systembildschirm."
@@ -5136,6 +5175,9 @@ msgstr "Das ZIP ist beschädigt"
 msgid "The ZIP's own script decides what is written. It can reach only these partitions:"
 msgstr "Das eigene Skript des ZIP entscheidet, was geschrieben wird. Es erreicht nur diese Partitionen:"
 
+msgid "THEIR INSTALLERS RUN AS ROOT"
+msgstr "DIE INSTALLER LAUFEN ALS ROOT"
+
 msgid "Theme"
 msgstr "Design"
 
@@ -5402,6 +5444,9 @@ msgstr "Dieses Volume ist nicht mehr verfügbar. Gehen Sie zu Dateien zurück un
 
 msgid "This ZIP has no installer of its own. Images and ROM packages go through Android or Flash a partition"
 msgstr "Dieses ZIP hat keinen eigenen Installer. Images und ROM-Pakete gehen über Android oder Partition flashen"
+
+msgid "This ZIP is in the list already"
+msgstr "Dieses ZIP steht schon in der Liste"
 
 msgid "Thursday"
 msgstr "Donnerstag"

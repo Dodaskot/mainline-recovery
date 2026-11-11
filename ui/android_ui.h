@@ -55,6 +55,7 @@ static bool samsung_repick(App*a,enum Screen from,bool boot){
 static void complete_samsung_job(App*a,const Json*j,int kind,bool ok){
     if(kind==J_ROM_KIND&&ok&&j){
         char what[16]={0};jstring(j,0,"kind",what,sizeof(what));
+        if(strcmp(what,"installer"))a->zip_adding=false;  /* no ZIP with an installer: nothing joins a list */
         if(!strcmp(what,"installer")){
             /* It installs itself: the ZIP page reviews it and runs its installer after the hold. */
             copy(a->zip_volume,sizeof(a->zip_volume),a->samsung_volume);copy(a->zip_token,sizeof(a->zip_token),a->samsung_token);copy(a->zip_path,sizeof(a->zip_path),a->samsung_path);a->zip_known=false;
@@ -491,6 +492,61 @@ static void render_samsung_review(App*a){
 /* A ZIP that installs itself (zip_install.py, 2026-11-11): chosen with the picker of images, reviewed
    (what it is, what its installer can reach), run after a hold; the result names what changed. */
 static bool zip_job(int kind){return kind==J_ZIP_INSPECT||kind==J_ZIP_RUN;}
+/* Several ZIPs one after another (2026-11-11), what TWRP calls adding more ZIPs. The review of a ZIP lives in
+   the fields zip_*; an entry of the list keeps a copy of it and gives it back when its turn comes. */
+static void zip_item_from_review(const App*a,ZipItem*it){
+    memset(it,0,sizeof(*it));
+    copy(it->volume,sizeof(it->volume),a->zip_volume);copy(it->token,sizeof(it->token),a->zip_token);copy(it->path,sizeof(it->path),a->zip_path);
+    copy(it->name,sizeof(it->name),a->zip_name);copy(it->sha,sizeof(it->sha),a->zip_sha);copy(it->title,sizeof(it->title),a->zip_title);
+    copy(it->what,sizeof(it->what),a->zip_what);copy(it->installer,sizeof(it->installer),a->zip_installer);it->size=a->zip_size;it->files=a->zip_files;
+}
+static void zip_item_to_review(App*a,const ZipItem*it){
+    copy(a->zip_volume,sizeof(a->zip_volume),it->volume);copy(a->zip_token,sizeof(a->zip_token),it->token);copy(a->zip_path,sizeof(a->zip_path),it->path);
+    copy(a->zip_name,sizeof(a->zip_name),it->name);copy(a->zip_sha,sizeof(a->zip_sha),it->sha);copy(a->zip_title,sizeof(a->zip_title),it->title);
+    copy(a->zip_what,sizeof(a->zip_what),it->what);copy(a->zip_installer,sizeof(a->zip_installer),it->installer);a->zip_size=it->size;a->zip_files=it->files;
+}
+/* The ZIP just reviewed joins the list: alone when it was chosen afresh, after the others when it
+   was added. The same file again keeps its place. */
+static void zip_enqueue(App*a){
+    bool adding=a->zip_adding&&a->zip_count>0;a->zip_adding=false;
+    if(!adding)a->zip_count=0;
+    for(unsigned int n=0;n<a->zip_count;n++)if(!strcmp(a->zip_queue[n].volume,a->zip_volume)&&!strcmp(a->zip_queue[n].path,a->zip_path)){
+        zip_item_from_review(a,&a->zip_queue[n]);toast(a,"This ZIP is in the list already");return;
+    }
+    if(a->zip_count<ZIP_QUEUE)zip_item_from_review(a,&a->zip_queue[a->zip_count++]);
+}
+/* What the installers left: for one ZIP as before; for several, every partition any of them changed,
+   what became of each ZIP, and what the last one that ran said. */
+static void zip_result(App*a,bool ok,const char*code,const char*changed,const char*log){
+    a->successful=ok;
+    if(a->zip_count<=1){
+        copy(a->status,sizeof(a->status),ok?"The installer finished":(code[0]?code:"ZIP_INSTALLER_FAILED"));
+        snprintf(a->message,sizeof(a->message),"%s %s\n\n",tr(ok?"Changed:":"The installer ended with an error. Changed:"),changed[0]?changed:tr("Nothing"));
+    }else{
+        char all[200]="";
+        for(unsigned int n=0;n<a->zip_count;n++){
+            char words[160];copy(words,sizeof(words),a->zip_queue[n].changed);
+            for(char*word=strtok(words," ");word;word=strtok(NULL," ")){
+                char spaced[200],one[48];snprintf(spaced,sizeof(spaced)," %s ",all);snprintf(one,sizeof(one)," %s ",word);
+                if(!strstr(spaced,one)){if(all[0])append(all,sizeof(all)," ");append(all,sizeof(all),word);}
+            }
+        }
+        copy(a->status,sizeof(a->status),ok?"The installers finished":(code[0]?code:"ZIP_INSTALLER_FAILED"));
+        snprintf(a->message,sizeof(a->message),"%s %s\n\n",tr(ok?"Changed:":"An installer ended with an error. Changed:"),all[0]?all:tr("Nothing"));
+        for(unsigned int n=0;n<a->zip_count;n++){
+            char line[160];int state=a->zip_queue[n].state;
+            snprintf(line,sizeof(line),"%u. %.60s: %s\n",n+1,a->zip_queue[n].name,tr(state==1?"finished":(state==2?"failed":"not run")));
+            append(a->message,sizeof(a->message),line);
+        }
+        append(a->message,sizeof(a->message),"\n");
+    }
+    append(a->message,sizeof(a->message),log);
+    a->root_known=false;a->result_return=ANDROID_MENU;a->zip_ran=true;
+    a->zip_restart_at=ok&&a->zip_restart&&a->allow_power?a->now+ZIP_RESTART_MS:0;a->zip_restart_shown=0;
+    /* The list stays as it was reviewed, should the owner go back to it. */
+    if(a->zip_count)zip_item_to_review(a,&a->zip_queue[a->zip_count-1]);
+    screen(a,RESULT);
+}
 static bool start_zip_job(App*a,int kind){
     if(a->job.pid||a->preview||!a->zip_helper[0]||!a->zip_path[0])return false;
     char*args[16];int n=0;args[n++]=a->python;args[n++]=a->zip_helper;
@@ -539,7 +595,7 @@ static void sideload_poll(App*a){
     char note[300];snprintf(note,sizeof(note),T("Arrived over adb: %s"),file);
     if(!strcmp(kind,"zip")&&strlen(token)==64){
         copy(a->zip_volume,sizeof(a->zip_volume),volume);copy(a->zip_token,sizeof(a->zip_token),token);copy(a->zip_path,sizeof(a->zip_path),where);
-        a->flash_pick=a->zip_pick=a->samsung_pick=a->stock_boot_pick=false;a->zip_known=false;a->android_gsi=false;
+        a->flash_pick=a->zip_pick=a->samsung_pick=a->stock_boot_pick=false;a->zip_known=false;a->android_gsi=false;a->zip_adding=false;
         if(!start_zip_job(a,J_ZIP_INSPECT))return;
     }
     toast(a,note);a->toast_icon=ICON_USB;
@@ -568,15 +624,29 @@ static void complete_zip_job(App*a,const Json*j,int kind,bool ok){
         for(char*c=changed;*c;c++)if(*c=='\n')*c=' ';
         zip_lines(j,json_get(j,from,"log"),log,sizeof(log),false,ok?7:9);
         if(!ok)jstring(j,e,"code",code,sizeof(code));
-        a->successful=ok;copy(a->status,sizeof(a->status),ok?"The installer finished":(code[0]?code:"ZIP_INSTALLER_FAILED"));
-        snprintf(a->message,sizeof(a->message),"%s %s\n\n",tr(ok?"Changed:":"The installer ended with an error. Changed:"),changed[0]?changed:tr("Nothing"));
-        append(a->message,sizeof(a->message),log);
-        a->root_known=false;a->result_return=ANDROID_MENU;screen(a,RESULT);return;
+        ZipItem*it=a->zip_at<a->zip_count?&a->zip_queue[a->zip_at]:NULL;
+        if(it){it->state=ok?1:2;copy(it->changed,sizeof(it->changed),changed);}
+        a->root_known=false;
+        if(ok&&it&&a->zip_at+1<a->zip_count){
+            /* The next one in the list: its review is put back, and its installer starts. */
+            a->zip_at++;zip_item_to_review(a,&a->zip_queue[a->zip_at]);
+            if(start_zip_job(a,J_ZIP_RUN))return;
+            a->zip_queue[a->zip_at].state=2;ok=false;copy(code,sizeof(code),"ZIP_UNAVAILABLE");
+        }
+        zip_result(a,ok,code,changed,log);return;
     }
     if(!ok||!j){
         char code[96]="ZIP_FAILED",message[384]="The ZIP helper did not return a result.";
         if(e>=0){jstring(j,e,"code",code,sizeof(code));jstring(j,e,"message",message,sizeof(message));}
-        a->zip_known=false;
+        /* One of several that did not even start: the list says which, and what ran before it. */
+        if(kind==J_ZIP_RUN&&a->zip_count>1){if(a->zip_at<a->zip_count)a->zip_queue[a->zip_at].state=2;zip_result(a,false,code,"",tr(message));return;}
+        /* A ZIP that was to join the list and cannot: the list stays, and another can be chosen. */
+        if(kind==J_ZIP_INSPECT&&a->zip_adding&&a->zip_count){
+            zip_item_to_review(a,&a->zip_queue[a->zip_count-1]);a->zip_known=true;
+            bool again=zip_repick(a,nav_top(a));if(!again)a->zip_adding=false;
+            files_problem(a,code,message,again?FILE_BROWSER:ZIP_REVIEW);return;
+        }
+        a->zip_known=false;a->zip_adding=false;a->zip_count=0;
         /* Another file can be chosen at once: back in the folder, still choosing. */
         files_problem(a,code,message,kind==J_ZIP_INSPECT&&zip_repick(a,nav_top(a))?FILE_BROWSER:ANDROID_MENU);return;
     }
@@ -586,36 +656,77 @@ static void complete_zip_job(App*a,const Json*j,int kind,bool ok){
     zip_lines(j,json_get(j,0,"warnings"),a->zip_warnings,sizeof(a->zip_warnings),true,8);
     zip_lines(j,json_get(j,0,"partitions"),a->zip_parts,sizeof(a->zip_parts),false,16);
     for(char*c=a->zip_parts;*c;c++)if(*c=='\n')*c=' ';
-    a->zip_known=strlen(a->zip_sha)==64;a->page_scroll=0;screen(a,ZIP_REVIEW);
+    a->zip_known=strlen(a->zip_sha)==64;
+    if(a->zip_known)zip_enqueue(a);
+    else if(a->zip_adding&&a->zip_count){a->zip_adding=false;zip_item_to_review(a,&a->zip_queue[a->zip_count-1]);a->zip_known=true;}
+    else{a->zip_adding=false;a->zip_count=0;}
+    a->page_scroll=0;screen(a,ZIP_REVIEW);
 }
 static void render_zip_review(App*a){
     const char*kind=!strcmp(a->zip_what,"magisk")?"Magisk":(!strcmp(a->zip_what,"kernel")?"A kernel (AnyKernel3)":(!strcmp(a->zip_what,"module")?"A module":"A flashable ZIP"));
-    heading(a,"ZIP with an installer","Nothing has run yet.",true);bool free_ui=ui_free(a);
+    heading(a,"ZIP with an installer","Nothing has run yet.",true);bool free_ui=ui_free(a),many=a->zip_count>1;
     int y=236;char line[200],size[48];
-    rounded(a,(Rect){28,y,664,206},24,PANEL);text(a,52,y+18,0,ORANGE,"FILE");
-    raw_text(true);ellipsis(a,52,y+56,616,1,TEXT,a->zip_name);raw_text(false);
-    human_bytes(a->zip_size,size,sizeof(size));snprintf(line,sizeof(line),"%s  /  %s  /  %s",a->zip_title[0]?a->zip_title:tr(kind),size,tr(!strcmp(a->zip_installer,"program")?"its installer is a program":"its installer is a script"));
-    raw_text(true);ellipsis(a,52,y+108,616,0,MUTED,line);ellipsis(a,52,y+152,616,0,MUTED,a->zip_sha);raw_text(false);y+=222;
-    rounded(a,(Rect){28,y,664,338},24,PANEL);text(a,52,y+18,0,RED,"ITS INSTALLER RUNS AS ROOT");
-    wrapped(a,52,y+58,616,0,TEXT,"The ZIP's own script decides what is written. It can reach only these partitions:",2);
+    if(!many){
+        rounded(a,(Rect){28,y,664,206},24,PANEL);text(a,52,y+18,0,ORANGE,"FILE");
+        raw_text(true);ellipsis(a,52,y+56,616,1,TEXT,a->zip_name);raw_text(false);
+        human_bytes(a->zip_size,size,sizeof(size));snprintf(line,sizeof(line),"%s  /  %s  /  %s",a->zip_title[0]?a->zip_title:tr(kind),size,tr(!strcmp(a->zip_installer,"program")?"its installer is a program":"its installer is a script"));
+        raw_text(true);ellipsis(a,52,y+108,616,0,MUTED,line);ellipsis(a,52,y+152,616,0,MUTED,a->zip_sha);raw_text(false);y+=222;
+    }else{
+        /* The list, in the order the installers run; the mark at the right takes a ZIP out. */
+        int h=60+(int)a->zip_count*56+8;rounded(a,(Rect){28,y,664,h},24,PANEL);text(a,52,y+18,0,ORANGE,"FILES, IN THIS ORDER");
+        for(unsigned int n=0;n<a->zip_count;n++){
+            int row=y+56+(int)n*56;char number[8];snprintf(number,sizeof(number),"%u",n+1);
+            raw_text(true);text(a,52,row+8,1,MUTED,number);ellipsis(a,92,row+8,500,1,TEXT,a->zip_queue[n].name);raw_text(false);
+            Rect out={612,row,64,48};surface(a,out,24,BG,A_ZIP_REMOVE+(int)n);icon(a,ICON_TRASH,out.x+17,out.y+9,30,free_ui?MUTED:LINE);
+            register_button(a,out,A_ZIP_REMOVE+(int)n,free_ui,0);
+        }
+        y+=h+16;
+    }
+    button(a,(Rect){28,y,664,76},"Add another ZIP",A_ZIP_ADD,free_ui&&a->zip_known&&a->zip_count>0&&a->zip_count<ZIP_QUEUE,false,0);y+=88;
+    int root=many?232:338;
+    rounded(a,(Rect){28,y,664,root},24,PANEL);text(a,52,y+18,0,RED,many?"THEIR INSTALLERS RUN AS ROOT":"ITS INSTALLER RUNS AS ROOT");
+    wrapped(a,52,y+58,616,0,TEXT,many?"Each ZIP's own script decides what is written. They can reach only these partitions:":"The ZIP's own script decides what is written. It can reach only these partitions:",2);
     raw_text(true);wrapped(a,52,y+128,616,0,TEXT,a->zip_parts,3);raw_text(false);
-    wrapped(a,52,y+226,616,0,MUTED,"The bootloader, the modem, this recovery, Android's data and the recovery's settings on cache are out of its reach. The BOOT there is kept on cache first.",4);
-    y+=354;
-    if(a->zip_warnings[0])y+=text_tile(a,y,0,ORANGE,a->zip_warnings,5)+12;
-    button(a,(Rect){28,1320,664,104},"Hold 5 seconds: run the installer",A_ZIP_CONFIRM,free_ui&&a->zip_known,true,5000);
+    if(!many)wrapped(a,52,y+226,616,0,MUTED,"The bootloader, the modem, this recovery, Android's data and the recovery's settings on cache are out of its reach. The BOOT there is kept on cache first.",4);
+    y+=root+16;
+    button(a,(Rect){28,y,664,76},a->zip_restart?"Afterwards: restart the system":"Afterwards: stay in recovery",A_ZIP_RESTART,free_ui&&a->allow_power,a->zip_restart,0);y+=88;
+    if(a->zip_warnings[0]&&1304-y>=120)y+=text_tile(a,y,0,ORANGE,a->zip_warnings,many?3:5)+12;
+    button(a,(Rect){28,1320,664,104},many?"Hold 5 seconds: run the installers":"Hold 5 seconds: run the installer",A_ZIP_CONFIRM,free_ui&&a->zip_known&&a->zip_count>0,true,5000);
 }
 static bool zip_action(App*a,int id){
     if(id==A_ZIP&&a->screen==ANDROID_MENU){
         if(!ui_free(a))return true;
         /* The same picker as Flash a partition; the chosen file is the ZIP. */
         a->android_gsi=a->gsi_file=a->rom_origin=a->rom_pick=false;a->samsung_pick=a->stock_boot_pick=a->flash_restore=false;a->flash_pick=a->zip_pick=true;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;
+        a->zip_adding=false;
         screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
     }
     if(a->screen!=ZIP_REVIEW)return false;
+    if(id==A_ZIP_ADD){
+        if(!ui_free(a)||!a->zip_count||a->zip_count>=ZIP_QUEUE)return true;
+        /* One more: the picker again, in the folder the last one was chosen in when there was one. */
+        a->zip_adding=true;enum Screen from=came_from(a,ANDROID_MENU);
+        if(zip_repick(a,from)){reopen(a,FILE_BROWSER);return true;}
+        a->android_gsi=a->gsi_file=a->rom_origin=a->rom_pick=false;a->samsung_pick=a->stock_boot_pick=a->flash_restore=false;a->flash_pick=a->zip_pick=true;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;
+        screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
+    }
+    if(id==A_ZIP_RESTART){if(ui_free(a)&&a->allow_power){a->zip_restart=!a->zip_restart;a->dirty=true;}return true;}
+    if(id>=A_ZIP_REMOVE&&id<A_ZIP_REMOVE+ZIP_QUEUE){
+        unsigned int n=(unsigned int)(id-A_ZIP_REMOVE);
+        if(ui_free(a)&&a->zip_count>1&&n<a->zip_count){
+            for(unsigned int k=n;k+1<a->zip_count;k++)a->zip_queue[k]=a->zip_queue[k+1];
+            a->zip_count--;zip_item_to_review(a,&a->zip_queue[a->zip_count-1]);a->dirty=true;
+        }
+        return true;
+    }
     /* Back to the folder it was chosen in, or to the page it opened over (2026-11-11: a ZIP sideloaded over adb opens from any page). */
     if(id==A_BACK){enum Screen from=came_from(a,ANDROID_MENU);if(zip_repick(a,from))reopen(a,FILE_BROWSER);else reopen(a,from==FILE_BROWSER?ANDROID_MENU:from);return true;}
     if(id==A_ZIP_CONFIRM){
-        if(ui_free(a)&&a->zip_known&&!start_zip_job(a,J_ZIP_RUN))files_problem(a,"ZIP_UNAVAILABLE","Wait for the current operation to finish.",ZIP_REVIEW);
+        if(!ui_free(a)||!a->zip_known||!a->zip_count)return true;
+        /* From the first: each waits, and the one that runs lends its review to the job. */
+        for(unsigned int n=0;n<a->zip_count;n++){a->zip_queue[n].state=0;a->zip_queue[n].changed[0]=0;}
+        a->zip_at=0;zip_item_to_review(a,&a->zip_queue[0]);
+        if(!start_zip_job(a,J_ZIP_RUN)){zip_item_to_review(a,&a->zip_queue[a->zip_count-1]);files_problem(a,"ZIP_UNAVAILABLE","Wait for the current operation to finish.",ZIP_REVIEW);}
         return true;
     }
     return false;

@@ -336,6 +336,9 @@ msgstr "Dodaj system"
 msgid "Add a theme from a file"
 msgstr "Dodaj motyw z pliku"
 
+msgid "Add another ZIP"
+msgstr "Dodaj kolejny ZIP"
+
 msgid "Add colors from a file"
 msgstr "Dodaj kolory z pliku"
 
@@ -359,6 +362,12 @@ msgstr "Regulacja jasności."
 
 msgid "Africa"
 msgstr "Afryka"
+
+msgid "Afterwards: restart the system"
+msgstr "Potem: uruchom system ponownie"
+
+msgid "Afterwards: stay in recovery"
+msgstr "Potem: zostań w recovery"
 
 msgid "All"
 msgstr "Wszystkie"
@@ -422,6 +431,9 @@ msgstr "Instalacja nie została ukończona"
 
 msgid "An installation prepared in the A22x app."
 msgstr "Instalacja przygotowana w aplikacji A22x."
+
+msgid "An installer ended with an error. Changed:"
+msgstr "Jeden z instalatorów zakończył się błędem. Zmieniono:"
 
 msgid "An interrupted RECOVERY write can require Samsung Download mode and external recovery flashing."
 msgstr "Przerwany zapis RECOVERY może wymagać trybu Samsung Download i wgrania recovery z zewnątrz."
@@ -1428,6 +1440,9 @@ msgstr "Każda powłoka jest instalowana z jej pakietami; ekran logowania przeł
 msgid "Each system keeps its own /etc and /var. Shared /home requires matching account IDs. A full Linux backup includes all slots."
 msgstr "Każdy system ma własne /etc i /var. Wspólny /home wymaga takich samych ID kont. Pełna kopia Linuksa obejmuje wszystkie sloty."
 
+msgid "Each ZIP's own script decides what is written. They can reach only these partitions:"
+msgstr "O tym, co zostanie zapisane, decyduje własny skrypt każdego ZIP-a. Sięgają tylko do tych partycji:"
+
 msgid "Edit text"
 msgstr "Edytuj tekst"
 
@@ -1593,6 +1608,9 @@ msgstr "Obraz systemu plików F2FS"
 msgid "Fade"
 msgstr "Zanikanie"
 
+msgid "failed"
+msgstr "błąd"
+
 msgid "February"
 msgstr "lutego"
 
@@ -1632,6 +1650,9 @@ msgstr "Pliki (FAT32)"
 msgid "Files / mounts"
 msgstr "Pliki / montowanie"
 
+msgid "FILES, IN THIS ORDER"
+msgstr "PLIKI, W TEJ KOLEJNOŚCI"
+
 msgid "Files, Linux and swap on an SD card"
 msgstr "Pliki, Linux i wymiana na karcie SD"
 
@@ -1658,6 +1679,9 @@ msgstr "Najpierw dokończ niedokończoną instalację"
 
 msgid "Finished"
 msgstr "Zakończono"
+
+msgid "finished"
+msgstr "gotowe"
 
 msgid "Finishing the archive"
 msgstr "Kończenie archiwum"
@@ -1940,6 +1964,9 @@ msgstr "Przytrzymaj 5 s: usuń dane, zainstaluj roota"
 
 msgid "Hold 5 seconds: run the installer"
 msgstr "Przytrzymaj 5 s: uruchom instalator"
+
+msgid "Hold 5 seconds: run the installers"
+msgstr "Przytrzymaj 5 sekund: uruchom instalatory"
 
 msgid "Hold the button to save this exact snapshot. Moving outside cancels confirmation."
 msgstr "Przytrzymaj przycisk, aby zapisać dokładnie tę migawkę. Zjechanie z przycisku anuluje potwierdzenie."
@@ -2798,6 +2825,9 @@ msgstr "Jeszcze nie odczytano"
 
 msgid "not reported"
 msgstr "brak danych"
+
+msgid "not run"
+msgstr "nie uruchomiono"
 
 msgid "NOT WRITTEN"
 msgstr "NIEZAPISYWANE"
@@ -4011,6 +4041,9 @@ msgstr "Stan"
 msgid "Status unavailable"
 msgstr "Stan niedostępny"
 
+msgid "Stay in recovery (the system restarts in %u s)"
+msgstr "Zostań w recovery (restart za %u s)"
+
 msgid "STAYS"
 msgstr "ZOSTAJE"
 
@@ -4167,9 +4200,6 @@ msgstr "Wyjmij BOOT Samsunga z firmware: droga powrotna od własnego jądra"
 msgid "Tap a card above: it is mounted read-only and searched. A copy is made in Backup, Phone partitions."
 msgstr "Dotknij karty powyżej: zostanie zamontowana tylko do odczytu i przeszukana. Kopię robi się w «Kopia zapasowa», «Partycje telefonu»."
 
-msgid "Tap a partition to leave it out, userdata to put the data back."
-msgstr "Dotknij partycji, aby ją pominąć; userdata, aby przywrócić dane."
-
 msgid "Tap a partition to leave it out."
 msgstr "Dotknij partycji, aby ją pominąć."
 
@@ -4178,6 +4208,9 @@ msgstr "Dotknij ponownie, aby usunąć"
 
 msgid "Tap destination to cycle mounted writable volumes."
 msgstr "Dotknij celu, aby przełączać zamontowane zapisywalne woluminy."
+
+msgid "Tap leaves a partition out; userdata puts the data back."
+msgstr "Dotknij, aby pominąć; userdata przywraca dane."
 
 msgid "Tap New user to enter the password."
 msgstr "Dotknij «Nowy użytkownik», aby wpisać hasło."
@@ -4394,6 +4427,9 @@ msgstr "Pomocnik karty nie zwrócił wyniku."
 
 msgid "The card is mounted read-only as backup storage: disconnect it in Storage first"
 msgstr "Karta jest zamontowana tylko do odczytu jako magazyn kopii: najpierw odłącz ją w «Nośnikach»"
+
+msgid "The card is not open for writing yet: the button above opens it."
+msgstr "Karta nie jest jeszcze otwarta do zapisu: robi to przycisk powyżej."
 
 msgid "The card is too small for these partitions"
 msgstr "Karta jest za mała na te partycje"
@@ -4694,6 +4730,9 @@ msgstr "Instalator tego ZIP zakończył się błędem"
 
 msgid "The installer result did not match the requested environment or operation."
 msgstr "Wynik instalatora nie pasował do żądanego środowiska lub operacji."
+
+msgid "The installers finished"
+msgstr "Instalatory zakończyły pracę"
 
 msgid "The interrupted transaction changed. Review the refreshed Systems screen."
 msgstr "Przerwana transakcja się zmieniła. Przejrzyj odświeżony ekran Systemów."
@@ -5136,6 +5175,9 @@ msgstr "ZIP jest uszkodzony"
 msgid "The ZIP's own script decides what is written. It can reach only these partitions:"
 msgstr "O tym, co zostanie zapisane, decyduje własny skrypt ZIP. Ma dostęp tylko do tych partycji:"
 
+msgid "THEIR INSTALLERS RUN AS ROOT"
+msgstr "INSTALATORY DZIAŁAJĄ JAKO ROOT"
+
 msgid "Theme"
 msgstr "Motyw"
 
@@ -5402,6 +5444,9 @@ msgstr "Ten wolumin nie jest już dostępny. Wróć do Plików i odśwież list�
 
 msgid "This ZIP has no installer of its own. Images and ROM packages go through Android or Flash a partition"
 msgstr "Ten ZIP nie ma własnego instalatora. Obrazy i pakiety ROM instaluje się przez Android lub Wgraj partycję"
+
+msgid "This ZIP is in the list already"
+msgstr "Ten ZIP jest już na liście"
 
 msgid "Thursday"
 msgstr "czwartek"

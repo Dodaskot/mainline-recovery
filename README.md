@@ -13,7 +13,7 @@ on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md).
 
 | | |
 |---|---|
-| Recovery | 0.6.180, SHA-256 `f4ded0d98affca723870d32e2f7c3bb7a648b4109b83d59055a3d8a4d6eefd2a` |
+| Recovery | 0.6.181, SHA-256 `8c1918588cf7a60222856b8d727c9a659133636790c097906fbda0a6552f549c` |
 | Recovery kernel | `7.2.0-a22x-recovery+ #123`: [linux-a22x](https://github.com/Dodaskot/linux-a22x) branch `a22x-recovery`, tag `a22x-recovery-kernel123` |
 | Tested with | BOOT v146 (`releases/v146`, kernel `#122`) and v145 (kernel `#121`), branch `a22x-boot` |
 | Image | published with the releases of this repository since 0.6.180: the same build without the developer's SSH key and without the phone's Bluetooth address (see [Building](#building)) |
@@ -283,7 +283,7 @@ networks are not part of this repository.
   over a file in RAM (table, kernel reread, `mkdosfs`, `mkfs.ext4`, `mkswap`,
   then `blkid`, mounts and `fdisk -l`); no real card has been erased yet.
 
-### Added in 0.6.176 to 0.6.180
+### Added in 0.6.176 to 0.6.181
 
 - **Screenshot** (0.6.176): Volume down and Power together, in either order.
   The PNG is packed and goes to `A22xScreenshots` on a USB drive or an SD
@@ -316,6 +316,11 @@ networks are not part of this repository.
   page that erases Android's data by itself; before, the request stayed in
   `misc` and the bootloader came back to the recovery at every start. BOOT is
   not touched, so a root in it stays for the fresh Android.
+- **Several ZIPs in one go** (0.6.181), as TWRP adds more ZIPs: each is
+  reviewed when it is chosen and joins a list of up to six; one hold runs
+  their installers in order and stops at the first that fails, and the result
+  says what became of each. A restart of the system afterwards can be asked
+  for; it counts down ten seconds and can be stopped.
 
 ### Power
 

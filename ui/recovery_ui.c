@@ -133,6 +133,7 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_LIST_CATEGORY=7400 /* ..7401 */,A_COPY_VERIFY=7404,A_COPY_RESTORE,A_COPY_DELETE,A_COPY_REFRESH,A_COPY_ITEM=7410 /* ..7433 */,
     A_COPY_MOUNT=7440 /* ..7443 */,A_COPY_PART=7450 /* ..7457 */,A_SOURCE_REFRESH=7460,A_SOURCE_CANCEL,A_ANDROID_FILE,A_NEW_FORMAT,
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
+    A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */ };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
@@ -178,6 +179,10 @@ typedef struct { char label[64],path[PATH_LEN]; uint64_t bytes; bool available,m
    made before 2026-11-11, a folder; and a card that holds none yet because it is not mounted. */
 #define COPIES_MAX 24
 #define COPY_PARTS 10
+/* ZIPs with installers that one hold runs one after another (2026-11-11). */
+#define ZIP_QUEUE 6
+#define ZIP_RESTART_MS 10000u
+typedef struct { char volume[96],token[80],path[PATH_LEN],name[208],sha[72],title[128],what[16],installer[16],changed[160];uint64_t size;unsigned int files;int state; /* 0 waits, 1 finished, 2 failed */ } ZipItem;
 #define COPY_WAITING 4
 typedef struct { char volume[32],token[72],place[64],path[256],created[32],sha[72],labels[COPY_PARTS][24]; unsigned int parts; uint64_t bytes,file_bytes; bool archive,writable,same; } PhoneCopy;
 typedef struct { char id[32],token[72],label[64],fs[16]; uint64_t bytes; } CopyVolume;
@@ -412,7 +417,9 @@ typedef struct {
     char root_boot_root[16],root_superkey[72],root_key_file[PATH_LEN];int root_key_tool;
     /* A ZIP that installs itself (zip_install.py, 2026-11-11): the chosen file and what its review said. */
     char zip_helper[PATH_LEN],zip_volume[96],zip_token[80],zip_path[PATH_LEN],zip_name[208],zip_sha[72],zip_title[128],zip_what[16],zip_installer[16],zip_warnings[512],zip_parts[160];
-    uint64_t zip_size;unsigned int zip_files;bool zip_pick,zip_known;char gsi_helper[PATH_LEN];char saved_note[160],saved_argument[208]; /* Images saved on the phone; saved_delete counts from 1. */
+    uint64_t zip_size;unsigned int zip_files;bool zip_pick,zip_known;
+    /* The list of ZIPs to run: zip_adding: the picker is open for one more; zip_restart: restart the system when all finished. */
+    ZipItem zip_queue[ZIP_QUEUE];unsigned int zip_count,zip_at,zip_restart_shown;bool zip_adding,zip_restart,zip_ran;uint64_t zip_restart_at;char gsi_helper[PATH_LEN];char saved_note[160],saved_argument[208]; /* Images saved on the phone; saved_delete counts from 1. */
     bool catalog_checked,catalog_check_done;unsigned int catalog_servers,catalog_updated,catalog_gone,catalog_failed;char catalog_problem[120];
     bool systems_wipe,systems_plan_erase,systems_plan_format,systems_plan_boot,systems_adding;char systems_remote_id[48];uint64_t systems_plan_download;
     Job job;
@@ -517,7 +524,7 @@ static bool start_install_job(App*a,int kind);
 static int complete_install_job(App*a,const Json*j,int kind,bool ok);
 static void complete_flash_job(App*a,const Json*j,int kind,bool ok);
 static void action(App*a,int id);
-static void update_battery(App*a);static void reset_request_poll(App*a);
+static void update_battery(App*a);static void reset_request_poll(App*a);static void zip_item_to_review(App*a,const ZipItem*it);static void settings_save(App*a,bool wait);
 static long sysfs_number(const char*path,long fallback);
 static void complete_usb_sync(App*a,const Json*j,bool ok);
 static void complete_usb_backup(App*a,const Json*j,bool ok);
@@ -1285,6 +1292,7 @@ static void render_result(App*a){
     bool diagnostic=a->result_return==TOOLS||a->result_return==TOOLS_EXPORT,second=!a->successful&&a->systems_remove_offer;
     second=second||(a->successful&&a->result_return==FLASH&&!a->flash_restore&&a->allow_power&&(!strcmp(flash_target_label(a),"recovery")||!strcmp(flash_target_label(a),"boot")));
     second=second||(a->successful&&a->result_return==ANDROID_MENU&&((a->android_installed&&a->allow_power)||a->stock_boot_path[0]));
+    second=second||(a->successful&&a->zip_ran&&a->allow_power);
     int limit=second?1190:1304;
     Rect hero={28,232,664,150};rounded(a,hero,28,PANEL);gradient(a,(Rect){46,hero.y+19,112,112},34,ICON_FILL,ICON_FILL);
     icon(a,a->successful?A_VERIFY:A_SYSTEM,67,hero.y+40,70,a->successful?GREEN:RED);
@@ -1315,7 +1323,12 @@ static void render_result(App*a){
                                                   ui_free(a)&&(recovery||(!a->systems_reboot_blocked&&!a->install.reboot_blocked)),false,0);
     }
     /* After stock Android the next step is its first start (2026-11-10). */
-    if(a->successful&&a->result_return==ANDROID_MENU&&a->android_installed&&a->allow_power)button(a,(Rect){28,1206,664,96},"Restart into Android",A_REBOOT,ui_free(a),false,0);
+    /* After installers: the restart that was asked for counts down and can be stopped; otherwise it is offered, as TWRP offers it. */
+    if(a->successful&&a->zip_ran&&a->allow_power&&a->zip_restart_at){
+        char label[96];unsigned int left=a->zip_restart_at>a->now?(unsigned int)((a->zip_restart_at-a->now+999)/1000):0;
+        snprintf(label,sizeof(label),T("Stay in recovery (the system restarts in %u s)"),left);raw_text(true);button(a,(Rect){28,1206,664,96},label,A_ZIP_STAY,true,true,0);raw_text(false);
+    }else if(a->successful&&a->zip_ran&&a->allow_power)button(a,(Rect){28,1206,664,96},"Reboot system",A_REBOOT,ui_free(a)&&!a->systems_reboot_blocked&&!a->install.reboot_blocked,false,0);
+    else if(a->successful&&a->result_return==ANDROID_MENU&&a->android_installed&&a->allow_power)button(a,(Rect){28,1206,664,96},"Restart into Android",A_REBOOT,ui_free(a),false,0);
     else if(a->successful&&a->result_return==ANDROID_MENU&&a->stock_boot_path[0])button(a,(Rect){28,1206,664,96},"Flash it to BOOT",A_STOCK_BOOT_FLASH,ui_free(a),false,0);
     button(a,(Rect){28,1320,664,102},files&&!picking?"Back to files":(a->result_return==USB_FILES?"Back to USB files":(a->result_return==PREPARE_FILESYSTEM?"Back to preparation":(a->result_return==DISPLAY_SETTINGS?"Back to display":(a->result_return==TOOLS||a->result_return==TOOLS_EXPORT?"Back to tools":(a->result_return==HOME?"Back to recovery":"Back"))))),A_DONE,true,true,0);
 }
@@ -3826,6 +3839,18 @@ static void hotplug_tick(App*a){
     adb_poll(a);
     sideload_poll(a);
     reset_request_poll(a);
+    /* The restart asked for after the last installer: it counts down on the result page, and leaving the page stops it. */
+    if(a->zip_restart_at){
+        if(a->screen!=RESULT)a->zip_restart_at=0;
+        else if(a->now>=a->zip_restart_at){
+            /* A read that runs in the background is waited for: the restart follows it. */
+            if(!a->job.pid){
+                a->zip_restart_at=0;
+                if(a->allow_power&&!a->systems_reboot_blocked&&!a->install.reboot_blocked){if(a->settings_dirty)settings_save(a,true);a->power_intent=200;a->exit_code=200;a->running=false;}
+                a->dirty=true;
+            }
+        }else{unsigned int left=(unsigned int)((a->zip_restart_at-a->now+999)/1000);if(left!=a->zip_restart_shown){a->zip_restart_shown=left;a->dirty=true;}}
+    }
     screenshot_poll(a);
     if(a->battery_refresh){a->battery_refresh=false;update_battery(a);a->dirty=true;}
     wifi_state_poll(a);
@@ -4043,6 +4068,8 @@ static void action_run(App*a,int id){
     if(id==A_TORCH){torch_set(a,!a->torch_on,a->torch_level);return;}
     if(id==A_TORCH_DOWN||id==A_TORCH_UP){torch_step(a,id==A_TORCH_UP?1:-1);return;}
     if(id==A_TORCH_ON||id==A_TORCH_OFF){if((id==A_TORCH_ON)!=a->torch_on)torch_set(a,id==A_TORCH_ON,a->torch_level);return;}
+    /* Stopping the restart that counts down after installers waits for nothing either. */
+    if(id==A_ZIP_STAY){a->zip_restart_at=0;a->dirty=true;return;}
     /* A finger on the bar takes the level under it; chosen with the keys, the bar is one step brighter. */
     if(id==A_TORCH_BAR){if(a->tapped)torch_choose(a,torch_bar_level(a,a->pressed_rect,a->pointer_x));else torch_step(a,1);return;}
     /* Going back and local settings need no job; anything else waits for a read in progress. */
@@ -4145,7 +4172,7 @@ static void action_run(App*a,int id){
         break;
     case A_VERIFY_ONE:if(start_job(a,J_VERIFY))a->result_return=DETAIL;break; /* Back to the backup that was checked. */
     case A_CONFIRM:if(a->plan_can_execute)start_job(a,a->plan_wipe?J_WIPE:(a->plan_restore?J_RESTORE:J_BACKUP));break;
-    case A_DONE:a->systems_remove_offer=false;screen(a,a->result_return);if(a->result_return==DISPLAY_SETTINGS){a->display_note[0]=0;start_display_job(a,J_DISPLAY_STATUS);}else if(a->result_return==PREPARE_FILESYSTEM){a->prepare_known=false;a->fs_inventory_destination=PREPARE_FILESYSTEM;start_files_job(a,J_FS_INVENTORY);}else if(a->result_return==USB_FILES)start_usb_job(a,J_USB_STATUS);else if(a->result_return==CARD_PAGE&&a->screen==CARD_PAGE){a->card_known=false;start_card_job(a,J_CARD_LIST);}break;
+    case A_DONE:a->systems_remove_offer=false;a->zip_ran=false;a->zip_restart_at=0;screen(a,a->result_return);if(a->result_return==DISPLAY_SETTINGS){a->display_note[0]=0;start_display_job(a,J_DISPLAY_STATUS);}else if(a->result_return==PREPARE_FILESYSTEM){a->prepare_known=false;a->fs_inventory_destination=PREPARE_FILESYSTEM;start_files_job(a,J_FS_INVENTORY);}else if(a->result_return==USB_FILES)start_usb_job(a,J_USB_STATUS);else if(a->result_return==CARD_PAGE&&a->screen==CARD_PAGE){a->card_known=false;start_card_job(a,J_CARD_LIST);}break;
     case A_USB_FILES:case A_USB_REFRESH:
         if(id==A_USB_FILES)a->page_scroll=0;
         a->usb_volumes_known=false;
@@ -4789,8 +4816,15 @@ static void update_battery(App*a){
             if(moved>=-most&&moved<=most)a->battery_estimate+=moved;
             if(weight>0){a->battery_ocv+=(open-a->battery_ocv)*0.25*weight;a->battery_samples++;}
             double apart=a->battery_ocv-a->battery_estimate;
+            /* A cell that is drained for minutes sags more than its resistance explains, and one that is
+               charged stands higher (on the phone, 2026-11-11: a copy at 0.2 to 0.5 A drew the estimate
+               down ten points in twelve minutes, and it climbed back afterwards). So the voltage is
+               believed at four points apart only against the current: while the cell is drained, that
+               it holds more; while it is charged, that it holds less. The other way it must be three
+               times as far apart. */
+            double up=current>60000?BATTERY_APART*3:BATTERY_APART,down=current<-60000?BATTERY_APART*3:BATTERY_APART;
             if(a->battery_samples<=BATTERY_SETTLE)a->battery_estimate=a->battery_ocv;
-            else if(apart>=BATTERY_APART||apart<=-BATTERY_APART){
+            else if(apart>=up||apart<=-down){
                 double step=seconds*1000.0/BATTERY_STEP_MS;if(step>1.0)step=1.0;
                 a->battery_estimate+=apart>0?step:-step;
             }
@@ -5029,7 +5063,7 @@ static bool preview(App*a,const char*name){
     else if(!strcmp(name,"wipe-android")){a->wipe_android=true;a->screen=WIPE_REVIEW;}
     else if(!strcmp(name,"reset-asked")||!strcmp(name,"reset-prompt")){a->wipe_android=a->reset_asked=a->reset_page=true;a->reset_prompt=!strcmp(name,"reset-prompt");a->allow_power=true;a->screen=WIPE_REVIEW;}
     else if(!strcmp(name,"android"))a->screen=ANDROID_MENU;
-    else if(!strcmp(name,"root")||!strcmp(name,"root-magisk")||!strcmp(name,"root-vbmeta")||!strcmp(name,"root-apatch")||!strcmp(name,"root-superkey")||!strcmp(name,"zip-review")){
+    else if(!strcmp(name,"root")||!strcmp(name,"root-magisk")||!strcmp(name,"root-vbmeta")||!strcmp(name,"root-apatch")||!strcmp(name,"root-superkey")||!strcmp(name,"zip-review")||!strcmp(name,"zip-queue")){
         /* 2026-11-10: the Root page as root.py lists it on this phone (stock Android, or Magisk in BOOT);
            2026-11-11: with APatch, whose tool and image come with the recovery. */
         static const struct{const char*id,*name,*version,*reason;uint64_t size;bool supported,bundled;}rows[]={
@@ -5044,10 +5078,17 @@ static bool preview(App*a,const char*name){
         copy(a->root_boot_root,sizeof(a->root_boot_root),a->root_boot_magisk?"magisk":"");a->root_key_tool=-1;
         if(a->root_boot_magisk)copy(a->root_stock_path,sizeof(a->root_stock_path),"/a22x-recovery/saved-boot/stock-A226BXXSBDZC3-5df570768942.img");
         a->root_known=true;a->screen=ROOT_PAGE;
-        if(!strcmp(name,"zip-review")){
+        if(!strcmp(name,"zip-review")||!strcmp(name,"zip-queue")){
         copy(a->zip_name,sizeof(a->zip_name),"Magisk-v31.1.zip");copy(a->zip_title,sizeof(a->zip_title),"Magisk");copy(a->zip_what,sizeof(a->zip_what),"magisk");copy(a->zip_installer,sizeof(a->zip_installer),"script");
         copy(a->zip_sha,sizeof(a->zip_sha),"89cefac0a318afa39fb3880c45c87b036c05bc1ebf02a7a715b7f8d7c26ac6e7");a->zip_size=10679283;a->zip_files=77;a->zip_known=true;
-        copy(a->zip_parts,sizeof(a->zip_parts),"boot, dtbo, vbmeta, super, system, vendor, product, odm");a->screen=ZIP_REVIEW;}
+        copy(a->zip_parts,sizeof(a->zip_parts),"boot, dtbo, vbmeta, super, system, vendor, product, odm");a->screen=ZIP_REVIEW;a->allow_power=true;
+        copy(a->zip_volume,sizeof(a->zip_volume),"sdcard-p1");copy(a->zip_path,sizeof(a->zip_path),"/Magisk-v31.1.zip");zip_item_from_review(a,&a->zip_queue[0]);a->zip_count=1;
+        if(!strcmp(name,"zip-queue")){
+            /* 2026-11-11: three ZIPs that one hold runs in order, and a restart asked for afterwards. */
+            static const char*const more[]={"lineage-22.2-20261101-UNOFFICIAL-a22x.zip","MindTheGapps-15.0.0-arm64-20261020.zip"};
+            for(unsigned int n=0;n<2;n++){a->zip_queue[n+1]=a->zip_queue[0];copy(a->zip_queue[n+1].name,sizeof(a->zip_queue[0].name),more[n]);snprintf(a->zip_queue[n+1].path,sizeof(a->zip_queue[0].path),"/%s",more[n]);}
+            ZipItem first=a->zip_queue[1];a->zip_queue[1]=a->zip_queue[2];a->zip_queue[2]=a->zip_queue[0];a->zip_queue[0]=first;a->zip_count=3;a->zip_restart=true;
+        }}
     if(!strcmp(name,"root-apatch")){a->root_key_tool=1;copy(a->root_superkey,sizeof(a->root_superkey),"Preview-Key-2026");}
         if(!strcmp(name,"root-superkey")){a->root_key_tool=1;a->fs_prompt_kind=J_ROOT_SUPERKEY;copy(a->fs_prompt,sizeof(a->fs_prompt),"Preview-Key-2026");a->prompt_cursor=strlen(a->fs_prompt);a->screen=FILE_PROMPT;}
     }
@@ -5370,6 +5411,72 @@ static int test_screenshot_keys(void){
     a->display_blanked=false;a->shot_flash=a->now;screenshot_poll(a);assert(a->shot_flash);a->now+=SHOT_FLASH_MS;screenshot_poll(a);assert(!a->shot_flash);
     free(a->pixels);free(a);return 1;
 }
+/* 2026-11-11: several ZIPs that one hold runs one after another. Replies of the helper are fed in by
+   hand; the jobs the list starts are real children that are dropped at once. */
+static bool zip_test_reply(App*a,const char*reply,int kind,bool ok){
+    char text[1536];JsonToken t[96];Json j;copy(text,sizeof(text),reply);
+    if(json_parse(&j,text,t,96)<1)return false;
+    complete_zip_job(a,&j,kind,ok);return true;
+}
+static void zip_test_drop(App*a){
+    if(!a->job.pid)return;
+    (void)kill(a->job.pid,SIGKILL);(void)waitpid(a->job.pid,NULL,0);
+    if(!a->job.out_eof)close(a->job.fdout);
+    if(!a->job.err_eof)close(a->job.fderr);
+    free(a->job.output);memset(&a->job,0,sizeof(a->job));
+}
+static void zip_test_choose(App*a,const char*path,bool adding,const char*name){
+    char reply[640];copy(a->zip_volume,sizeof(a->zip_volume),"sdcard-p1");copy(a->zip_token,sizeof(a->zip_token),"token");copy(a->zip_path,sizeof(a->zip_path),path);a->zip_adding=adding;
+    snprintf(reply,sizeof(reply),"{\"ok\":true,\"operation\":\"inspect\",\"name\":\"%s\",\"sha256\":\"%064d\",\"title\":\"\",\"what\":\"zip\",\"installer\":\"script\",\"size\":1000,\"files\":3,\"warnings\":[],\"partitions\":[\"boot\",\"super\"]}",name,7);
+    assert(zip_test_reply(a,reply,J_ZIP_INSPECT,true));
+}
+static int test_zip_queue(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->inventory_ok=true;a->now=10000;a->allow_power=true;a->fixture[0]='/';
+    copy(a->python,sizeof(a->python),"/bin/true");copy(a->zip_helper,sizeof(a->zip_helper),"zip_install.py");
+    /* A ZIP chosen afresh is a list of one; one that is added joins it; the same file again keeps its place. */
+    zip_test_choose(a,"/a.zip",false,"a.zip");assert(a->zip_count==1&&a->zip_known&&a->screen==ZIP_REVIEW&&!a->zip_adding);
+    zip_test_choose(a,"/b.zip",true,"b.zip");assert(a->zip_count==2&&!strcmp(a->zip_queue[0].name,"a.zip")&&!strcmp(a->zip_queue[1].name,"b.zip")&&!a->zip_adding);
+    a->toast[0]=0;zip_test_choose(a,"/a.zip",true,"a.zip");assert(a->zip_count==2&&a->toast[0]);
+    zip_test_choose(a,"/c.zip",true,"c.zip");assert(a->zip_count==3);
+    render(a);assert(test_button(a,A_ZIP_ADD)&&test_button(a,A_ZIP_REMOVE+2)&&!test_button(a,A_ZIP_REMOVE+3)&&test_button(a,A_ZIP_RESTART)&&test_button(a,A_ZIP_CONFIRM)->hold_ms==5000);
+    /* One taken out: the rest moves up, and the review shown is the last one's. */
+    assert(test_press(a,A_ZIP_REMOVE,50)&&a->zip_count==2&&!strcmp(a->zip_queue[0].name,"b.zip")&&!strcmp(a->zip_path,"/c.zip"));
+    zip_test_choose(a,"/a.zip",true,"a.zip");assert(a->zip_count==3&&!strcmp(a->zip_queue[2].name,"a.zip"));
+    /* The hold runs the first; each one that finishes starts the next; the result names all three. */
+    assert(test_press(a,A_ZIP_CONFIRM,5100)&&a->job.pid&&a->job.kind==J_ZIP_RUN&&a->zip_at==0&&!strcmp(a->zip_path,"/b.zip"));zip_test_drop(a);
+    assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[\"boot\"],\"log\":[\"one\"]}",J_ZIP_RUN,true)&&a->zip_at==1&&a->job.pid&&!strcmp(a->zip_path,"/c.zip")&&a->screen!=RESULT);zip_test_drop(a);
+    assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[\"super\",\"boot\"],\"log\":[\"two\"]}",J_ZIP_RUN,true)&&a->zip_at==2&&a->job.pid);zip_test_drop(a);
+    assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[],\"log\":[\"three\"]}",J_ZIP_RUN,true)&&!a->job.pid&&a->screen==RESULT&&a->successful&&a->zip_ran&&!a->zip_restart_at);
+    assert(!strcmp(a->status,"The installers finished")&&strstr(a->message,"boot super")&&strstr(a->message,"1. b.zip: finished")&&strstr(a->message,"3. a.zip: finished")&&strstr(a->message,"three")&&!strstr(a->message,"one"));
+    render(a);assert(test_button(a,A_REBOOT)&&!test_button(a,A_ZIP_STAY));
+    assert(test_press(a,A_DONE,50)&&!a->zip_ran);
+    /* The second fails: the third is not run, and the result says which is which. */
+    a->screen=ZIP_REVIEW;assert(test_press(a,A_ZIP_CONFIRM,5100)&&a->job.pid);zip_test_drop(a);
+    assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[\"boot\"],\"log\":[\"one\"]}",J_ZIP_RUN,true)&&a->job.pid);zip_test_drop(a);
+    assert(zip_test_reply(a,"{\"ok\":false,\"operation\":\"run\",\"error\":{\"code\":\"ZIP_INSTALLER_FAILED\",\"message\":\"x\",\"details\":{\"changed\":[],\"log\":[\"bad\"]}}}",J_ZIP_RUN,false));
+    assert(!a->job.pid&&a->screen==RESULT&&!a->successful&&!strcmp(a->status,"ZIP_INSTALLER_FAILED")&&strstr(a->message,"1. b.zip: finished")&&strstr(a->message,"2. c.zip: failed")&&strstr(a->message,"3. a.zip: not run")&&strstr(a->message,"bad"));
+    render(a);assert(!test_button(a,A_REBOOT)&&!test_button(a,A_ZIP_STAY));
+    /* A ZIP chosen afresh is a list of one again, shown as one ZIP was before. */
+    zip_test_choose(a,"/d.zip",false,"d.zip");assert(a->zip_count==1&&!strcmp(a->zip_queue[0].name,"d.zip"));
+    render(a);assert(test_button(a,A_ZIP_ADD)&&!test_button(a,A_ZIP_REMOVE));
+    /* The restart that was asked for counts down on the result page; Stay in recovery stops it. */
+    assert(test_press(a,A_ZIP_RESTART,50)&&a->zip_restart);
+    assert(test_press(a,A_ZIP_CONFIRM,5100)&&a->job.pid);zip_test_drop(a);a->now=50000;
+    assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[\"boot\"],\"log\":[\"done\"]}",J_ZIP_RUN,true)&&a->screen==RESULT&&a->zip_restart_at==50000+ZIP_RESTART_MS&&!strcmp(a->status,"The installer finished"));
+    render(a);assert(test_button(a,A_ZIP_STAY)&&!test_button(a,A_REBOOT));
+    a->now=55000;hotplug_tick(a);assert(a->running&&a->zip_restart_at&&a->zip_restart_shown==5);
+    /* Stay works at once, also while a read runs in the background (the tick may have started one). */
+    action(a,A_ZIP_STAY);assert(!a->zip_restart_at&&a->running);zip_test_drop(a);render(a);assert(test_button(a,A_REBOOT));
+    /* Left alone, it restarts the system; leaving the page first stops it; a read in the background is waited for. */
+    a->zip_restart_at=a->now+ZIP_RESTART_MS;a->screen=HOME;hotplug_tick(a);zip_test_drop(a);assert(!a->zip_restart_at&&a->running);
+    a->screen=RESULT;a->zip_restart_at=a->now+ZIP_RESTART_MS;a->now+=ZIP_RESTART_MS;a->job.pid=1;hotplug_tick(a);assert(a->running&&a->zip_restart_at);
+    a->job.pid=0;hotplug_tick(a);assert(!a->running&&a->exit_code==200&&a->power_intent==200);zip_test_drop(a);
+    /* No more than six. */
+    a->running=true;a->exit_code=0;zip_test_choose(a,"/1.zip",false,"1.zip");
+    for(int n=2;n<=8;n++){char path[16],name[16];snprintf(path,sizeof(path),"/%d.zip",n);snprintf(name,sizeof(name),"%d.zip",n);zip_test_choose(a,path,true,name);}
+    assert(a->zip_count==ZIP_QUEUE);render(a);assert(!test_button(a,A_ZIP_ADD)->enabled);
+    free(a->pixels);free(a);return 1;
+}
 /* 2026-11-11: a factory reset asked for in Android's settings arrives as a request in misc; init reads
    it and the page of Data for Android opens for it. A file stands in for what init left. */
 static int test_reset_request(void){
@@ -5446,6 +5553,15 @@ static int test_battery(void){
     a->now+=30000;update_battery(a);assert(fabs(a->battery_estimate-59.0)<0.05);
     a->now+=15000;update_battery(a);assert(fabs(a->battery_estimate-58.5)<0.05);
     a->battery_estimate=a->battery_ocv+3.5;a->now+=30000;update_battery(a);assert(fabs(a->battery_estimate-a->battery_ocv-3.5)<0.05);
+    /* While the cell is charged its voltage stands high: that it holds more than the estimate is believed only from twelve points on. */
+    a->battery_estimate=a->battery_ocv-8.0;a->now+=30000;update_battery(a);assert(fabs(a->battery_estimate-(a->battery_ocv-8.0))<0.05);
+    a->battery_estimate=a->battery_ocv-13.0;a->now+=30000;update_battery(a);assert(fabs(a->battery_estimate-(a->battery_ocv-12.0))<0.05);
+    /* While it is drained its voltage sags: that it holds less is believed only from twelve points on, that it holds more at four. */
+    {double level=a->battery_ocv;BATTERY_FILE("current_now","%d\n",-200000);BATTERY_FILE("voltage_now","%d\n",3790000-42000);   /* the same open-circuit voltage at 120 mOhm */
+     a->battery_ohm=0.120;a->battery_uv=0;a->battery_estimate=level+8.0;a->now+=30000;update_battery(a);assert(fabs(a->battery_ocv-level)<0.6&&fabs(a->battery_estimate-(level+8.0))<0.05);
+     a->battery_estimate=a->battery_ocv+13.0;a->now+=30000;update_battery(a);assert(fabs(a->battery_estimate-(a->battery_ocv+12.0))<0.6);
+     a->battery_estimate=a->battery_ocv-5.0;a->now+=30000;update_battery(a);assert(fabs(a->battery_estimate-(a->battery_ocv-4.0))<0.6);
+     BATTERY_FILE("current_now","%d\n",150000);BATTERY_FILE("voltage_now","%d\n",3790000);a->battery_uv=0;a->now+=30000;update_battery(a);}
     /* A heavy current says little about the cell: the smoothed voltage level does not move for it. */
     double held=a->battery_ocv;BATTERY_FILE("current_now","%d\n",-2000000);BATTERY_FILE("voltage_now","%d\n",3500000);
     a->now+=10000;update_battery(a);assert(a->battery_ocv==held&&!a->battery_charging);
@@ -5652,7 +5768,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;

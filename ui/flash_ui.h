@@ -220,6 +220,10 @@ static bool flash_action(App*a,int id){
     if(a->flash_pick){
         /* Samsung's firmware is chosen with the same picker (2026-11-10): its AP file. */
         /* Back to the page the image was asked for on: the partitions, those inside super, or Restore. */
+        if((id==A_FLASH_CANCEL_PICK||(id==A_BACK&&a->screen==FILE_VOLUMES))&&a->zip_adding&&a->zip_count){
+            a->zip_adding=false;a->flash_pick=a->samsung_pick=a->stock_boot_pick=a->zip_pick=a->rom_pick=false;
+            zip_item_to_review(a,&a->zip_queue[a->zip_count-1]);a->zip_known=true;screen(a,ZIP_REVIEW);return true;
+        }
         if(id==A_FLASH_CANCEL_PICK||(id==A_BACK&&a->screen==FILE_VOLUMES)){bool firmware=a->samsung_pick||a->zip_pick||a->rom_pick;enum Screen from=came_from_picker(a,flash_home(a));a->flash_pick=a->samsung_pick=a->stock_boot_pick=a->zip_pick=a->rom_pick=false;screen(a,firmware?ANDROID_MENU:from);return true;}
         return pick_action(a,id,a->rom_pick?rom_chosen:(a->zip_pick?zip_chosen:(a->samsung_pick?(a->stock_boot_pick?stock_boot_chosen:samsung_chosen):flash_chosen)));
     }

@@ -209,6 +209,27 @@ static bool zip_review_to_folder(App*a){
     NAV_CHECK(press(a,A_BACK)&&a->screen==FILE_VOLUMES&&press(a,A_BACK)&&a->screen==ANDROID_MENU&&!a->zip_pick&&!a->flash_pick);
     return true;
 }
+/* Two ZIPs in a list (2026-11-11): the second is added from the folder of the first; leaving the picker
+   that was opened for one more returns to the list; one hold runs both, one after the other. */
+static bool zip_queue(App*a){
+    NAV_CHECK(android_menu(a)&&press(a,A_ZIP)&&a->screen==FILE_VOLUMES&&await_job(a));
+    NAV_CHECK(press(a,A_FS_VOLUME_ITEM)&&await_job(a)&&a->screen==FILE_BROWSER&&a->file_count==2);
+    NAV_CHECK(press(a,A_FS_ENTRY)&&await_job(a)&&a->screen==ZIP_REVIEW&&a->zip_known&&a->zip_count==1);
+    NAV_CHECK(press(a,A_ZIP_ADD)&&a->screen==FILE_BROWSER&&a->zip_adding&&a->zip_pick&&a->flash_pick&&await_job(a));
+    NAV_CHECK(press(a,A_FS_ENTRY+1)&&await_job(a)&&a->screen==ZIP_REVIEW&&a->zip_count==2&&!a->zip_adding&&a->zip_known);
+    NAV_CHECK(strcmp(a->zip_queue[0].path,a->zip_queue[1].path)!=0);
+    /* The same file once more keeps the list as it is. */
+    NAV_CHECK(press(a,A_ZIP_ADD)&&a->screen==FILE_BROWSER&&await_job(a)&&press(a,A_FS_ENTRY)&&await_job(a)&&a->screen==ZIP_REVIEW&&a->zip_count==2);
+    /* One more is asked for and given up: back out of the folder and the volumes, and the list is there. */
+    NAV_CHECK(press(a,A_ZIP_ADD)&&a->screen==FILE_BROWSER&&await_job(a));
+    NAV_CHECK(press(a,A_BACK)&&a->screen==FILE_VOLUMES&&a->zip_adding&&press(a,A_BACK)&&a->screen==ZIP_REVIEW&&a->zip_count==2&&a->zip_known&&!a->zip_adding&&!a->flash_pick&&!a->zip_pick);
+    /* One hold: the first installer, then the second, then the result with both. */
+    NAV_CHECK(test_press(a,A_ZIP_CONFIRM,5100)&&a->job.pid&&a->job.kind==J_ZIP_RUN&&a->zip_at==0);
+    for(int n=0;n<4&&(a->job.pid||a->screen!=RESULT);n++)NAV_CHECK(await_job(a)||a->screen==RESULT);
+    NAV_CHECK(a->screen==RESULT&&a->successful&&a->zip_at==1&&a->zip_queue[0].state==1&&a->zip_queue[1].state==1&&a->zip_ran&&!a->zip_restart_at);
+    NAV_CHECK(press(a,A_DONE)&&a->screen==ANDROID_MENU&&!a->zip_ran);
+    return true;
+}
 /* The stock BOOT kept, then "Flash it to BOOT": the pages of Flash a partition return to Android. */
 static bool kept_boot_to_android(App*a){
     NAV_CHECK(picker_folder(a,A_STOCK_BOOT)&&a->stock_boot_pick);
@@ -403,6 +424,7 @@ int main(int argc,char**argv){
         "*samsung_firmware.py*' inspect '*bad*) echo '%s'; exit 1;;\n"
         "*samsung_firmware.py*' inspect '*) echo '%s';;\n"
         "*samsung_firmware.py*' extract-boot '*) echo '%s';;\n"
+        "*zip_install.py*' run '*) sleep 0.05; echo '{\"ok\":true,\"operation\":\"run\",\"changed\":[\"boot\"],\"log\":[\"done\"]}';;\n"
         "*zip_install.py*' inspect '*) echo '%s';;\n"
         "*flash.py*' targets'*) sleep 0.1; echo '%s';;\n"
         "*flash.py*' check '*) echo '%s';;\n"
@@ -416,7 +438,7 @@ int main(int argc,char**argv){
     fclose(f);chmod(script,0700);
     static const struct{const char*name;bool(*run)(App*);}cases[]={{"back-during-read",back_during_read},{"home-during-read",home_during_read},{"home-swipe-over-read",home_swipe_over_read},{"review-to-folder",review_to_folder},
         {"refusal-to-folder",refusal_to_folder},{"zip-review-to-folder",zip_review_to_folder},{"kept-boot-to-android",kept_boot_to_android},{"catalog-left",catalog_left},{"refusal-kept",refusal_kept},{"export-from-home",export_from_home},{"android-card-download",android_card_download},{"sideload-opens-review",sideload_opens_review},
-        {"sheet-mounts-the-card",sheet_mounts_the_card},{"rom-from-a-file",rom_from_a_file},{"android-copies",android_copies}};
+        {"sheet-mounts-the-card",sheet_mounts_the_card},{"rom-from-a-file",rom_from_a_file},{"android-copies",android_copies},{"zip-queue",zip_queue}};
     for(size_t n=0;n<sizeof(cases)/sizeof(*cases);n++){
         App*a=fresh(script,argv[1]);if(!a)return 2;
         bool good=cases[n].run(a);if(!good)failed=1;

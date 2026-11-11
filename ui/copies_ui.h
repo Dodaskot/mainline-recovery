@@ -210,7 +210,7 @@ static void render_copy_detail(App*a){
         rounded(a,r,20,on?ORANGE_DARK:BG);raw_text(true);ellipsis(a,r.x+18,r.y+7,r.w-36,0,on?TEXT:MUTED,c->labels[k]);raw_text(false);
         register_button(a,r,A_COPY_PART+(int)k,free_ui&&c->archive,0);
     }
-    ellipsis(a,52,top+64+(int)rows*46,616,0,MUTED,c->archive?(data?"Tap a partition to leave it out, userdata to put the data back.":"Tap a partition to leave it out."):"A folder copy is restored whole.");
+    ellipsis(a,52,top+64+(int)rows*46,616,0,MUTED,c->archive?(data?"Tap leaves a partition out; userdata puts the data back.":"Tap a partition to leave it out."):"A folder copy is restored whole.");
     int y=top+height+32;
     if(!c->same)text_tile(a,y,0,ORANGE,"This copy was made on another phone and is not written back here.",3);
     else if(!c->archive&&!c->writable)text_tile(a,y,0,ORANGE,"A folder copy saves the replaced partitions beside itself first: mount this card with write access in Files.",4);
