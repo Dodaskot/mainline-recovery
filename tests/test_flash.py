@@ -478,12 +478,15 @@ class Flash(unittest.TestCase):
         self.assertTrue(kept.name.startswith('linux-7.2.0-a22x'))
         self.assertEqual(kept.read_bytes(), before)
         self.assertEqual(json.loads(Path(str(kept) + '.json').read_text())['kind'], 'linux')
-        # Without a cache volume nothing is kept, and the write still goes on.
+        # Without a cache volume and without a card that can take a copy, there is no way back: the
+        # write is refused (2026-11-12, on the phone: BOOT was written with no copy at all).
         self.volumes([{'id': 'usb-p1', 'path': 'usb', 'fs_type': 'exfat', 'mounted': True, 'read_only': True}])
         path = self.image(linux, 'linux.img')
         code, checked, _ = self.check('boot', path)
+        written = (self.root / 'targets/boot').read_bytes()
         code, done, _ = self.write('boot', path, checked)
-        self.assertEqual((code, done['kept_boot']), (0, None))
+        self.assertEqual((code, done['error']['code']), (2, 'ROLLBACK_UNAVAILABLE'))
+        self.assertEqual((self.root / 'targets/boot').read_bytes(), written)
 
     def test_unusual_boot_header_warns_but_a_user_may_continue(self):
         code, checked, _ = self.check('boot', self.image(boot_image(board=b'OTHERBOARD')))

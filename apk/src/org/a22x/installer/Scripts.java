@@ -112,7 +112,9 @@ final class Scripts {
             + "  rel=$(printf %s \"$(uname -r)\" | tr -c 'A-Za-z0-9._+-' '_' | cut -c1-48)\n"
             + "  build=$(printf %s \"$(getprop ro.build.version.incremental)\" | tr -c 'A-Za-z0-9._+-' '_' | cut -c1-40)\n"
             + "  if [ \"$kind\" = stock ]; then name=\"stock-$build-$(echo \"$sha\" | cut -c1-12).img\"; else name=\"android-$rel-$(echo \"$sha\" | cut -c1-12).img\"; fi\n"
-            + "  if ls \"$dir\"/*.sha256 2>/dev/null | xargs cat 2>/dev/null | grep -q \"^$sha \"; then rm -f \"$tmp\"; echo \"A22X:KEPT already\"; else\n"
+            // Kept already only when the image itself is there, not only its description (2026-11-12).
+            + "  have=; for s in \"$dir\"/*.sha256; do [ -f \"$s\" ] || continue; read -r h n < \"$s\"; [ \"$h\" = \"$sha\" ] && [ -f \"$dir/$n\" ] && have=1; done\n"
+            + "  if [ -n \"$have\" ]; then rm -f \"$tmp\"; echo \"A22X:KEPT already\"; else\n"
             + "    {\n"
             + "      mv \"$tmp\" \"$dir/$name\"\n"
             + "      printf '{\\n \"schema\": \"a22x.saved-boot.v1\",\\n \"kind\": \"android\",\\n \"release\": \"%s\",\\n \"build\": \"%s\",\\n"

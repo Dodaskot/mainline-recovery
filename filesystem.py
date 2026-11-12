@@ -1108,6 +1108,10 @@ class DeviceContext(BaseContext):
                 'f2fs': ['/bin/make_f2fs', '-g', 'android', '-f', '-O', 'project_quota,extra_attr', '-O', 'casefold',
                          '-C', 'utf8', '-O', 'compression', '-O', 'extra_attr'],
                 'vfat': ['/bin/busybox', 'mkdosfs', '-F', '32', '-n', 'A22X']}[fs_type]
+        if ident == 'userdata' and fs_type == 'f2fs':
+            # 2026-11-12 review: userdata for Android gets the features install.py's reset uses, the
+            # ones Samsung's own userdata.img has and its kernel 4.14 mounts (no casefold).
+            tool = ['/bin/make_f2fs', '-g', 'android', '-f', '-O', 'quota', '-O', 'compression', '-O', 'extra_attr', '-l', 'data']
         done = subprocess.run([*tool, volume['path']], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True, errors='replace')
         if done.returncode:
@@ -1725,6 +1729,12 @@ def make_directory(context, ident, path, confirmed=False, expected=None):
         check_absent(directory, name)
         pin.recheck()
         os.mkdir(name, mode=0o755, dir_fd=directory)
+        # The recovery runs with umask 077, which made every new folder 0700 (2026-11-12 review).
+        made = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
+        try:
+            os.fchmod(made, 0o755)
+        finally:
+            os.close(made)
         os.fsync(directory)
         return {'volume': ident, 'path': clean_path(path), 'created': True}
 
@@ -1772,6 +1782,9 @@ def rename_entry(context, ident, path, destination, confirmed=False, expected=No
             return {'volume': ident, 'path': source_path, 'destination': destination_path}
 
 
+FAT_FILE_LIMIT = (4 << 30) - 1
+
+
 def copy_file(context, ident, path, destination_volume, destination, confirmed=False,
               expected=None, expected_destination=None, expected_sha=None):
     context.confirm(confirmed)
@@ -1789,6 +1802,9 @@ def copy_file(context, ident, path, destination_volume, destination, confirmed=F
                 usage = os.fstatvfs(target_dir)
                 if usage.f_bavail * usage.f_frsize < os.fstat(source).st_size + 1024 * 1024:
                     fail('INSUFFICIENT_SPACE', 'The destination lacks space for this file and a small reserve')
+                if target_pin.volume.get('fs_type') == 'vfat' and os.fstat(source).st_size > FAT_FILE_LIMIT:
+                    # 2026-11-12 review: the copy ran until FAT32 refused it at 4 GiB.
+                    fail('FILE_TOO_LARGE', 'FAT32 holds no file of 4 GiB or more: use a card formatted exFAT or ext4')
                 target = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=target_dir)
                 while True:
                     data = os.read(source, CHUNK)

@@ -388,6 +388,23 @@ def require_userdata(pin):
 def boot_identity(context):
     if context.mode == 'fixture':
         return {'profile': PROFILE_ID, 'boot_sha256': BOOT_SHA256, 'fixture': True}
+    # status reads BOOT once for all its questions (2026-11-12 review: twice 32 MiB at every look).
+    cache = getattr(context, '_a22x_boot_identity', None)
+    if cache is not None:
+        if isinstance(cache, fs.FilesystemError):
+            raise cache
+        if cache:
+            return cache
+        try:
+            context._a22x_boot_identity = boot_identity_read(context)
+        except fs.FilesystemError as error:
+            context._a22x_boot_identity = error
+            raise
+        return context._a22x_boot_identity
+    return boot_identity_read(context)
+
+
+def boot_identity_read(context):
     sys.path.insert(0, str(Path(__file__).resolve().parent / 'backend'))
     from storage import DeviceContext as BlockContext
     from common import RecoveryError, stamp as block_stamp
@@ -1548,6 +1565,14 @@ def slots(tree, state):
 
 
 def status(context):
+    context._a22x_boot_identity = {}
+    try:
+        return status_read(context)
+    finally:
+        del context._a22x_boot_identity
+
+
+def status_read(context):
     volume = context.volume('userdata')
     base = {'schema': 'a22x.distro.status.v1', 'mounted': volume['mounted'],
             'read_only': volume['read_only'], 'volume_token': volume['volume_token'],
@@ -1560,6 +1585,10 @@ def status(context):
     # cache or download; boot_outdated: BOOT is Linux, but not the release this recovery was made for.
     base['boot_outdated'] = base['boot_linux'] and boot_outdated(context)
     base['boot_source'] = (linux_boot_choice(context)[0] or {}).get('from', '') if not base['boot_linux'] or base['boot_outdated'] else ''
+    if base['foreign'] and volume['mounted']:
+        # 2026-11-12 review: Android's data mounted in Files made status fail (not Linux userdata).
+        return {**base, 'initialized': None, 'transaction_state': 'none', 'normal_boot_safety_known': False,
+                'next_action': 'Install a new system: userdata is formatted for Linux first'}
     if not volume['mounted']:
         return {**base, 'initialized': None, 'transaction_state': 'unknown-unmounted',
                 'normal_boot_safety_known': False,
@@ -1742,6 +1771,11 @@ def install(context, plan, confirmed=False):
                 require(scan == plan['binding']['scan'], 'ARCHIVE_CHANGED', 'Archive expansion differs from its plan')
                 readiness = validate_root(target, profile, pin.volume.get('filesystem_uuid'))
                 home = home_binding(live, target)
+        except BaseException:
+            # 2026-11-12 review: a failed or cancelled import left its unpacked tree in staging, and
+            # nothing in the interface could remove it.
+            shutil.rmtree(real_path(live) / stage, ignore_errors=True)
+            raise
         finally:
             os.close(fd)
         live.write_json(stage + '/slot.json', seal({'schema': 'a22x.distro.slot.v1', 'id': bundle['id'],
@@ -2079,7 +2113,11 @@ def card_store(context, writing=False, need=0, holding=None):
                 wanted = has and (holding is None or live.exists(STORE_DIR + '/' + holding))
                 vfs = os.fstatvfs(pin.fd)
                 seen.append((volume['id'], bool(wanted), vfs.f_bavail * vfs.f_frsize, bool(has and store_images(live))))
-        fits = [row for row in seen if not writing or holding is not None or row[2] >= need]
+        # 2026-11-12 review: with two cards, a download went to the second card while the list of
+        # images shows the store that already holds images; that card takes it, or it does not fit.
+        holding_images = [row for row in seen if row[3]]
+        candidates = holding_images if writing and holding is None and holding_images else seen
+        fits = [row for row in candidates if not writing or holding is not None or row[2] >= need]
         chosen = next((row for row in fits if row[1]), None) or (None if holding is not None else next(iter(fits), None))
         for ident in [i for i in opened if chosen is None or i != chosen[0]]:
             context.unmount(ident)
@@ -2281,6 +2319,8 @@ def sideload_place(context, size):
     try:
         with card_store(context, writing=True, need=size + MIN_FREE) as (pin, live):
             if pin is not None:
+                require(pin.volume.get('fs_type') != 'vfat' or size <= FAT_FILE_LIMIT, 'FILE_TOO_LARGE',
+                        'FAT32 holds no file of 4 GiB or more: use a card formatted exFAT or ext4')
                 place = {'folder': store_folder(live), 'volume': pin.volume['id'], 'token': pin.volume['volume_token'],
                          'dir': '/' + STORE_DIR}
                 entered = True
@@ -3102,13 +3142,23 @@ def platform_source(live, state):
 
 
 def platform_matches(tree, profile):
-    """Whether a system still holds exactly the audited kernel modules, firmware and adapter files."""
+    """Whether a system still holds exactly the audited kernel modules, firmware and adapter files,
+    as validate_root checks them at the end: content, links, folders, and mode and owner of each
+    (2026-11-12 review: only the content was compared, so a changed mode failed the installation
+    at its end instead of taking the recovery's own files)."""
     try:
         for item in profile['entries']:
+            st = tree.lstat(item['path'])
+            if stat.S_IMODE(st.st_mode) != item['mode'] or st.st_uid != item['uid'] or st.st_gid != item['gid']:
+                return False
             if item['kind'] == 'file':
-                st = tree.lstat(item['path'])
                 if not stat.S_ISREG(st.st_mode) or st.st_size != item['bytes'] or tree.hash(item['path']) != item['sha256']:
                     return False
+            elif item['kind'] == 'symlink':
+                if not stat.S_ISLNK(st.st_mode) or tree.readlink(item['path']) != item['target']:
+                    return False
+            elif not stat.S_ISDIR(st.st_mode):
+                return False
         return True
     except (OSError, fs.FilesystemError):
         return False
@@ -3567,10 +3617,19 @@ def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT, home=None):
         import threading
         timer = threading.Timer(timeout, lambda: os.killpg(process.pid, signal.SIGKILL))
         timer.start()
-        try:
+
+        def read():
             for raw in process.stdout:
                 on_line(raw.decode('utf-8', 'replace'))
-            return process.wait()
+        # 2026-11-12 review: a daemon the script started keeps the output pipe open after the script
+        # ended, and reading to its end waited for ever. The script itself is waited for; its last
+        # lines get a few seconds, then the processes left in the root are ended below.
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        try:
+            status = process.wait()
+            reader.join(10)
+            return status
         finally:
             timer.cancel()
     finally:
@@ -3597,6 +3656,7 @@ def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT, home=None):
                     os.symlink(item[2], item[1])
                 elif item[0] == 'file':
                     fd = os.open(item[1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, item[3])
+                    os.fchmod(fd, item[3])  # the recovery's umask 077 made it 0600 (2026-11-12 review)
                     with os.fdopen(fd, 'wb') as out:
                         out.write(item[2])
         for target in reversed(mounts):

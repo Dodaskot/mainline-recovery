@@ -493,21 +493,41 @@ def source_file(context, volume, token, path):
 def rollback_volume(context, size, skip_cache=False, make_room=False):
     """A mounted writable volume for the old content, removable storage first. Cache is small
     (200 MiB): with SKIP_CACHE it is passed over (the BOOT is already kept there once), and with
-    MAKE_ROOM what lies there twice is removed before it is found full (2026-11-11)."""
-    for volume in sorted(context.fs.volumes(), key=lambda v: (not v.get('external'), v['id'])):
-        if (volume.get('mounted') and not volume.get('read_only') and volume.get('write_supported')
+    MAKE_ROOM what lies there twice is removed before it is found full (2026-11-11).
+    2026-11-12, on the phone: cache and the card were mounted read-only by the recovery itself, so
+    no copy was kept and BOOT was written with no way back. The recovery's own read-only mount of
+    cache or a card is opened for writing for the copy, and one not mounted is mounted."""
+    def room(volume):
+        info = os.statvfs(volume['mountpoint'])
+        return info.f_bavail * info.f_frsize
+    volumes = sorted(context.fs.volumes(), key=lambda v: (not v.get('external'), v['id']))
+    for volume in volumes:
+        cache = volume['id'] == 'cache'
+        if cache and skip_cache:
+            continue
+        own = volume.get('external') or cache
+        if not (volume.get('mounted') and not volume.get('read_only') and volume.get('write_supported')
                 and volume.get('mount_owner') in ('filesystem', 'storage')):
-            cache = volume['id'] == 'cache'
-            if cache and skip_cache:
+            if not own or volume.get('container'):
                 continue
-            info = os.statvfs(volume['mountpoint'])
-            if cache and make_room and info.f_bavail * info.f_frsize < size + install.CHUNK:
-                with contextlib.suppress(fs.FilesystemError, OSError):
-                    with fs.PinnedVolume(context.fs, 'cache', writing=True) as pin:
-                        saved_boot.make_room(pin)
-                info = os.statvfs(volume['mountpoint'])
-            if info.f_bavail * info.f_frsize >= size + install.CHUNK:
-                return volume
+            try:
+                if volume.get('mounted') and volume.get('read_only') and volume.get('mount_owner') == 'filesystem':
+                    context.fs.mount(volume['id'], 'rw', True, volume['volume_token'])
+                elif not volume.get('mounted') and volume.get('mountable'):
+                    context.fs.mount(volume['id'], 'rw', True, volume['volume_token'])
+                else:
+                    continue
+                volume = context.fs.volume(volume['id'])
+            except (fs.FilesystemError, OSError):
+                continue
+            if not (volume.get('mounted') and not volume.get('read_only') and volume.get('write_supported')):
+                continue
+        if cache and make_room and room(volume) < size + install.CHUNK:
+            with contextlib.suppress(fs.FilesystemError, OSError):
+                with fs.PinnedVolume(context.fs, 'cache', writing=True) as pin:
+                    saved_boot.make_room(pin)
+        if room(volume) >= size + install.CHUNK:
+            return volume
     return None
 
 
@@ -552,7 +572,11 @@ def save_rollback(context, target, progress, chunks=None, skip_cache=False, pend
         return None
     volume = rollback_volume(context, target['size_bytes'], skip_cache, make_room=True)
     if volume is None:
-        return None
+        if skip_cache:
+            return None  # the BOOT is kept on cache as a saved BOOT: that is its way back
+        # 2026-11-12, on the phone: written with no copy at all, a cut write had no way back.
+        fs.fail('ROLLBACK_UNAVAILABLE', 'There is no room to keep the old content first: free space on cache or insert a card',
+                partition=target['label'], required_bytes=target['size_bytes'])
     stamp = target['label'].replace('/', '-') + time.strftime('-%Y%m%d-%H%M%S', time.gmtime())
     source = context.open_target(target) if chunks is None else None
 

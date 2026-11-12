@@ -256,6 +256,18 @@ def prune_rollbacks(folder, keep=None):
     return freed
 
 
+def prune_orphans(folder):
+    """A description (NAME.img.json, NAME.img.sha256) whose image is gone says a BOOT is kept that
+    is not (2026-11-12, on the phone: two such pairs from the app; the app then took the BOOT for
+    kept already). They go."""
+    names = set(os.listdir(folder))
+    for name in names:
+        for suffix in ('.json', '.sha256'):
+            if name.endswith('.img' + suffix) and name[:-len(suffix)] not in names:
+                with contextlib.suppress(OSError):
+                    os.unlink(name, dir_fd=folder)
+
+
 def prune_updates(folder):
     """Of the recoveries downloaded by Settings, Updates (they can be downloaded again), only the
     newest version stays (2026-11-12 review: each one is 40 MiB of a 200 MiB cache)."""
@@ -363,7 +375,7 @@ def make_room(pin, downloadable=None):
     stays: the stock BOOT, a Linux BOOT that cannot be downloaded again, settings, keys, Wi-Fi."""
     if downloadable is None:
         downloadable = downloadable_boots()
-    for name, tidy in ((SAVED_BOOT, tidy_folder), (SAVED_BOOT, prune_rooted),
+    for name, tidy in ((SAVED_BOOT, prune_orphans), (SAVED_BOOT, tidy_folder), (SAVED_BOOT, prune_rooted),
                        (SAVED_BOOT, lambda folder: prune_downloadable(folder, downloadable)), (ROLLBACKS, prune_rollbacks),
                        (UPDATES, prune_updates)):
         with contextlib.suppress(FileNotFoundError, NotADirectoryError, fs.FilesystemError, OSError):

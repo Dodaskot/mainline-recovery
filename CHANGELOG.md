@@ -28,6 +28,17 @@ BOOT copy also on the phone.
   network and decompression errors give an answer instead of a traceback; pax rootfs archives of
   any size and Python 3.14's tar bounds.
 - **App**: one copy of BOOT at a time; room is checked before the copy.
+- **Found on the phone** (0.6.208): with cache and the card mounted read-only by the recovery,
+  no copy was kept before a write, so a cut write of BOOT had no way back. The copy now opens them
+  for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
+  the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
+  start removes descriptions of saved BOOTs whose image is gone.
+- **More from the review of `distro.py` and `filesystem.py`**: file modes despite the recovery's
+  umask (new folders, `resolv.conf`), FAT32's 4 GiB limit checked before a copy or sideload, a
+  download stays on the card that holds the images, status reads BOOT once and answers for
+  Android's data, a system's platform files are compared as the final check compares them, a failed
+  import leaves no unpacked tree, a daemon of the setup no longer holds the installation, and Files
+  formats Android's userdata with the stock f2fs features.
 
 ## 0.6.198 to 0.6.206
 
