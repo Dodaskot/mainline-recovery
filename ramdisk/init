@@ -184,6 +184,13 @@ while true; do
     if [ ! -e /run/a22x-recovery/bcb.json ] && [ -f /opt/a22x-recovery/bcb.py ]; then
         /usr/bin/python3 /opt/a22x-recovery/bcb.py --device arrive > /run/a22x-recovery/bcb.json 2>/dev/null
     fi
+    # How Android's last start ended, from the memory its kernel's log outlives a restart in
+    # (2026-11-12): read once, in the background, so the interface does not wait for it.
+    if [ ! -e /run/a22x-recovery/android-last.json ] && [ -f /opt/a22x-recovery/android_log.py ]; then
+        ( /usr/bin/python3 /opt/a22x-recovery/android_log.py --device read --save /run/a22x-recovery/android-last-kmsg.txt \
+            > /run/a22x-recovery/android-last.json.new 2>/dev/null
+          mv /run/a22x-recovery/android-last.json.new /run/a22x-recovery/android-last.json ) &
+    fi
     # A restart into the system that came straight back here (the preloader started twice and
     # lost the restart markers, 2026-11-10) is tried once more, without the interface.
     if [ ! -e /run/a22x-recovery/intent.done ] && [ -f /opt/a22x-recovery/restart_intent.py ]; then

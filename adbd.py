@@ -480,6 +480,14 @@ def service_sync(stream, service):
                 else:
                     raise Closed('unexpected sync message')
             if fd is not None:
+                # 2026-11-12, on the owner's phone: a pushed recovery image read back with 16 MiB of
+                # zeros in its middle after the volume was mounted again, though adb had said "pushed"
+                # and the file hashed right from memory. What cannot be written must be said here.
+                if problem is None:
+                    try:
+                        os.fsync(fd)
+                    except OSError as exc:
+                        problem = f'{target}: {exc.strerror}'
                 os.close(fd)
             if problem is None:
                 try:

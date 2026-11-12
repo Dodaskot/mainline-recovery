@@ -426,7 +426,7 @@ static bool parse_systems_status(App*a,const Json*j){
     a->systems_known=true;a->systems_mounted=mounted;a->systems_read_only=ro;a->systems_initialized=initialized==1;a->systems_platform=profile;
     a->systems_empty=mounted&&initialized==0&&json_bool(j,json_get(j,0,"empty_userdata"),0)==1;
     a->systems_foreign=!mounted&&json_bool(j,json_get(j,0,"foreign"),0)==1;
-    a->systems_boot_android=json_bool(j,json_get(j,0,"boot_linux"),1)==0;a->systems_boot_source[0]=0;jstring(j,0,"boot_source",a->systems_boot_source,sizeof(a->systems_boot_source));
+    a->systems_boot_android=json_bool(j,json_get(j,0,"boot_linux"),1)==0;a->systems_boot_source[0]=0;jstring(j,0,"boot_source",a->systems_boot_source,sizeof(a->systems_boot_source));a->systems_boot_outdated=json_bool(j,json_get(j,0,"boot_outdated"),0)==1;
     if(mounted||blocked)a->systems_reboot_blocked=blocked;
     copy(a->systems_volume_token,sizeof(a->systems_volume_token),volume);copy(a->systems_active,sizeof(a->systems_active),active);copy(a->systems_transaction,sizeof(a->systems_transaction),transaction);copy(a->systems_source,sizeof(a->systems_source),source);copy(a->systems_target,sizeof(a->systems_target),target);
     a->systems_incomplete=0;int incomplete=json_get(j,0,"incomplete_imports");if(incomplete>=0&&j->tokens[incomplete].type==J_ARRAY)for(int i=incomplete+1;i<json_next(j,incomplete);i=json_next(j,i))a->systems_incomplete++;

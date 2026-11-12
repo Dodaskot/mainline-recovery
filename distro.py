@@ -417,31 +417,34 @@ def boot_identity(context):
             'device_identity': block.device['identity'], 'kernel_release': release}
 
 
-def linux_boot_kept(context):
-    """A Linux BOOT kept on cache whose kernel is the one the platform modules were built for, the
-    newest: what Android's BOOT replaced, or what was downloaded. A fixture names one itself."""
+def linux_boot_kept(context, sha256=None):
+    """A Linux BOOT kept on cache whose kernel release is the one the platform modules were built
+    for: the one with SHA256 when one is named, else the newest. What Android's BOOT replaced, or
+    what was downloaded. A fixture names its own (linux_boot_cache)."""
     if context.mode == 'fixture':
-        offer = context.config().get('linux_boot')
-        return dict(offer) if isinstance(offer, dict) and offer.get('from') == 'cache' else None
-    import saved_boot
-    expected = platform_kernel_release(context)
-    try:
-        kept = saved_boot.saved_boots(types.SimpleNamespace(fs=context))
-    except (OSError, ValueError, fs.FilesystemError):
-        return None
+        kept = [dict(item, **{'from': 'cache', 'path': ''}) for item in context.config().get('linux_boot_cache') or ()]
+    else:
+        import saved_boot
+        expected = platform_kernel_release(context)
+        try:
+            found = saved_boot.saved_boots(types.SimpleNamespace(fs=context))
+        except (OSError, ValueError, fs.FilesystemError):
+            return None
+        kept = [{'sha256': item['sha256'], 'release': item['release'], 'from': 'cache', 'path': item['path']} for item in found
+                if item['kind'] == 'linux' and item['release'] == expected and item['bytes'] == BOOT_BYTES
+                and re.fullmatch(r'[0-9a-f]{64}', item['sha256'])]
     for item in kept:
-        if item['kind'] == 'linux' and item['release'] == expected and item['bytes'] == BOOT_BYTES \
-                and re.fullmatch(r'[0-9a-f]{64}', item['sha256']):
-            return {'sha256': item['sha256'], 'release': item['release'], 'from': 'cache', 'path': item['path']}
+        if sha256 is None or item['sha256'] == sha256:
+            return item
     return None
 
 
 def linux_boot_offered(context):
     """The Linux BOOT the catalog names for this recovery's platform modules: the mainline project's
-    release. None when the catalog names none that fits."""
+    release. None when the catalog names none that fits. A fixture names its own (linux_boot_release)."""
     if context.mode == 'fixture':
-        offer = context.config().get('linux_boot')
-        return dict(offer) if isinstance(offer, dict) and offer.get('from') == 'download' else None
+        offer = context.config().get('linux_boot_release')
+        return dict(offer, **{'from': 'download'}) if isinstance(offer, dict) else None
     offer = catalog_builtin(context).get('linux_boot')
     if not isinstance(offer, dict) or offer.get('release') != platform_kernel_release(context) or offer.get('size') != BOOT_BYTES \
             or not re.fullmatch(r'[0-9a-f]{64}', str(offer.get('sha256', ''))) or not re.fullmatch(r'https://[^\s]+', str(offer.get('url', ''))):
@@ -459,34 +462,78 @@ def network_joined(context):
         return False
 
 
-def boot_for_linux(context):
-    """The BOOT a new Linux system starts from: the one there when it holds the Linux kernel of this
-    phone. Otherwise (2026-11-11, the owner: "I flashed BOOT before installing Mobian myself: make
-    this simpler") a Linux BOOT this phone keeps on cache, or the one the mainline project publishes:
-    the installation fetches it before anything is erased and writes it when the system is in place.
-    The plan is bound to that image by its SHA-256."""
+def linux_boot_choice(context):
+    """Where a new system takes its Linux BOOT from, and whether the network is missing for it.
+    First the release this recovery was made for: kept on cache, else downloaded. Only when that
+    cannot be had, another Linux BOOT kept on this phone, which may be older (2026-11-11, on the
+    owner's phone: a BOOT kept since kernel 107 was taken before the release with kernel 122, and
+    the systems installed with it did not start as they should)."""
+    release = linux_boot_offered(context)
+    if release:
+        kept = linux_boot_kept(context, release['sha256'])
+        if kept:
+            return kept, False
+        if network_joined(context):
+            return release, False
+    older = linux_boot_kept(context)
+    if older:
+        return dict(older, older=release is not None), False
+    return None, release is not None
+
+
+def boot_for_linux(context, fresh=False):
+    """The BOOT a new Linux system starts from. The one there when it holds the Linux kernel of this
+    phone; a clean installation (FRESH) still takes the release this recovery was made for when
+    the BOOT there is another one. With Android's kernel on BOOT (2026-11-11, the owner: "I flashed
+    BOOT before installing Mobian myself: make this simpler") the installation takes a Linux BOOT
+    with it. It is fetched before anything is erased and written when the system is in place; the
+    plan is bound to that image by its SHA-256."""
     android = context.mode == 'fixture' and context.config().get('android_boot')
     try:
         if android:
             fail('BOOT_PROFILE_MISMATCH', 'BOOT holds no Linux kernel for this phone. Flash a Linux BOOT image first: Install, Flash a partition, boot')
-        return boot_identity(context)
+        there = boot_identity(context)
     except fs.FilesystemError as error:
         if getattr(error, 'code', '') != 'BOOT_PROFILE_MISMATCH':
             raise
-        offer = linux_boot_kept(context) or linux_boot_offered(context)
+        offer, offline = linux_boot_choice(context)
+        require(offer is not None or not offline, 'LINUX_BOOT_NEEDS_NETWORK',
+                'BOOT holds the kernel of Android, and this phone keeps no Linux BOOT: join Wi-Fi so that it can be downloaded, or flash one in Flash a partition')
         if offer is None:
             raise
-        require(offer['from'] == 'cache' or network_joined(context), 'LINUX_BOOT_NEEDS_NETWORK',
-                'BOOT holds the kernel of Android, and this phone keeps no Linux BOOT: join Wi-Fi so that it can be downloaded, or flash one in Flash a partition')
         return {'profile': PROFILE_ID, 'boot_sha256': offer['sha256'], 'fixture': context.mode == 'fixture',
                 'kernel_release': offer['release'], 'write': True}
+    if fresh:
+        offer, _ = linux_boot_choice(context)
+        if offer and not offer.get('older') and offer['sha256'] != boot_now(context, there):
+            return {'profile': PROFILE_ID, 'boot_sha256': offer['sha256'], 'fixture': context.mode == 'fixture',
+                    'kernel_release': offer['release'], 'write': True}
+    return there
+
+
+def boot_now(context, identity):
+    """The SHA-256 of the BOOT there; a fixture names it itself (boot_sha256), else it is the constant every fixture has."""
+    return context.config().get('boot_sha256', identity['boot_sha256']) if context.mode == 'fixture' else identity['boot_sha256']
+
+
+def boot_outdated(context):
+    """Whether BOOT holds a Linux kernel for this phone that is not the release this recovery was
+    made for, while that release can be had: a clean installation then writes it."""
+    try:
+        if context.mode == 'fixture' and context.config().get('android_boot'):
+            return False
+        there = boot_identity(context)
+    except fs.FilesystemError:
+        return False
+    offer, _ = linux_boot_choice(context)
+    return bool(offer and not offer.get('older') and offer['sha256'] != boot_now(context, there))
 
 
 def linux_boot_fetched(context, boot, progress):
     """The Linux BOOT a plan is bound to, on cache: its path there. One that is not there is
     downloaded from the catalog's address and kept, its SHA-256 checked, before anything is erased."""
-    kept = linux_boot_kept(context)
-    if kept and kept['sha256'] == boot['boot_sha256']:
+    kept = linux_boot_kept(context, boot['boot_sha256'])
+    if kept:
         return kept.get('path', '')
     offer = linux_boot_offered(context)
     require(offer is not None and offer['sha256'] == boot['boot_sha256'], 'PLAN_STALE', 'The Linux BOOT of this plan is no longer offered: plan again')
@@ -1471,7 +1518,9 @@ def status(context):
             'platform_profile_available': profile_path(context).exists(), 'foreign': foreign_userdata(context),
             'boot_linux': boot_is_linux(context)}
     # Where a new system would take its Linux BOOT from, when BOOT holds another kernel: cache, download, or nowhere.
-    base['boot_source'] = '' if base['boot_linux'] else ((linux_boot_kept(context) or linux_boot_offered(context) or {}).get('from', ''))
+    # cache or download; boot_outdated: BOOT is Linux, but not the release this recovery was made for.
+    base['boot_outdated'] = base['boot_linux'] and boot_outdated(context)
+    base['boot_source'] = (linux_boot_choice(context)[0] or {}).get('from', '') if not base['boot_linux'] or base['boot_outdated'] else ''
     if not volume['mounted']:
         return {**base, 'initialized': None, 'transaction_state': 'unknown-unmounted',
                 'normal_boot_safety_known': False,
@@ -2885,7 +2934,7 @@ def image_plan(context, source_volume, image_path, options, expected_source=None
     saved = store_name(image_path) if remote is None and source_volume == 'userdata' else None
     if remote is None and saved is None:
         require(source_volume != 'userdata', 'BUNDLE_ON_USERDATA', 'Choose an image on external SD/USB storage')
-    profile, boot = load_profile(context), boot_for_linux(context)
+    profile, boot = load_profile(context), boot_for_linux(context, fresh=wipe)
     # 2026-11-11: Android's userdata (or one that cannot be read) holds nothing to mount or keep. A
     # clean installation is planned on the partition as it will be once it is formatted for Linux.
     foreign = foreign_userdata(context)

@@ -468,6 +468,9 @@ msgstr "Android la crea de nuevo"
 msgid "ANDROID DATA IS ERASED"
 msgstr "SE BORRAN LOS DATOS DE ANDROID"
 
+msgid "Android did not start"
+msgstr "Android no se inició"
+
 msgid "Android holds userdata: its copy is one archive on a card. A Linux backup needs a Linux system on this phone."
 msgstr "userdata es de Android: su copia es un archivo en una tarjeta. Una copia de Linux necesita un sistema Linux en este teléfono."
 
@@ -498,6 +501,9 @@ msgstr "Particiones de Android restauradas y comprobadas"
 msgid "Android partitions saved"
 msgstr "Particiones de Android guardadas"
 
+msgid "Android restarted the phone itself %s seconds after its start."
+msgstr "Android reinició el teléfono por sí mismo %s segundos después de iniciarse."
+
 msgid "Android restored"
 msgstr "Android restaurado"
 
@@ -522,8 +528,14 @@ msgstr "Al instalar el root, los datos de Android se borran una vez."
 msgid "Android's data needs userdata and metadata together: choose both, or neither"
 msgstr "Los datos de Android necesitan userdata y metadata juntos: elige ambos o ninguno"
 
+msgid "Android's kernel stopped %s seconds after its start."
+msgstr "El kernel de Android se detuvo %s segundos después de iniciarse."
+
 msgid "Animations"
 msgstr "Animaciones"
+
+msgid "Another Android is needed. Images made for older phones (Treble GSIs such as crDroid) start with this kernel, and so does Samsung's firmware."
+msgstr "Hace falta otro Android. Las imágenes hechas para teléfonos más antiguos (GSI Treble como crDroid) se inician con este kernel, y también el firmware de Samsung."
 
 msgid "Another block device uses this card"
 msgstr "Otro dispositivo de bloque usa esta tarjeta"
@@ -743,6 +755,9 @@ msgstr "Se leen y comprimen BOOT y los bloques ext4 ocupados. Los archivos exist
 
 msgid "BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache."
 msgstr "BOOT recibe el kernel de Linux cuando el sistema está en su sitio; el BOOT actual se guarda en cache."
+
+msgid "BOOT holds an older Linux kernel than the one this recovery was made for. A new system gets the current one; the BOOT there is kept on cache."
+msgstr "BOOT contiene un kernel de Linux más antiguo que aquel para el que se hizo este recovery. Un sistema nuevo recibe el actual; el BOOT de ahora se guarda en cache."
 
 msgid "BOOT holds Android's kernel. Linux starts with its own: flash a Linux BOOT image for this phone before the installation."
 msgstr "BOOT contiene el kernel de Android. Linux arranca con el suyo: flashea una imagen Linux BOOT para este teléfono antes de la instalación."
@@ -2171,6 +2186,9 @@ msgstr "su instalador es un script"
 
 msgid "ITS INSTALLER RUNS AS ROOT"
 msgstr "SU INSTALADOR SE EJECUTA COMO ROOT"
+
+msgid "Its reason: %s"
+msgstr "Su motivo: %s"
 
 msgid "Its root filesystem with its programs, /etc and /var is deleted. /home, the active system and BOOT stay. This cannot be undone."
 msgstr "Se borra su sistema de archivos raíz con sus programas, /etc y /var. /home, el sistema activo y BOOT se conservan. No se puede deshacer."
@@ -4749,6 +4767,9 @@ msgstr "No se pudo parchear el kernel de BOOT para APatch"
 msgid "The kernel keeps this partition read-only"
 msgstr "El núcleo mantiene esta partición en solo lectura"
 
+msgid "THE KERNEL'S LAST LINES"
+msgstr "LAS ÚLTIMAS LÍNEAS DEL KERNEL"
+
 msgid "The last installation completed with independent readback. Boot behavior still needs a deliberate test."
 msgstr "La última instalación terminó con una lectura independiente. El arranque aún necesita una prueba deliberada."
 
@@ -5142,6 +5163,9 @@ msgstr "La imagen entera de todas"
 msgid "The whole image, or one Android partition inside it."
 msgstr "La imagen entera o una partición de Android dentro."
 
+msgid "The whole log of that start goes with Export diagnostics."
+msgstr "El registro completo de ese inicio va con «Exportar diagnóstico»."
+
 msgid "The write receipt could not be displayed completely. Inspect installation status."
 msgstr "No se pudo mostrar completo el comprobante de escritura. Revisa el estado de instalación."
 
@@ -5225,6 +5249,12 @@ msgstr "Este 7z usa un método que el recovery no puede leer"
 
 msgid "This action replaces the listed targets."
 msgstr "Esta acción sustituye los destinos de la lista."
+
+msgid "This Android needs a newer kernel than the Android kernel of this phone, so Android restarts the phone on every start."
+msgstr "Este Android necesita un kernel más nuevo que el kernel de Android de este teléfono, así que Android reinicia el teléfono en cada inicio."
+
+msgid "This Android needs kernel %s or newer. The Android kernel of this phone is older, so Android restarts the phone on every start."
+msgstr "Este Android necesita el kernel %s o uno más nuevo. El kernel de Android de este teléfono es más antiguo, así que Android reinicia el teléfono en cada inicio."
 
 msgid "This backup belongs to another phone. Restoring it would give this phone a foreign identity"
 msgstr "Esta copia pertenece a otro teléfono. Restaurarla daría a este teléfono una identidad ajena"
@@ -5513,6 +5543,9 @@ msgstr "no disponible"
 
 msgid "Under a minute"
 msgstr "Menos de un minuto"
+
+msgid "Understood"
+msgstr "Entendido"
 
 msgid "unknown"
 msgstr "desconocido"
@@ -5832,11 +5865,17 @@ msgstr "miércoles"
 msgid "WHAT HAPPENS NEXT"
 msgstr "QUÉ PASA DESPUÉS"
 
+msgid "What its kernel wrote before the phone restarted."
+msgstr "Lo que escribió su kernel antes de que el teléfono se reiniciara."
+
 msgid "What this system lacks for the phone is built on it (Arch: Phosh's compositor fix and Phrog), up to 45 minutes. Keep the phone powered."
 msgstr "Lo que a este sistema le falta para el teléfono se compila en él (Arch: corrección del compositor de Phosh y Phrog), hasta 45 minutos. Mantén el teléfono encendido."
 
 msgid "When the installation starts, every Linux system and /home on userdata are erased. Make a backup first if you need them."
 msgstr "Al empezar la instalación se borran todos los sistemas Linux y /home de userdata. Haz una copia antes si los necesitas."
+
+msgid "When this happens on every start, the installed Android does not fit the phone or its data: install another one, or format the data for Android in Wipe."
+msgstr "Si ocurre en cada inicio, el Android instalado no encaja con el teléfono o con sus datos: instale otro o formatee los datos para Android en «Borrado»."
 
 msgid "Where is the file?"
 msgstr "¿Dónde está el archivo?"

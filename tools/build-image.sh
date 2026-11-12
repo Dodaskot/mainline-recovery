@@ -97,7 +97,7 @@ python3 -B "$S/tools/build_v06_image.py" --base "$BASE" --output "build-v06-$NN"
     --add "$R/image_import.py=$S/image_import.py" --add "$R/a22x_adapter.py=$S/a22x_adapter.py" \
     --add "$R/platform/a22x-wmt=helpers/a22x-wmt" --add "$R/platform/conn-start.sh=$S/platform/conn-start.sh" \
     --add "$R/platform/a22x-firstboot.sh=$S/platform/a22x-firstboot.sh" --add "$R/adbd.py=$S/adbd.py" --add "$R/handoff.py=$S/handoff.py" --add "$R/bootimage.py=$S/bootimage.py" --add "$R/install_plan.py=$S/install_plan.py" --add "$R/restart_intent.py=$S/restart_intent.py" --add "$R/lp_metadata.py=$S/lp_metadata.py" \
-    --add "$R/samsung_firmware.py=$S/samsung_firmware.py" --add "$R/android_gsi.py=$S/android_gsi.py" --add "$R/android_rom.py=$S/android_rom.py" --add "$R/saved_boot.py=$S/saved_boot.py" --add "$R/zip_install.py=$S/zip_install.py" --add "$R/sdcard.py=$S/sdcard.py" --add "$R/sevenzip.py=$S/sevenzip.py" --add "$R/root.py=$S/root.py" --add "$R/clock.py=$S/clock.py" --add "$R/bcb.py=$S/bcb.py" \
+    --add "$R/samsung_firmware.py=$S/samsung_firmware.py" --add "$R/android_gsi.py=$S/android_gsi.py" --add "$R/android_rom.py=$S/android_rom.py" --add "$R/saved_boot.py=$S/saved_boot.py" --add "$R/zip_install.py=$S/zip_install.py" --add "$R/sdcard.py=$S/sdcard.py" --add "$R/sevenzip.py=$S/sevenzip.py" --add "$R/root.py=$S/root.py" --add "$R/clock.py=$S/clock.py" --add "$R/bcb.py=$S/bcb.py" --add "$R/android_log.py=$S/android_log.py" --replace "$R/management.py=$S/management.py" \
     --bytecode "$S/tools/python_bytecode_modules.txt" --link "$R/platform/busybox=/bin/busybox" \
     "${ADD[@]}" | tail -1 | cut -c1-90
 

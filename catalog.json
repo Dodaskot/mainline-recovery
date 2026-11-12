@@ -323,58 +323,6 @@
    ]
   },
   {
-   "id": "gsi-15-aosp",
-   "category": "gsi",
-   "name": "Android 15",
-   "version": "BP1A.250405.005.C1",
-   "android": "15",
-   "sdk": 35,
-   "variant": "aosp",
-   "region": "Global",
-   "family": "android",
-   "maker": "Google",
-   "build": "BP1A.250405.005.C1",
-   "patch": "2025-04-05",
-   "url": "https://dl.google.com/developers/android/vic/images/gsi/aosp_arm64-exp-BP1A.250405.005.C1-13151952-61d23231.zip",
-   "file": "aosp_arm64-exp-BP1A.250405.005.C1-13151952-61d23231.zip",
-   "size": 888211669,
-   "sha256": "61d232315ad773bd4820c76c175efe6a61cd8a9a257508db588032be213e15f7",
-   "system_bytes": 1899589632,
-   "vendor_levels": [
-    5,
-    6,
-    7,
-    8,
-    202404
-   ]
-  },
-  {
-   "id": "gsi-15-google",
-   "category": "gsi",
-   "name": "Android 15",
-   "version": "BP1A.250405.005.C1",
-   "android": "15",
-   "sdk": 35,
-   "variant": "gms",
-   "region": "Global",
-   "family": "android",
-   "maker": "Google",
-   "build": "BP1A.250405.005.C1",
-   "patch": "2025-04-05",
-   "url": "https://dl.google.com/developers/android/vic/images/gsi/gsi_gms_arm64-exp-BP1A.250405.005.C1-13151952-48d6db2a.zip",
-   "file": "gsi_gms_arm64-exp-BP1A.250405.005.C1-13151952-48d6db2a.zip",
-   "size": 1586772058,
-   "sha256": "48d6db2ad0638ff7a23bb1dcb154221ee693afe0f88340b4000bda44940ff885",
-   "system_bytes": 3276304384,
-   "vendor_levels": [
-    5,
-    6,
-    7,
-    8,
-    202404
-   ]
-  },
-  {
    "id": "gsi-16-aosp",
    "category": "gsi",
    "name": "Android 16",
@@ -480,7 +428,7 @@
   },
   {
    "id": "lineageos-22.2-vanilla",
-  "tried": "fails",
+   "tried": "fails",
    "category": "port",
    "name": "LineageOS 22.2",
    "version": "2025-06-21",
@@ -626,7 +574,7 @@
   },
   {
    "id": "crdroid-12.12-vanilla",
-  "tried": "starts",
+   "tried": "starts",
    "category": "port",
    "name": "crDroid 12.12",
    "version": "2026-09-22",
@@ -1299,7 +1247,7 @@
   },
   {
    "id": "alphadroid-4.6-gms",
-  "tried": "starts",
+   "tried": "starts",
    "category": "port",
    "name": "AlphaDroid 4.6",
    "version": "2026-07-10",

@@ -103,7 +103,7 @@
 enum Screen { HOME, SPLASH, FLASH, FLASH_REVIEW, LANGUAGE, THEME, TERMINAL_THEME, ANIMATIONS, LOCKSCREEN, ACCESS_REQUEST, OS_MENU, SYSTEMS_SETUP, BACKUP, LIST, DETAIL, PLAN, PROGRESS, RESULT, STORAGE, SYSTEM, POWER, POWER_CONFIRM, POWER_MENU, TOOLS, TOOLS_EXPORT, DISPLAY_SETTINGS, PREPARE_FILESYSTEM, USB_FILES, TERMINAL, SYSTEMS, SYSTEMS_PLAN, SYSTEMS_RECOVER,
     INSTALL, INSTALL_PLAN, INSTALL_RESULT,
     FILE_VOLUMES, FILE_VOLUME, FILE_BROWSER, FILE_INFO, FILE_TEXT, FILE_EDIT, FILE_PROMPT, FILE_CONFIRM, FILE_DISCARD, SYSTEMS_EXTRAS, SYSTEMS_DONE, WIFI, SYSTEMS_NEW, SYSTEMS_CATALOG,
-    SYSTEMS_APP_LIST, SYSTEMS_SEARCH, IDENTITY, IDENTITY_RESTORE, SYSTEMS_SHELLS, SYSTEMS_LOCALE, SYSTEMS_TIMEZONE, SYSTEMS_REMOVE, SYSTEMS_IMAGES, ADB_REQUEST, APLAN, FLASH_SUPER, ICON_SHEET, WIPE, WIPE_REVIEW, ANDROID_MENU, SAMSUNG_REVIEW, ANDROID_IMAGE, ROOT_PAGE, ZIP_REVIEW, CARD_PAGE, COPY_DETAIL };
+    SYSTEMS_APP_LIST, SYSTEMS_SEARCH, IDENTITY, IDENTITY_RESTORE, SYSTEMS_SHELLS, SYSTEMS_LOCALE, SYSTEMS_TIMEZONE, SYSTEMS_REMOVE, SYSTEMS_IMAGES, ADB_REQUEST, APLAN, FLASH_SUPER, ICON_SHEET, WIPE, WIPE_REVIEW, ANDROID_MENU, SAMSUNG_REVIEW, ANDROID_IMAGE, ROOT_PAGE, ZIP_REVIEW, CARD_PAGE, COPY_DETAIL, ANDROID_LOG };
 enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_REVIEW_BACKUP,A_REVIEW_RESTORE,A_VERIFY_ONE,A_CONFIRM,A_DONE,A_LIST_PREV,A_LIST_NEXT,A_REBOOT,A_SHUTDOWN,A_POWER_CONFIRM,A_MOUNT,A_UMOUNT,A_REFRESH,
     A_FILES,A_FS_PREV,A_FS_NEXT,A_FS_OPEN,A_FS_MOUNT_RO,A_FS_MOUNT_RW,A_FS_UNMOUNT,A_FS_UP,A_FS_VOLUME,A_FS_REFRESH,
     A_FS_READ,A_FS_EDIT,A_FS_NEW_FILE,A_FS_MKDIR,A_FS_RENAME,A_FS_COPY,A_FS_DELETE,A_FS_PROMPT_NEXT,A_FS_CONFIRM,
@@ -134,7 +134,8 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_COPY_MOUNT=7440 /* ..7443 */,A_COPY_PART=7450 /* ..7457 */,A_SOURCE_REFRESH=7460,A_SOURCE_CANCEL,A_ANDROID_FILE,A_NEW_FORMAT,
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
     A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
-    A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */ };
+    A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
+    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
     J_FS_STAT,J_FS_CHMOD,J_FS_CHOWN,J_FS_RESOLVE,J_FS_COPY_TREE,J_FS_FORMAT,J_FS_CHECK,J_FS_RESIZE,J_TOOLS_STATUS,J_TOOLS_EXPORT,J_DISPLAY_STATUS,J_DISPLAY_SET,J_WIPE_PLAN,J_WIPE,J_USB_STATUS,J_USB_START,J_USB_STOP,
@@ -405,7 +406,11 @@ typedef struct {
     /* Android's request in misc to erase its data, read by init at the start (bcb.json): asked: the page opened for it;
        prompt: Android could not open its data (it did not ask from its settings). */
     bool reset_asked,reset_prompt,reset_checked,reset_page;
+    /* How Android's last start ended (android_log.py, read by init): the page opens once for each failed start. */
+    bool alog_checked;uint64_t alog_since;unsigned int alog_seconds,alog_line_count;
+    char alog_code[20],alog_needs[12],alog_reason[124],alog_detail[204],alog_id[20],alog_seen[20],alog_lines[6][184];
     char systems_boot_source[12]; /* cache or download: where an installation takes the Linux BOOT from then; empty: nowhere */
+    bool systems_boot_outdated; /* BOOT holds a Linux kernel, but not the release this recovery was made for */
     /* Samsung's firmware (samsung_firmware.py): the chosen AP and the reviewed plan. */
     char samsung_helper[PATH_LEN],samsung_volume[96],samsung_token[80],samsung_path[PATH_LEN],samsung_build[32],samsung_plan[80],samsung_warnings[768],samsung_blockers[384],samsung_files[96];
     SamsungRow samsung_rows[SAMSUNG_ROWS];unsigned int samsung_row_count;uint64_t samsung_write_bytes;bool samsung_known,samsung_pick,android_installed,android_gsi,wipe_android,stock_boot_pick,flash_after_targets;char stock_boot_path[PATH_LEN],stock_boot_token[80];
@@ -524,7 +529,7 @@ static bool start_install_job(App*a,int kind);
 static int complete_install_job(App*a,const Json*j,int kind,bool ok);
 static void complete_flash_job(App*a,const Json*j,int kind,bool ok);
 static void action(App*a,int id);
-static void update_battery(App*a);static void reset_request_poll(App*a);static void zip_item_to_review(App*a,const ZipItem*it);static void settings_save(App*a,bool wait);
+static void update_battery(App*a);static void reset_request_poll(App*a);static void render_android_log(App*a);static void android_log_poll(App*a);static bool android_log_action(App*a,int id);static void zip_item_to_review(App*a,const ZipItem*it);static void settings_save(App*a,bool wait);
 static long sysfs_number(const char*path,long fallback);
 static void complete_usb_sync(App*a,const Json*j,bool ok);
 static void complete_usb_backup(App*a,const Json*j,bool ok);
@@ -2402,7 +2407,7 @@ static void render(App*a){
     case POWER_CONFIRM:heading(a,"Power action",NULL,true);wrapped(a,40,350,640,2,TEXT,power_confirmation(a->power_intent),4);if(terminal_session_open(a)&&a->terminal_busy)wrapped(a,40,640,640,1,RED,"The command running in the terminal will be stopped.",3);button(a,(Rect){28,1220,664,110},"Hold 2 seconds to confirm",A_POWER_CONFIRM,a->allow_power&&!a->job.pid&&a->power_intent>=200&&a->power_intent<=203&&(a->power_intent!=200||(!a->systems_reboot_blocked&&!a->install.reboot_blocked)),true,2000);break;
     case TOOLS:render_tools(a);break;case TOOLS_EXPORT:render_tools_export(a);break;case DISPLAY_SETTINGS:render_display(a);break;case WIFI:render_wifi(a);break;case SYSTEMS_NEW:render_systems_new(a);break;case SYSTEMS_IMAGES:render_images(a);break;case ADB_REQUEST:render_adb_request(a);break;case SYSTEMS_CATALOG:render_catalog(a);break;
     case TERMINAL:render_terminal(a);break;
-    case SYSTEMS:render_systems(a);break;case SYSTEMS_EXTRAS:render_systems_extras(a);break;case SYSTEMS_SHELLS:render_systems_shells(a);break;case SYSTEMS_LOCALE:render_systems_locale(a);break;case SYSTEMS_TIMEZONE:render_systems_timezone(a);break;case SYSTEMS_APP_LIST:render_systems_apps(a);break;case SYSTEMS_SEARCH:render_package_search(a);break;case IDENTITY:render_identity(a);break;case APLAN:render_aplan(a);break;case FLASH_SUPER:render_flash_super(a);break;case ICON_SHEET:render_icon_sheet(a);break;case WIPE:render_wipe(a);break;case ANDROID_MENU:render_android_menu(a);break;case SAMSUNG_REVIEW:render_samsung_review(a);break;case ANDROID_IMAGE:render_android_image(a);break;case ROOT_PAGE:render_root(a);break;case ZIP_REVIEW:render_zip_review(a);break;case CARD_PAGE:render_card(a);break;case COPY_DETAIL:render_copy_detail(a);break;case WIPE_REVIEW:render_wipe_review(a);break;case IDENTITY_RESTORE:render_identity_restore(a);break;case SYSTEMS_DONE:render_systems_done(a);break;case SYSTEMS_PLAN:render_systems_plan(a);break;case SYSTEMS_RECOVER:render_systems_recover(a);break;case SYSTEMS_REMOVE:render_systems_remove(a);break;
+    case SYSTEMS:render_systems(a);break;case SYSTEMS_EXTRAS:render_systems_extras(a);break;case SYSTEMS_SHELLS:render_systems_shells(a);break;case SYSTEMS_LOCALE:render_systems_locale(a);break;case SYSTEMS_TIMEZONE:render_systems_timezone(a);break;case SYSTEMS_APP_LIST:render_systems_apps(a);break;case SYSTEMS_SEARCH:render_package_search(a);break;case IDENTITY:render_identity(a);break;case APLAN:render_aplan(a);break;case FLASH_SUPER:render_flash_super(a);break;case ICON_SHEET:render_icon_sheet(a);break;case WIPE:render_wipe(a);break;case ANDROID_MENU:render_android_menu(a);break;case SAMSUNG_REVIEW:render_samsung_review(a);break;case ANDROID_IMAGE:render_android_image(a);break;case ROOT_PAGE:render_root(a);break;case ZIP_REVIEW:render_zip_review(a);break;case CARD_PAGE:render_card(a);break;case COPY_DETAIL:render_copy_detail(a);break;case WIPE_REVIEW:render_wipe_review(a);break;case ANDROID_LOG:render_android_log(a);break;case IDENTITY_RESTORE:render_identity_restore(a);break;case SYSTEMS_DONE:render_systems_done(a);break;case SYSTEMS_PLAN:render_systems_plan(a);break;case SYSTEMS_RECOVER:render_systems_recover(a);break;case SYSTEMS_REMOVE:render_systems_remove(a);break;
     case INSTALL:render_install(a);break;case INSTALL_PLAN:render_install_review(a,false);break;case INSTALL_RESULT:render_install_review(a,true);break;
     case FILE_VOLUMES:render_file_volumes(a);break;case FILE_VOLUME:render_file_volume(a);break;case FILE_BROWSER:render_file_browser(a);break;
     case FILE_INFO:render_file_info(a);break;case FILE_TEXT:render_file_text(a,false);break;case FILE_EDIT:render_file_text(a,true);break;
@@ -3304,6 +3309,7 @@ static void theme_file_chosen(App*a){start_theme_job(a,J_THEME_IMPORT);}
 #include "locale_ui.h"
 #include "android_plan_ui.h"
 #include "wipe_ui.h"
+#include "androidlog_ui.h"
 #include "android_ui.h"
 #include "card_ui.h"
 #include "copies_ui.h"
@@ -3839,6 +3845,7 @@ static void hotplug_tick(App*a){
     adb_poll(a);
     sideload_poll(a);
     reset_request_poll(a);
+    android_log_poll(a);
     /* The restart asked for after the last installer: it counts down on the result page, and leaving the page stops it. */
     if(a->zip_restart_at){
         if(a->screen!=RESULT)a->zip_restart_at=0;
@@ -3890,6 +3897,7 @@ static void settings_load(App*a){
     char motion[12]={0};jstring(&j,0,"animation",motion,sizeof(motion));for(unsigned int n=0;n<ANIMATION_COUNT;n++)if(!strcmp(motion,animation_codes[n]))a->animation=n;
     a->nav_mode=(unsigned int)json_uint(&j,json_get(&j,0,"navigation"),0);if(a->nav_mode>NAV_OFF)a->nav_mode=NAV_GESTURES;
     a->torch_saved=(unsigned int)json_uint(&j,json_get(&j,0,"torch"),0);if(a->torch_saved>255)a->torch_saved=0;
+    jstring(&j,0,"android_log",a->alog_seen,sizeof(a->alog_seen));
     torch_remembered(a);
     a->lock_mode=(unsigned int)json_uint(&j,json_get(&j,0,"lock"),1);if(a->lock_mode>2)a->lock_mode=1;a->access_mode=json_uint(&j,json_get(&j,0,"access"),1)!=0;
     a->lock_enabled=json_bool(&j,json_get(&j,0,"password"),0)==1;a->lock_digits=json_bool(&j,json_get(&j,0,"password_digits"),0)==1;a->locked=a->lock_enabled&&a->lock_mode>0;
@@ -3917,7 +3925,7 @@ static void settings_save(App*a,bool wait){
     char vibration[8],timeout[8],offset[16];snprintf(vibration,sizeof(vibration),"%u",a->vibration);snprintf(timeout,sizeof(timeout),"%u",a->screen_timeout_index);snprintf(offset,sizeof(offset),"%d",a->utc_offset);
     char lock[8],access[8],navigation[8];snprintf(lock,sizeof(lock),"%u",a->lock_mode);snprintf(access,sizeof(access),"%u",a->access_mode);snprintf(navigation,sizeof(navigation),"%u",a->nav_mode);
     char torch[8];snprintf(torch,sizeof(torch),"%u",a->torch_saved>255?0u:a->torch_saved);
-    char*args[36]={a->python,"-B",(char*)settings_helper,"set","--navigation",navigation,"--animation",(char*)animation_codes[a->animation],"--lock",lock,"--access",access,"--language",(char*)language_codes[ui_language],"--theme",(char*)ui_theme->code,"--terminal",(char*)ui_terminal->code,"--storage",a->storage_prefers_usb?"usb":"sd","--refresh",refresh,"--brightness",brightness,"--vibration",vibration,"--timeout",timeout,"--utc-offset",offset,"--timezone",recovery_zone(a)?(char*)tz_zones[a->recovery_tz].id:"","--torch",torch,NULL};
+    char*args[38]={a->python,"-B",(char*)settings_helper,"set","--navigation",navigation,"--animation",(char*)animation_codes[a->animation],"--lock",lock,"--access",access,"--language",(char*)language_codes[ui_language],"--theme",(char*)ui_theme->code,"--terminal",(char*)ui_terminal->code,"--storage",a->storage_prefers_usb?"usb":"sd","--refresh",refresh,"--brightness",brightness,"--vibration",vibration,"--timeout",timeout,"--utc-offset",offset,"--timezone",recovery_zone(a)?(char*)tz_zones[a->recovery_tz].id:"","--torch",torch,"--android-log",a->alog_seen,NULL};
     pid_t pid=fork();if(pid<0)return;
     if(!pid){(void)close_range(3,~0u,0);unsetenv("A22X_RECOVERY_LOCK_FD");execv(a->python,args);_exit(2);}
     if(wait)waitpid(pid,NULL,0);else a->settings_pid=pid;
@@ -4119,6 +4127,7 @@ static void action_run(App*a,int id){
     if(!a->job.pid&&identity_action(a,id))return;
     if(android_plan_action(a,id))return;
     if(wipe_action(a,id))return;
+    if(android_log_action(a,id))return;
     if(root_action(a,id))return;
     if(manage_action(a,id))return;
     if(card_action(a,id))return;
@@ -4778,6 +4787,13 @@ static double battery_curve_level(long uv){
    voltage, taken back to open circuit with the measured current and the cell's resistance, and
    smoothed: the estimate starts there, and afterwards is drawn to it one point at a time whenever
    the two are four points or more apart. A charger that says Full is believed. */
+/* 2026-11-12, the owner: the percent still jumps, it used to be right, look how stock does it.
+   Stock keeps the percent it showed in the PMIC's clock domain and counts charge from there; the
+   voltage speaks only at the ends. From kernel 124 the recovery's gauge does the same (it starts
+   from that kept number, so Android and the recovery go on from one another's, and corrects itself
+   with care), and says so with its attribute soc_start. Then its number is shown as it is, and the
+   estimate below is for older kernels only. */
+static bool battery_gauge_keeps(void){char path[PATH_LEN+48];snprintf(path,sizeof(path),"%s/device/soc_start",battery_curve.folder);return access(path,R_OK)==0;}
 #define BATTERY_SETTLE 6u        /* readings at the start that set the estimate outright */
 #define BATTERY_APART 4.0        /* points between estimate and voltage before a correction */
 #define BATTERY_STEP_MS 30000.0  /* one point of correction takes this long */
@@ -4804,7 +4820,10 @@ static void update_battery(App*a){
     }
     a->battery_uv=uv;a->battery_ua=current;
     double open=uv>0&&battery_curve.count?battery_curve_level(uv-(long)((double)current*a->battery_ohm)):-1;
-    if(open>=0&&counted>=0&&whole>0){
+    bool kept=battery_gauge_keeps();
+    if(kept){
+        if(a->battery_estimated){a->battery_estimated=false;if(!getenv("A22X_RECOVERY_BATTERY"))unlink("/run/a22x-recovery/battery-level");}
+    }else if(open>=0&&counted>=0&&whole>0){
         long flow=current<0?-current:current;
         /* A heavy current bends the voltage more than one resistance explains: it counts for less, or not at all. */
         double weight=flow<=300000?1.0:(flow>=700000?0.0:0.35);
@@ -4836,7 +4855,7 @@ static void update_battery(App*a){
     }
     int percent=(int)(shown+0.5);if(percent>100)percent=100;
     /* Not full until the charger says so: 100 beside a charging bolt would be a promise. */
-    if(!full&&a->battery_charging&&percent>99&&a->battery_estimated)percent=99;
+    if(!full&&a->battery_charging&&percent>99&&(a->battery_estimated||kept))percent=99;
     if(percent!=a->battery_percent||!a->battery[0]){
         /* The same number for the page of the phone's details. */
         const char*run=getenv("A22X_RECOVERY_BATTERY")?NULL:"/run/a22x-recovery/battery-level";
@@ -5061,6 +5080,21 @@ static bool preview(App*a,const char*name){
     }
     else if(!strcmp(name,"wipe")||!strcmp(name,"wipe-review"))a->screen=!strcmp(name,"wipe")?WIPE:WIPE_REVIEW;
     else if(!strcmp(name,"wipe-android")){a->wipe_android=true;a->screen=WIPE_REVIEW;}
+    else if(!strncmp(name,"android-log",11)){
+        /* What the owner met (kernel), init giving up for another reason (init), and a panic. */
+        const char*kind=name[11]=='-'?name+12:"kernel";a->screen=ANDROID_LOG;a->alog_seconds=9;copy(a->alog_id,sizeof(a->alog_id),"bb9507f313de2d66");
+        if(!strcmp(kind,"init")){copy(a->alog_code,sizeof(a->alog_code),"INIT_GAVE_UP");a->alog_seconds=12;copy(a->alog_reason,sizeof(a->alog_reason),"reboot,bootloader,bootstrap-apexd-failed");
+            copy(a->alog_lines[0],184,"[1:init]init: Service apexd-bootstrap has 'reboot_on_failure' option and failed, shutting down system.");
+            copy(a->alog_lines[1],184,"[1:init]reboot: Restarting system with command 'bootstrap-apexd-failed'");a->alog_line_count=2;}
+        else if(!strcmp(kind,"panic")){copy(a->alog_code,sizeof(a->alog_code),"KERNEL_PANIC");a->alog_seconds=20;copy(a->alog_detail,sizeof(a->alog_detail),"Attempted to kill init! exitcode=0x00000b00");
+            copy(a->alog_lines[0],184,"[1:init]Kernel panic - not syncing: Attempted to kill init! exitcode=0x00000b00");a->alog_line_count=1;}
+        else{copy(a->alog_code,sizeof(a->alog_code),"KERNEL_TOO_OLD");copy(a->alog_needs,sizeof(a->alog_needs),"4.19");copy(a->alog_reason,sizeof(a->alog_reason),"reboot,bpfloader-failed");
+            copy(a->alog_lines[0],184,"[861:netbpfload]NetBpfLoad: Android V requires kernel 4.19.");
+            copy(a->alog_lines[1],184,"[1:init]init: Service 'bpfloader' (pid 861) exited with status 1 waiting took 0.015000 seconds");
+            copy(a->alog_lines[2],184,"[1:init]init: Service bpfloader has 'reboot_on_failure' option and failed, shutting down system.");
+            copy(a->alog_lines[3],184,"[1:init]init: Reboot start, reason: reboot,bpfloader-failed, reboot_target: bpfloader-failed");
+            copy(a->alog_lines[4],184,"[1:init]reboot: Restarting system with command 'bpfloader-failed'");a->alog_line_count=5;}
+    }
     else if(!strcmp(name,"reset-asked")||!strcmp(name,"reset-prompt")){a->wipe_android=a->reset_asked=a->reset_page=true;a->reset_prompt=!strcmp(name,"reset-prompt");a->allow_power=true;a->screen=WIPE_REVIEW;}
     else if(!strcmp(name,"android"))a->screen=ANDROID_MENU;
     else if(!strcmp(name,"root")||!strcmp(name,"root-magisk")||!strcmp(name,"root-vbmeta")||!strcmp(name,"root-apatch")||!strcmp(name,"root-superkey")||!strcmp(name,"zip-review")||!strcmp(name,"zip-queue")){
@@ -5579,6 +5613,15 @@ static int test_battery(void){
     /* Below 20 % and not charging the mark is red: the estimate decides, not the kernel's number. */
     BATTERY_FILE("status","%s\n","Discharging");BATTERY_FILE("current_now","%d\n",-300000);BATTERY_FILE("voltage_now","%d\n",3650000);BATTERY_FILE("capacity","%d\n",64);
     a->battery_estimated=false;a->now+=10000;update_battery(a);assert(a->battery_percent<20&&a->battery_percent>=8&&!a->battery_charging);
+    /* A gauge that keeps the percent itself (kernel 124) is shown as it is, whatever the voltage says;
+       still no 100 beside the charging bolt before the charger says Full. */
+    {char device[96];snprintf(device,sizeof(device),"%s/device",folder);assert(!mkdir(device,0700));BATTERY_FILE("device/soc_start","%s\n","stored 64 41");
+     a->now+=10000;update_battery(a);assert(a->battery_percent==64&&!a->battery_estimated&&!strcmp(a->battery,"64%"));
+     BATTERY_FILE("capacity","%d\n",63);a->now+=10000;update_battery(a);assert(a->battery_percent==63);
+     BATTERY_FILE("status","%s\n","Charging");BATTERY_FILE("current_now","%d\n",900000);BATTERY_FILE("capacity","%d\n",100);a->now+=10000;update_battery(a);assert(a->battery_percent==99&&a->battery_charging);
+     BATTERY_FILE("status","%s\n","Full");a->now+=10000;update_battery(a);assert(a->battery_percent==100);
+     BATTERY_FILE("status","%s\n","Discharging");BATTERY_FILE("current_now","%d\n",-300000);BATTERY_FILE("capacity","%d\n",64);
+     snprintf(path,sizeof(path),"%s/device/soc_start",folder);unlink(path);rmdir(device);}
     /* Without the curve the kernel's number is shown as it is. */
     snprintf(path,sizeof(path),"%s/ocv-capacity-table-0",folder);unlink(path);battery_curve.read=false;a->battery_estimated=false;
     a->now+=10000;update_battery(a);assert(a->battery_percent==64&&!a->battery_estimated);
@@ -5590,6 +5633,39 @@ static int test_battery(void){
     rmdir(folder);unsetenv("A22X_RECOVERY_BATTERY");battery_curve.read=false;
     #undef BATTERY_FILE
     free(a->pixels);free(a);return 1;
+}
+/* 2026-11-12: how Android's last start ended, as init left it in RAM. The page opens once from the
+   home page for a start that failed, never for an ordinary restart or a log that just ends, and
+   not again for the start the owner has read about. */
+static int test_android_log(void){
+    char path[]="/tmp/a22x-alog-XXXXXX";int fd=mkstemp(path);assert(fd>=0);close(fd);setenv("A22X_RECOVERY_ANDROID_LOG",path,1);
+    #define ALOG_FILE(text) do{FILE*f=fopen(path,"w");assert(f);fputs(text,f);fclose(f);}while(0)
+    static const char failed[]="{\"ok\":true,\"operation\":\"read\",\"found\":true,\"code\":\"KERNEL_TOO_OLD\",\"restart\":\"bpfloader-failed\",\"reason\":\"reboot,bpfloader-failed\",\"needs\":\"4.19\",\"detail\":\"\",\"kernel\":\"\",\"seconds\":9.1,"
+        "\"lines\":[\"[861:netbpfload]NetBpfLoad: Android V requires kernel 4.19.\",\"[1:init]reboot: Restarting system with command 'bpfloader-failed'\"],\"id\":\"bb9507f313de2d66\",\"log_lines\":2395}";
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->inventory_ok=true;a->now=100000;
+    ALOG_FILE(failed);
+    a->screen=TOOLS;android_log_poll(a);assert(!a->alog_checked);                       /* only from the home page */
+    a->screen=HOME;a->locked=true;android_log_poll(a);assert(!a->alog_checked);a->locked=false;
+    android_log_poll(a);assert(a->alog_checked&&a->screen==ANDROID_LOG&&!strcmp(a->alog_code,"KERNEL_TOO_OLD")&&!strcmp(a->alog_needs,"4.19")&&a->alog_seconds==9&&a->alog_line_count==2);
+    render(a);assert(test_button(a,A_ALOG_OK)&&test_button(a,A_ALOG_IMAGES)&&test_button(a,A_ALOG_STOCK));
+    assert(!a->alog_seen[0]&&test_press(a,A_ALOG_OK,50)&&a->screen==HOME&&!strcmp(a->alog_seen,"bb9507f313de2d66")&&a->settings_dirty);
+    /* The same start after the recovery was restarted: read about already, nothing opens. */
+    a->alog_checked=false;a->alog_code[0]=0;android_log_poll(a);assert(a->alog_checked&&a->screen==HOME);
+    /* Another failed start opens the page again; Back reads it as well, and the pages of Android are one tap away. */
+    a->alog_checked=false;copy(a->alog_seen,sizeof(a->alog_seen),"0000000000000000");android_log_poll(a);assert(a->screen==ANDROID_LOG);
+    render(a);assert(test_press(a,A_ALOG_IMAGES,50)&&a->screen==ANDROID_MENU&&!strcmp(a->alog_seen,"bb9507f313de2d66"));
+    a->alog_checked=false;a->alog_seen[0]=0;a->screen=HOME;android_log_poll(a);assert(a->screen==ANDROID_LOG);action(a,A_BACK);assert(a->screen==HOME&&a->alog_seen[0]);
+    /* An ordinary restart, a log that just ends, no Android log at all: nothing opens. */
+    a->alog_seen[0]=0;
+    ALOG_FILE("{\"ok\":true,\"found\":true,\"code\":\"\",\"restart\":\"recovery\",\"id\":\"1111111111111111\"}");a->alog_checked=false;android_log_poll(a);assert(a->alog_checked&&a->screen==HOME);
+    ALOG_FILE("{\"ok\":true,\"found\":true,\"code\":\"CUT_SHORT\",\"restart\":null,\"id\":\"2222222222222222\"}");a->alog_checked=false;android_log_poll(a);assert(a->alog_checked&&a->screen==HOME&&!a->alog_code[0]);
+    ALOG_FILE("{\"ok\":true,\"found\":false,\"code\":\"\"}");a->alog_checked=false;android_log_poll(a);assert(a->alog_checked&&a->screen==HOME);
+    /* init is still reading: the page waits for the answer, but not for ever. */
+    unlink(path);a->alog_checked=false;a->alog_since=0;android_log_poll(a);assert(!a->alog_checked);
+    a->now+=5000;ALOG_FILE(failed);android_log_poll(a);assert(a->alog_checked&&a->screen==ANDROID_LOG);action(a,A_BACK);
+    unlink(path);a->alog_checked=false;a->alog_since=0;android_log_poll(a);a->now+=21000;android_log_poll(a);assert(a->alog_checked&&a->screen==HOME);
+    #undef ALOG_FILE
+    unsetenv("A22X_RECOVERY_ANDROID_LOG");free(a->pixels);free(a);return 1;
 }
 /* 2026-11-11: the flashlight is the camera's LED in the kernel's LED class; what is shown is what
    the LED took. A folder of two files stands in for it. */
@@ -5768,7 +5844,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;

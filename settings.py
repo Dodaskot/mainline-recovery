@@ -36,8 +36,9 @@ LOCK_WAIT = 3.0
 # the fixed utc_offset (2026-11-09).
 DEFAULTS = {'language': 'en', 'theme': 'graphite', 'terminal': 'auto', 'storage': 'sd', 'vibration': 2, 'timeout': 2, 'utc_offset': 0,
             'refresh': 0, 'brightness': 0, 'animation': 'zoom', 'lock': 1, 'access': 1, 'navigation': 0, 'timezone': '',
-            'torch': 0}  # the flashlight's level; 0: not chosen yet
-TEXT_KEYS = ('language', 'theme', 'terminal', 'storage', 'animation', 'timezone')
+            'torch': 0,  # the flashlight's level; 0: not chosen yet
+            'android_log': ''}  # the id of the failed start of Android the owner has read about (android_log.py)
+TEXT_KEYS = ('language', 'theme', 'terminal', 'storage', 'animation', 'timezone', 'android_log')
 ANIMATIONS = ('zoom', 'blur', 'slide', 'fade', 'dissolve', 'off')
 
 
@@ -52,6 +53,8 @@ def valid(key, value):
         return value in ('sd', 'usb')
     if key == 'animation':
         return value in ANIMATIONS
+    if key == 'android_log':
+        return re.fullmatch(r'(?:[0-9a-f]{16})?', value) is not None
     if key == 'timezone':
         return value == '' or (len(value) <= 64 and re.fullmatch(r'[A-Z][A-Za-z_]+(?:/[A-Za-z0-9_+-]+){1,2}', value) is not None)
     if not re.fullmatch(r'-?[0-9]{1,4}', value):

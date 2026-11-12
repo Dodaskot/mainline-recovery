@@ -109,6 +109,9 @@ static void installer_card(App*a,Rect r,unsigned int tone,int glyph,const char*t
 static int new_system_boot_hint(App*a,int y,bool free_ui){
     /* 2026-11-11, the owner flashed BOOT by hand before installing Mobian and asked for this to be
        simpler: the installation takes the Linux BOOT with it when this phone keeps one or can download it. */
+    /* An older Linux BOOT there (on the owner's phone one kept since kernel 107 ran the new systems, and they did not start as they should). */
+    if(a->systems_boot_outdated)
+        return y+text_tile(a,y,0,MUTED,"BOOT holds an older Linux kernel than the one this recovery was made for. A new system gets the current one; the BOOT there is kept on cache.",4)+12;
     if(!strcmp(a->systems_boot_source,"cache"))
         return y+text_tile(a,y,0,MUTED,"BOOT holds Android's kernel. The Linux BOOT kept on this phone is written when the new system is in place; Android's BOOT is kept on cache.",4)+12;
     if(!strcmp(a->systems_boot_source,"download"))
@@ -134,7 +137,7 @@ static void render_systems_new(App*a){
         rounded(a,(Rect){28,y,664,lines+82},24,PANEL);text(a,52,y+20,0,RED,"USERDATA IS FORMATTED");
         wrapped(a,52,y+58,616,0,TEXT,formatted,6);
         y+=lines+114;
-        if(a->systems_boot_android)y=new_system_boot_hint(a,y,free_ui);
+        if(a->systems_boot_android||a->systems_boot_outdated)y=new_system_boot_hint(a,y,free_ui);
         else text_tile(a,y,0,MUTED,"Packages, the account and the desktop are set up as you choose on the next pages.",4);
         if(a->source_sheet)render_source_sheet(a);
         return;
@@ -157,7 +160,7 @@ static void render_systems_new(App*a){
     wrapped(a,52,y+58,616,0,TEXT,a->systems_empty?"Nothing is replaced: the new system becomes the only one on userdata.":
             "When the installation starts, every Linux system and /home on userdata are erased. Make a backup first if you need them.",4);
     y+=(a->systems_empty?132:164)+32;
-    if(a->systems_boot_android)y=new_system_boot_hint(a,y,free_ui);
+    if(a->systems_boot_android||a->systems_boot_outdated)y=new_system_boot_hint(a,y,free_ui);
     else text_tile(a,y,0,MUTED,"Packages, the account and the desktop are set up as you choose on the next pages. The terminal stays available for installing by hand.",4);
     if(a->systems_mount_sheet)render_systems_mount(a);
     if(a->source_sheet)render_source_sheet(a);

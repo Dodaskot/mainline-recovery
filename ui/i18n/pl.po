@@ -468,6 +468,9 @@ msgstr "Android utworzy ją ponownie"
 msgid "ANDROID DATA IS ERASED"
 msgstr "DANE ANDROIDA ZOSTANĄ USUNIĘTE"
 
+msgid "Android did not start"
+msgstr "Android nie wystartował"
+
 msgid "Android holds userdata: its copy is one archive on a card. A Linux backup needs a Linux system on this phone."
 msgstr "Na userdata jest Android: jego kopia to jedno archiwum na karcie. Kopia Linuksa wymaga systemu Linux na tym telefonie."
 
@@ -498,6 +501,9 @@ msgstr "Partycje Androida przywrócone i sprawdzone"
 msgid "Android partitions saved"
 msgstr "Partycje Androida zapisane"
 
+msgid "Android restarted the phone itself %s seconds after its start."
+msgstr "Android sam zrestartował telefon %s s po starcie."
+
 msgid "Android restored"
 msgstr "Android przywrócony"
 
@@ -522,8 +528,14 @@ msgstr "Przy instalacji roota dane Androida zostaną jednorazowo wymazane."
 msgid "Android's data needs userdata and metadata together: choose both, or neither"
 msgstr "Dane Androida wymagają userdata i metadata razem: wybierz obie albo żadnej"
 
+msgid "Android's kernel stopped %s seconds after its start."
+msgstr "Jądro Androida zatrzymało się %s s po starcie."
+
 msgid "Animations"
 msgstr "Animacje"
+
+msgid "Another Android is needed. Images made for older phones (Treble GSIs such as crDroid) start with this kernel, and so does Samsung's firmware."
+msgstr "Potrzebny jest inny Android. Obrazy dla starszych telefonów (Treble GSI, np. crDroid) startują z tym jądrem, tak samo firmware Samsunga."
 
 msgid "Another block device uses this card"
 msgstr "Inne urządzenie blokowe używa tej karty"
@@ -743,6 +755,9 @@ msgstr "BOOT i zajęte bloki ext4 są odczytywane i kompresowane. Istniejące pl
 
 msgid "BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache."
 msgstr "BOOT dostanie jądro Linux, gdy system będzie na miejscu; obecny BOOT zostaje na cache."
+
+msgid "BOOT holds an older Linux kernel than the one this recovery was made for. A new system gets the current one; the BOOT there is kept on cache."
+msgstr "W BOOT jest starsze jądro Linux niż to, dla którego zrobiono to recovery. Nowy system dostanie aktualne; obecny BOOT zostaje na cache."
 
 msgid "BOOT holds Android's kernel. Linux starts with its own: flash a Linux BOOT image for this phone before the installation."
 msgstr "W BOOT jest jądro Androida. Linux startuje z własnym: przed instalacją wgraj obraz Linux BOOT dla tego telefonu."
@@ -2171,6 +2186,9 @@ msgstr "instalator to skrypt"
 
 msgid "ITS INSTALLER RUNS AS ROOT"
 msgstr "INSTALATOR DZIAŁA JAKO ROOT"
+
+msgid "Its reason: %s"
+msgstr "Jego powód: %s"
 
 msgid "Its root filesystem with its programs, /etc and /var is deleted. /home, the active system and BOOT stay. This cannot be undone."
 msgstr "Jego główny system plików z programami, /etc i /var zostanie usunięty. /home, aktywny system i BOOT zostają. Tego nie można cofnąć."
@@ -4749,6 +4767,9 @@ msgstr "Nie udało się załatać jądra w BOOT dla APatch"
 msgid "The kernel keeps this partition read-only"
 msgstr "Jądro trzyma tę partycję tylko do odczytu"
 
+msgid "THE KERNEL'S LAST LINES"
+msgstr "OSTATNIE WIERSZE JĄDRA"
+
 msgid "The last installation completed with independent readback. Boot behavior still needs a deliberate test."
 msgstr "Ostatnia instalacja zakończyła się niezależnym odczytem kontrolnym. Uruchomienie wciąż wymaga celowego testu."
 
@@ -5142,6 +5163,9 @@ msgstr "Cały obraz ze wszystkimi"
 msgid "The whole image, or one Android partition inside it."
 msgstr "Cały obraz albo jedna partycja Androida w środku."
 
+msgid "The whole log of that start goes with Export diagnostics."
+msgstr "Cały dziennik tego startu trafia do «Eksportu diagnostyki»."
+
 msgid "The write receipt could not be displayed completely. Inspect installation status."
 msgstr "Nie udało się w całości wyświetlić potwierdzenia zapisu. Sprawdź stan instalacji."
 
@@ -5225,6 +5249,12 @@ msgstr "To 7z używa metody, której Recovery nie umie odczytać"
 
 msgid "This action replaces the listed targets."
 msgstr "Ta akcja zastępuje wymienione cele."
+
+msgid "This Android needs a newer kernel than the Android kernel of this phone, so Android restarts the phone on every start."
+msgstr "Ten Android wymaga nowszego jądra niż jądro Androida w tym telefonie, więc Android restartuje telefon przy każdym starcie."
+
+msgid "This Android needs kernel %s or newer. The Android kernel of this phone is older, so Android restarts the phone on every start."
+msgstr "Ten Android wymaga jądra %s lub nowszego. Jądro Androida w tym telefonie jest starsze, więc Android restartuje telefon przy każdym starcie."
 
 msgid "This backup belongs to another phone. Restoring it would give this phone a foreign identity"
 msgstr "Ta kopia należy do innego telefonu. Jej przywrócenie dałoby temu telefonowi cudzą tożsamość"
@@ -5513,6 +5543,9 @@ msgstr "niedostępne"
 
 msgid "Under a minute"
 msgstr "Mniej niż minuta"
+
+msgid "Understood"
+msgstr "Rozumiem"
 
 msgid "unknown"
 msgstr "nieznane"
@@ -5832,11 +5865,17 @@ msgstr "środa"
 msgid "WHAT HAPPENS NEXT"
 msgstr "CO DALEJ"
 
+msgid "What its kernel wrote before the phone restarted."
+msgstr "Co zapisało jego jądro przed restartem telefonu."
+
 msgid "What this system lacks for the phone is built on it (Arch: Phosh's compositor fix and Phrog), up to 45 minutes. Keep the phone powered."
 msgstr "To, czego temu systemowi brakuje dla telefonu, jest w nim budowane (Arch: poprawka kompozytora Phosh i Phrog), do 45 minut. Nie wyłączaj telefonu."
 
 msgid "When the installation starts, every Linux system and /home on userdata are erased. Make a backup first if you need them."
 msgstr "Na początku instalacji wszystkie systemy Linux i /home na userdata zostaną usunięte. W razie potrzeby najpierw zrób kopię."
+
+msgid "When this happens on every start, the installed Android does not fit the phone or its data: install another one, or format the data for Android in Wipe."
+msgstr "Jeśli dzieje się tak przy każdym starcie, zainstalowany Android nie pasuje do telefonu lub do swoich danych: zainstaluj inny albo sformatuj dane dla Androida w «Czyszczeniu»."
 
 msgid "Where is the file?"
 msgstr "Gdzie jest plik?"

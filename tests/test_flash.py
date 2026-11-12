@@ -442,7 +442,7 @@ class Settings(unittest.TestCase):
     def test_defaults_then_saved_values(self):
         self.assertEqual(json.loads(self.call('status')[1]), {'language': 'en', 'theme': 'graphite', 'terminal': 'auto', 'storage': 'sd', 'vibration': 2, 'timeout': 2, 'utc_offset': 0,
                                                        'refresh': 0, 'brightness': 0, 'animation': 'zoom', 'lock': 1, 'access': 1,
-                                                       'navigation': 0, 'timezone': '', 'torch': 0, 'password': False, 'password_digits': False})
+                                                       'navigation': 0, 'timezone': '', 'torch': 0, 'android_log': '', 'password': False, 'password_digits': False})
         self.assertEqual(self.call('set', '--language', 'uk', '--vibration', '3', '--utc-offset', '60')[0], 0)
         self.assertEqual(self.disk, {'language': 'uk', 'vibration': 3, 'utc_offset': 60})
         self.assertEqual(self.call('set', '--refresh', '90', '--brightness', '40', '--terminal', 'tokyo-night', '--storage', 'usb')[0], 0)
@@ -575,6 +575,19 @@ class Settings(unittest.TestCase):
         for bad in ('-1', '256', 'bright', ''):
             self.assertEqual(self.call('set', '--torch', bad)[0], 2, bad)
         self.assertEqual(self.disk['torch'], 9)
+
+    def test_the_failed_start_of_android_that_was_read_about_is_kept(self):
+        """2026-11-12: the page that says why Android did not start opens once for each failed start;
+        the id of the one the owner has read about is kept with the settings."""
+        self.assertEqual(self.call('set', '--android-log', 'bb9507f313de2d66')[0], 0)
+        self.assertEqual(self.disk['android_log'], 'bb9507f313de2d66')
+        self.assertEqual(json.loads(self.call('status')[1])['android_log'], 'bb9507f313de2d66')
+        self.assertEqual(self.call('set', '--torch', '3')[0], 0)  # another setting leaves it
+        self.assertEqual(self.disk['android_log'], 'bb9507f313de2d66')
+        for bad in ('BB9507F313DE2D66', 'bb95', 'bb9507f313de2d66a', '../etc/passwd', 'zz9507f313de2d66'):
+            self.assertEqual(self.call('set', '--android-log', bad)[0], 2, bad)
+        self.assertEqual(self.call('set', '--android-log', '')[0], 0)
+        self.assertEqual(self.disk['android_log'], '')
 
     def test_new_settings_refuse_unknown_values(self):
         self.assertEqual(self.call('set', '--animation', 'spin')[0], 2)

@@ -153,6 +153,7 @@ Android boot image
 Android could not open its data and asks to erase it. When it failed only once, starting it again may be enough: forget the request and restart.
 Android creates it again
 ANDROID DATA IS ERASED
+Android did not start
 Android holds userdata: its copy is one archive on a card. A Linux backup needs a Linux system on this phone.
 Android image
 Android image installed
@@ -163,6 +164,7 @@ Android matches the copy
 Android partitions
 Android partitions restored and checked
 Android partitions saved
+Android restarted the phone itself %s seconds after its start.
 Android restored
 Android state requires its matching retained system/vendor firmware.
 Android super image
@@ -171,7 +173,9 @@ Android uses userdata: the image is saved on the card %s
 Android verified filesystem; writes are not qualified
 Android's data is erased once when root is installed.
 Android's data needs userdata and metadata together: choose both, or neither
+Android's kernel stopped %s seconds after its start.
 Animations
+Another Android is needed. Images made for older phones (Treble GSIs such as crDroid) start with this kernel, and so does Samsung's firmware.
 Another block device uses this card
 Another phone
 Antarctica
@@ -245,6 +249,7 @@ BOOT
 Boot + used ext4 blocks\nSave the Linux kernel and root filesystem offline.
 BOOT and allocated ext4 blocks are read and compressed. Existing files on the destination are retained.
 BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache.
+BOOT holds an older Linux kernel than the one this recovery was made for. A new system gets the current one; the BOOT there is kept on cache.
 BOOT holds Android's kernel. Linux starts with its own: flash a Linux BOOT image for this phone before the installation.
 BOOT holds Android's kernel. The Linux BOOT for this phone (32 MiB) is downloaded first and written when the new system is in place; Android's BOOT is kept on cache.
 BOOT holds Android's kernel. The Linux BOOT kept on this phone is written when the new system is in place; Android's BOOT is kept on cache.
@@ -721,6 +726,7 @@ Its first start sets up the account, network, desktop and apps, then restarts on
 its installer is a program
 its installer is a script
 ITS INSTALLER RUNS AS ROOT
+Its reason: %s
 Its root filesystem with its programs, /etc and /var is deleted. /home, the active system and BOOT stay. This cannot be undone.
 January
 Join a network
@@ -1580,6 +1586,7 @@ The kernel could not read the new partition table
 The kernel does not show the new partitions
 The kernel in BOOT could not be patched for APatch
 The kernel keeps this partition read-only
+THE KERNEL'S LAST LINES
 The last installation completed with independent readback. Boot behavior still needs a deliberate test.
 The last screenshot is still being saved
 The link target was not returned. No target was opened.
@@ -1711,6 +1718,7 @@ The volume has too little free space for the backup
 The volume ran out of space while the archive was written
 The whole image of all of them
 The whole image, or one Android partition inside it.
+The whole log of that start goes with Export diagnostics.
 The write receipt could not be displayed completely. Inspect installation status.
 The ZIP changed after it was reviewed
 The ZIP compresses its image in a way this recovery cannot read
@@ -1739,6 +1747,8 @@ This 7z keeps its folders elsewhere
 This 7z keeps its names elsewhere
 This 7z uses a method this recovery cannot read
 This action replaces the listed targets.
+This Android needs a newer kernel than the Android kernel of this phone, so Android restarts the phone on every start.
+This Android needs kernel %s or newer. The Android kernel of this phone is older, so Android restarts the phone on every start.
 This backup belongs to another phone. Restoring it would give this phone a foreign identity
 This BOOT already has another root: flash the stock BOOT back first (Remove root)
 This BOOT already has another root: remove it first.
@@ -1835,6 +1845,7 @@ UID %s  /  GID %s
 Unavailable
 unavailable
 Under a minute
+Understood
 unknown
 Unknown kind of backup
 Unknown phone
@@ -1941,8 +1952,10 @@ Warm wood and a quiet river
 Weather
 Wednesday
 WHAT HAPPENS NEXT
+What its kernel wrote before the phone restarted.
 What this system lacks for the phone is built on it (Arch: Phosh's compositor fix and Phrog), up to 45 minutes. Keep the phone powered.
 When the installation starts, every Linux system and /home on userdata are erased. Make a backup first if you need them.
+When this happens on every start, the installed Android does not fit the phone or its data: install another one, or format the data for Android in Wipe.
 Where is the file?
 While the shell is open, other storage operations wait for this terminal to close.
 WI-FI

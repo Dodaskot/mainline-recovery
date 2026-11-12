@@ -1873,9 +1873,14 @@ fs = d.fs
 
 class LinuxBootTaken(unittest.TestCase):
     """2026-11-11, the owner: "I tried to install Mobian Phosh myself, flashing BOOT before it: make
-    this simpler". With Android's kernel on BOOT a new system takes its Linux BOOT with it: one kept
-    on cache, else the one the mainline project publishes; the plan is bound to it and the
+    this simpler". With Android's kernel on BOOT a new system takes its Linux BOOT with it. First the
+    release this recovery was made for, kept on cache or downloaded; only then another one that the
+    phone keeps (on the owner's phone a BOOT kept since kernel 107 was taken, and the systems
+    installed with it did not start as they should). The plan is bound to the image and the
     installation writes it at its end."""
+    RELEASE = {'sha256': 'd' * 64, 'release': '7.2.0-a22x+'}
+    OLD = {'sha256': 'c' * 64, 'release': '7.2.0-a22x+'}
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='a22x-linux-boot-')
         self.addCleanup(self.tmp.cleanup)
@@ -1885,35 +1890,64 @@ class LinuxBootTaken(unittest.TestCase):
         spec = dict(self.f.context_json, **more)
         (self.f.path / 'filesystem-fixture.json').write_text(json.dumps(spec))
 
+    def code(self, **kwargs):
+        with self.assertRaises(fs.FilesystemError) as raised:
+            d.boot_for_linux(self.f.context, **kwargs)
+        return raised.exception.code
+
     def test_the_boot_there_is_used_when_it_is_linux(self):
         boot = d.boot_for_linux(self.f.context)
         self.assertNotIn('write', boot)
-        self.assertEqual(d.status(self.f.context)['boot_source'], '')
+        status = d.status(self.f.context)
+        self.assertEqual((status['boot_source'], status['boot_outdated']), ('', False))
 
     def test_without_any_linux_boot_the_plan_says_what_to_do(self):
         self.spec(android_boot=True)
-        with self.assertRaises(fs.FilesystemError) as raised:
-            d.boot_for_linux(self.f.context)
-        self.assertEqual(raised.exception.code, 'BOOT_PROFILE_MISMATCH')
+        self.assertEqual(self.code(), 'BOOT_PROFILE_MISMATCH')
         self.assertEqual(d.status(self.f.context)['boot_source'], '')
 
-    def test_a_boot_kept_on_cache_comes_first_and_needs_no_network(self):
-        self.spec(android_boot=True, offline=True, linux_boot={'from': 'cache', 'sha256': 'c' * 64, 'release': '7.2.0-a22x+'})
+    def test_the_release_kept_on_cache_needs_no_network(self):
+        self.spec(android_boot=True, offline=True, linux_boot_release=self.RELEASE, linux_boot_cache=[self.OLD, self.RELEASE])
         boot = d.boot_for_linux(self.f.context)
-        self.assertEqual((boot['boot_sha256'], boot['write'], boot['kernel_release']), ('c' * 64, True, '7.2.0-a22x+'))
+        self.assertEqual((boot['boot_sha256'], boot['write'], boot['kernel_release']), ('d' * 64, True, '7.2.0-a22x+'))
+        self.assertEqual(d.status(self.f.context)['boot_source'], 'cache')
+
+    def test_the_release_comes_before_an_older_boot_the_phone_keeps(self):
+        """What went wrong on the phone: the old one was newest on cache, and it was taken."""
+        self.spec(android_boot=True, linux_boot_release=self.RELEASE, linux_boot_cache=[self.OLD])
+        self.assertEqual(d.boot_for_linux(self.f.context)['boot_sha256'], 'd' * 64)
+        self.assertEqual(d.status(self.f.context)['boot_source'], 'download')
+        # Without the network the older one is better than none.
+        self.spec(android_boot=True, offline=True, linux_boot_release=self.RELEASE, linux_boot_cache=[self.OLD])
+        self.assertEqual(d.boot_for_linux(self.f.context)['boot_sha256'], 'c' * 64)
         self.assertEqual(d.status(self.f.context)['boot_source'], 'cache')
 
     def test_the_published_boot_needs_the_network_at_planning(self):
-        self.spec(android_boot=True, offline=True, linux_boot={'from': 'download', 'sha256': 'd' * 64, 'release': '7.2.0-a22x+'})
-        with self.assertRaises(fs.FilesystemError) as raised:
-            d.boot_for_linux(self.f.context)
-        self.assertEqual(raised.exception.code, 'LINUX_BOOT_NEEDS_NETWORK')
-        self.spec(android_boot=True, linux_boot={'from': 'download', 'sha256': 'd' * 64, 'release': '7.2.0-a22x+'})
+        self.spec(android_boot=True, offline=True, linux_boot_release=self.RELEASE)
+        self.assertEqual(self.code(), 'LINUX_BOOT_NEEDS_NETWORK')
+        self.spec(android_boot=True, linux_boot_release=self.RELEASE)
         self.assertEqual(d.boot_for_linux(self.f.context)['boot_sha256'], 'd' * 64)
         self.assertEqual(d.status(self.f.context)['boot_source'], 'download')
 
+    def test_a_clean_installation_replaces_an_older_linux_boot(self):
+        """BOOT holds a Linux kernel for this phone, but not the release: a clean installation writes
+        the release; a system added beside the others leaves BOOT as it is."""
+        self.spec(linux_boot_release=self.RELEASE, boot_sha256='c' * 64)
+        self.assertNotIn('write', d.boot_for_linux(self.f.context))
+        fresh = d.boot_for_linux(self.f.context, fresh=True)
+        self.assertEqual((fresh['boot_sha256'], fresh['write']), ('d' * 64, True))
+        status = d.status(self.f.context)
+        self.assertEqual((status['boot_linux'], status['boot_outdated'], status['boot_source']), (True, True, 'download'))
+        # The release is there already: nothing to write. Offline with nothing kept: BOOT stays.
+        self.spec(linux_boot_release=self.RELEASE, boot_sha256='d' * 64)
+        self.assertNotIn('write', d.boot_for_linux(self.f.context, fresh=True))
+        self.assertFalse(d.status(self.f.context)['boot_outdated'])
+        self.spec(linux_boot_release=self.RELEASE, boot_sha256='c' * 64, offline=True)
+        self.assertNotIn('write', d.boot_for_linux(self.f.context, fresh=True))
+        self.assertFalse(d.status(self.f.context)['boot_outdated'])
+
     def test_the_boot_is_fetched_first_and_written_last(self):
-        self.spec(android_boot=True, linux_boot={'from': 'download', 'sha256': 'd' * 64, 'release': '7.2.0-a22x+'})
+        self.spec(android_boot=True, linux_boot_release=self.RELEASE)
         steps = []
         plan = {'binding': {'boot': d.boot_for_linux(self.f.context)}, 'name': 'test'}
         with mock.patch.object(d, 'verify_plan'), \
@@ -1934,13 +1968,13 @@ class LinuxBootTaken(unittest.TestCase):
         self.assertEqual(steps, [])
 
     def test_the_fixture_writes_its_boot(self):
-        self.spec(android_boot=True, linux_boot={'from': 'cache', 'sha256': 'c' * 64, 'release': '7.2.0-a22x+'})
+        self.spec(android_boot=True, linux_boot_cache=[self.OLD])
         boot = d.boot_for_linux(self.f.context)
         self.assertEqual(d.linux_boot_fetched(self.f.context, boot, lambda *a: None), '')
         d.linux_boot_written(self.f.context, '', boot, lambda *a: None)
         self.assertTrue(d.status(self.f.context)['boot_linux'])
-        # A plan for another image is stale.
-        self.spec(android_boot=True, linux_boot={'from': 'download', 'sha256': 'e' * 64, 'release': '7.2.0-a22x+'})
+        # A plan for an image that is neither kept nor offered any more is stale.
+        self.spec(android_boot=True, linux_boot_release={'sha256': 'e' * 64, 'release': '7.2.0-a22x+'})
         with self.assertRaises(fs.FilesystemError) as raised:
             d.linux_boot_fetched(self.f.context, boot, lambda *a: None)
         self.assertEqual(raised.exception.code, 'PLAN_STALE')

@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import adbd  # noqa: E402
@@ -238,6 +239,14 @@ class TestWithTheAdbClient(unittest.TestCase):
         self.assertEqual(target.read_bytes(), data)
         self.assertEqual(self.adb('pull', str(target), str(back)).returncode, 0)
         self.assertEqual(back.read_bytes(), data)
+        # A file that cannot be written out is not "pushed" (2026-11-12: an image came back with
+        # 16 MiB of zeros in it): the flush fails, adb says so, and nothing is left under the name.
+        lost = Path(self.tmp.name) / 'lost.bin'
+        with mock.patch.object(adbd.os, 'fsync', side_effect=OSError(28, 'No space left on device')):
+            failed = self.adb('push', str(source), str(lost))
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn('No space left on device', failed.stdout + failed.stderr)
+        self.assertFalse(lost.exists() or Path(str(lost) + '.adb-part').exists())
         listing = self.adb('shell', 'ls ' + self.tmp.name).stdout
         self.assertIn('remote.bin', listing)
         self.assertEqual(self.adb('exec-out', 'printf raw').stdout, 'raw')

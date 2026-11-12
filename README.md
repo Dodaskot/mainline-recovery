@@ -3,24 +3,39 @@
 A native Linux recovery for the **Samsung Galaxy A22 5G (SM-A226B, MT6833)**.
 It lives in the 40 MiB RECOVERY partition, runs entirely from RAM, has its own
 touch interface, and installs and manages Linux distributions in `userdata`.
-Android installation is planned, but it is not ready yet.
+It also installs Android: Samsung's firmware, GSIs from the internet and ROM
+files, and tells why an Android did not start.
 
 Ukrainian: [README.uk.md](README.uk.md). History before 0.6.124:
 [docs/CHANGELOG.md](docs/CHANGELOG.md). Day-by-day progress of 0.6, with every
 on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md).
 
-## Status (2026-11-11)
+## Status (2026-11-12)
 
 | | |
 |---|---|
-| Recovery | 0.6.181, SHA-256 `8c1918588cf7a60222856b8d727c9a659133636790c097906fbda0a6552f549c` |
-| Recovery kernel | `7.2.0-a22x-recovery+ #123`: [linux-a22x](https://github.com/Dodaskot/linux-a22x) branch `a22x-recovery`, tag `a22x-recovery-kernel123` |
+| Recovery | 0.6.188, SHA-256 `28edd82f1b0d353e7a14d63a260d95702df830bae22f50a19e274c8440032f02` |
+| Recovery kernel | `7.2.0-a22x-recovery+ #127`: [linux-a22x](https://github.com/Dodaskot/linux-a22x) branch `a22x-recovery`, tag `a22x-recovery-kernel127` |
 | Tested with | BOOT v146 (`releases/v146`, kernel `#122`) and v145 (kernel `#121`), branch `a22x-boot` |
-| Image | published with the releases of this repository since 0.6.180: the same build without the developer's SSH key and without the phone's Bluetooth address (see [Building](#building)) |
+| Image and app | [Releases](https://github.com/Dodaskot/a22x-recovery/releases): the recovery image for any phone (the same build without the developer's SSH key and without the phone's Bluetooth address, see [Building](#building)) and the installer app that carries it |
+| Test results | [docs/TEST_RESULTS.md](docs/TEST_RESULTS.md): every automatic suite, and what was done on the phone |
 
 Everything listed as working below was done on the phone by touch, the way a
-user would do it, between 2026-11-06 and 2026-11-10. Test accounts and
+user would do it, between 2026-11-06 and 2026-11-12. Test accounts and
 networks are not part of this repository.
+
+## Screenshots
+
+Rendered by the interface itself from its preview fixtures, so no phone data
+is in them. The three built-in themes, Graphite, Daylight and Aurora:
+
+![The three themes](docs/screenshots/themes.jpg)
+
+The pages, in Aurora (each one singly: [docs/screenshots/en](docs/screenshots/en)):
+
+![Home, installing Linux and Android](docs/screenshots/pages-en-1.jpg)
+![Android, backup, files, terminal, flashing](docs/screenshots/pages-en-2.jpg)
+![Storage, network, settings, power](docs/screenshots/pages-en-3.jpg)
 
 ## What works
 
@@ -322,6 +337,40 @@ networks are not part of this repository.
   says what became of each. A restart of the system afterwards can be asked
   for; it counts down ten seconds and can be stopped.
 
+### Added in 0.6.182 to 0.6.188
+
+- **Why Android did not start** (0.6.183). The log of Android's kernel
+  outlives a restart in the phone's memory. The recovery reads it at its start
+  and, when Android's last start ended by itself, opens a page that says why,
+  with the kernel's own lines: an Android that needs a newer kernel than the
+  phone's (Google's Android 15 image asks for 4.19, this phone's Android
+  kernel is 4.14), Android's init giving up, or a kernel panic. The page opens
+  once for each such start, and the whole log goes with Export diagnostics.
+  Before this the reason could only be read over a serial cable.
+- **The right Linux BOOT for a new system** (0.6.182). An installation takes
+  the BOOT release this recovery was made for: kept on cache, else downloaded.
+  An older Linux BOOT that the phone keeps is used only when the release cannot
+  be had, and a clean installation replaces an older Linux BOOT that is there.
+  Before, the newest BOOT on cache won, and that could be one from an old test.
+- **Charge** (0.6.182 to 0.6.188, recovery kernel #124 to #127). The kernel's
+  gauge judges its start against the cell's curve in volts, refuses a percent
+  that the voltage contradicts, and corrects its count with care; the interface
+  shows that number as it is. See Known problems for what is still open.
+- **A pushed file is flushed** (0.6.185). `adb push` to the recovery says
+  "pushed" only after the file is on the storage.
+- **An image that brings its own Phosh** (0.6.186 to 0.6.188), found with
+  Manjaro ARM Phosh on the phone. Such an image has no greetd, which the
+  recovery uses for the automatic sign-in, so Phosh stayed disabled and the
+  phone stopped at a text login: the image's own `phosh.service` is now used
+  for the chosen account. Its Mesa (24.0) keeps this phone's GPU path under the
+  name `mediatek`, not `kmsro`: asked for the wrong name it drew in software,
+  and Phosh's buttons answered late or not at all. Every session now asks the
+  installed Mesa for the name at its start. And phoc's wlroots fix for this
+  phone, which was built only where the recovery installed the desktop, is
+  now built for such an image too when its phoc needs it.
+- **Catalog.** Google's Android 15 images are gone from it: they cannot start
+  on this phone's Android kernel.
+
 ### Power
 
 Restart into the system, the recovery or Samsung Download, and power off.
@@ -337,9 +386,10 @@ Wi-Fi networks, the language, the time zone and the clock to the recovery
 (`cache:/a22x-recovery/handoff.json`), saves setup scripts the recovery offers,
 and restarts into the recovery. Graphite, Daylight and Aurora change its
 colours, its launcher icon and its Android 12+ start screen. `apk/build.sh`
-builds it without the Android SDK. No APK is published: the images inside it
-are built with files from the developer's phone. Its root scripts were run in
-the recovery against test devices; the app itself has not run on Android yet.
+builds it without the Android SDK. Since 0.6.188 the APK is published with the
+releases, with the recovery image for any phone inside. Its root scripts were
+run in the recovery against test devices; the app itself has not run on
+Android yet.
 
 ## Distributions tested on the phone
 
@@ -413,8 +463,17 @@ shared `/home`. Switching between them in every direction worked.
    scripts saved in `cache` (`a22x-recovery/scripts/`).
 11. The image leaves 1.3 MiB of the RECOVERY partition free. The kernel also
    supports XZ and ZSTD initramfs, which would free more room.
-12. There is no public image yet, because the build needs platform files
-    captured from the phone.
+12. **The charge kept for Android does not hold.** The recovery's gauge writes
+    its percent where Android's gauge keeps its own (the PMIC's RTC domain),
+    and reads it back, but the write never reaches the RTC's core (a reload
+    of the registers shows the old value at once), so after a restart the
+    register holds what Android wrote before. Android and the recovery still
+    count from their own starts, and may show different numbers.
+13. **The setup of an installed system cannot be run again.** A system whose
+    desktop was set up by an older recovery keeps that setup; the fixes above
+    reach it only by installing it again (beside the others or clean).
+14. The manifests inside the published image name build folders of the
+    developer's computer. No key, address or network is in them.
 
 ## Building
 
@@ -446,12 +505,13 @@ paths of the machine it was built on.
 ## Tests
 
 ```fish
-unshare -r python3 -B -m unittest discover -s tests   # 687 tests
+unshare -r python3 -B -m unittest discover -s tests   # 700 tests
 cd ui; and make test systems-ui-integration display-ui-integration shells-ui-test locale-ui-test
 make -C ui arm64 CROSS_COMPILE=aarch64-linux-gnu-     # static interface for the phone
 ```
 
 `unshare -r` gives the file-ownership tests a user namespace; no root is used.
+The last full run, suite by suite: [docs/TEST_RESULTS.md](docs/TEST_RESULTS.md).
 
 ## License
 

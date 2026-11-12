@@ -468,6 +468,9 @@ msgstr "Android створить його знову"
 msgid "ANDROID DATA IS ERASED"
 msgstr "ДАНІ ANDROID БУДЕ СТЕРТО"
 
+msgid "Android did not start"
+msgstr "Android не запустився"
+
 msgid "Android holds userdata: its copy is one archive on a card. A Linux backup needs a Linux system on this phone."
 msgstr "На userdata зараз Android: його копія — один архів на картці. Для копії Linux на телефоні має бути система Linux."
 
@@ -498,6 +501,9 @@ msgstr "Розділи Android відновлено й перевірено"
 msgid "Android partitions saved"
 msgstr "Розділи Android збережено"
 
+msgid "Android restarted the phone itself %s seconds after its start."
+msgstr "Android сам перезапустив телефон через %s с після запуску."
+
 msgid "Android restored"
 msgstr "Android відновлено"
 
@@ -522,8 +528,14 @@ msgstr "Під час встановлення root дані Android буде о
 msgid "Android's data needs userdata and metadata together: choose both, or neither"
 msgstr "Даним Android потрібні userdata і metadata разом: виберіть обидва або жодного"
 
+msgid "Android's kernel stopped %s seconds after its start."
+msgstr "Ядро Android зупинилося через %s с після запуску."
+
 msgid "Animations"
 msgstr "Анімації"
+
+msgid "Another Android is needed. Images made for older phones (Treble GSIs such as crDroid) start with this kernel, and so does Samsung's firmware."
+msgstr "Потрібен інший Android. Образи, зроблені для старіших телефонів (Treble GSI, як-от crDroid), запускаються з цим ядром, і прошивка Samsung теж."
 
 msgid "Another block device uses this card"
 msgstr "Цю картку використовує інший блоковий пристрій"
@@ -743,6 +755,9 @@ msgstr "BOOT і зайняті блоки ext4 читаються та стис�
 
 msgid "BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache."
 msgstr "BOOT отримає ядро Linux, коли система буде на місці; теперішній BOOT зберігається в cache."
+
+msgid "BOOT holds an older Linux kernel than the one this recovery was made for. A new system gets the current one; the BOOT there is kept on cache."
+msgstr "У BOOT старіше ядро Linux, ніж те, під яке зроблено це recovery. Нова система отримає актуальне; теперішній BOOT зберігається в cache."
 
 msgid "BOOT holds Android's kernel. Linux starts with its own: flash a Linux BOOT image for this phone before the installation."
 msgstr "У BOOT зараз ядро Android. Linux запускається зі свого: перед встановленням прошийте образ Linux BOOT для цього телефона."
@@ -2171,6 +2186,9 @@ msgstr "інсталятор — скрипт"
 
 msgid "ITS INSTALLER RUNS AS ROOT"
 msgstr "ІНСТАЛЯТОР ПРАЦЮЄ З ПРАВАМИ ROOT"
+
+msgid "Its reason: %s"
+msgstr "Його причина: %s"
 
 msgid "Its root filesystem with its programs, /etc and /var is deleted. /home, the active system and BOOT stay. This cannot be undone."
 msgstr "Її коренева ФС із програмами, /etc і /var буде стерта. /home, активна система і BOOT лишаються. Скасувати це неможливо."
@@ -4749,6 +4767,9 @@ msgstr "Не вдалося пропатчити ядро в BOOT для APatch"
 msgid "The kernel keeps this partition read-only"
 msgstr "Ядро тримає цей розділ лише для читання"
 
+msgid "THE KERNEL'S LAST LINES"
+msgstr "ОСТАННІ РЯДКИ ЯДРА"
+
 msgid "The last installation completed with independent readback. Boot behavior still needs a deliberate test."
 msgstr "Останнє встановлення завершено з незалежним перечитуванням. Запуск ще треба окремо перевірити."
 
@@ -5142,6 +5163,9 @@ msgstr "Цілий образ з усіма ними"
 msgid "The whole image, or one Android partition inside it."
 msgstr "Цілий образ або один розділ Android усередині."
 
+msgid "The whole log of that start goes with Export diagnostics."
+msgstr "Увесь журнал того запуску потрапляє в «Експорт діагностики»."
+
 msgid "The write receipt could not be displayed completely. Inspect installation status."
 msgstr "Звіт про запис не вдалося показати повністю. Перегляньте стан встановлення."
 
@@ -5225,6 +5249,12 @@ msgstr "Цей 7z використовує метод, який Recovery не в
 
 msgid "This action replaces the listed targets."
 msgstr "Ця дія замінює перелічені цілі."
+
+msgid "This Android needs a newer kernel than the Android kernel of this phone, so Android restarts the phone on every start."
+msgstr "Цьому Android потрібне новіше ядро, ніж ядро Android цього телефона, тож Android перезапускає телефон під час кожного запуску."
+
+msgid "This Android needs kernel %s or newer. The Android kernel of this phone is older, so Android restarts the phone on every start."
+msgstr "Цьому Android потрібне ядро %s або новіше. Ядро Android цього телефона старіше, тож Android перезапускає телефон під час кожного запуску."
 
 msgid "This backup belongs to another phone. Restoring it would give this phone a foreign identity"
 msgstr "Ця копія належить іншому телефону. Її відновлення дало б цьому телефону чужу ідентичність"
@@ -5513,6 +5543,9 @@ msgstr "недоступно"
 
 msgid "Under a minute"
 msgstr "Менше хвилини"
+
+msgid "Understood"
+msgstr "Зрозуміло"
 
 msgid "unknown"
 msgstr "невідомо"
@@ -5832,11 +5865,17 @@ msgstr "Середа"
 msgid "WHAT HAPPENS NEXT"
 msgstr "ЩО БУДЕ ДАЛІ"
 
+msgid "What its kernel wrote before the phone restarted."
+msgstr "Що записало його ядро перед перезапуском телефона."
+
 msgid "What this system lacks for the phone is built on it (Arch: Phosh's compositor fix and Phrog), up to 45 minutes. Keep the phone powered."
 msgstr "Те, чого цій системі бракує для телефона, збирається в ній самій (Arch: виправлення композитора Phosh і Phrog), до 45 хвилин. Не вимикайте телефон."
 
 msgid "When the installation starts, every Linux system and /home on userdata are erased. Make a backup first if you need them."
 msgstr "Коли почнеться встановлення, усі системи Linux і /home на userdata буде стерто. Якщо вони потрібні, спершу зробіть резервну копію."
+
+msgid "When this happens on every start, the installed Android does not fit the phone or its data: install another one, or format the data for Android in Wipe."
+msgstr "Якщо так щоразу, встановлений Android не пасує телефону або своїм даним: встановіть інший або відформатуйте дані для Android в «Очищенні»."
 
 msgid "Where is the file?"
 msgstr "Де файл?"
