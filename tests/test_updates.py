@@ -56,6 +56,10 @@ class Updates(unittest.TestCase):
         self.assertGreater(updates.version_key('v0.6.201'), updates.version_key('0.6.199'))
         self.assertGreater(updates.version_key('0.6.1000'), updates.version_key('0.6.999'))
         self.assertEqual(updates.version_key('nightly'), ())
+        # 2026-11-12 review: a public build calls itself 0.6.NN-public.
+        self.assertEqual(updates.version_key('0.6.206-public'), (0, 6, 206))
+        self.assertGreater(updates.version_key('0.6.207'), updates.version_key('0.6.206-public'))
+        self.assertGreater(updates.version_key('0.6.206-r2'), updates.version_key('0.6.206'))
 
     def test_a_newer_recovery_is_offered_and_an_older_one_is_not(self):
         code, found = self.call('check')
@@ -97,6 +101,12 @@ class Updates(unittest.TestCase):
         code, refused = self.call('fetch', '--what', 'recovery', '--sha256', self.config['recovery_release']['sha256'])
         self.assertEqual((code, refused['error']['code']), (2, 'BOOT_OTHER_PHONE'))
         self.assertFalse((self.root / 'cache/a22x-recovery/updates/recovery-0.6.202.img').exists())
+        # 2026-11-12 review: an older download goes when a newer one is fetched (cache was left read-only
+        # and nothing was ever removed).
+        self.release(recovery_image(), '0.6.203')
+        code, done = self.call('fetch', '--what', 'recovery', '--sha256', self.config['recovery_release']['sha256'])
+        self.assertEqual(code, 0, done)
+        self.assertEqual(sorted(p.name for p in (self.root / 'cache/a22x-recovery/updates').glob('recovery-*.img')), ['recovery-0.6.203.img'])
 
 
 if __name__ == '__main__':

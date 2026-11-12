@@ -51,6 +51,10 @@ ANIMATIONS = ('zoom', 'blur', 'slide', 'fade', 'dissolve', 'off')
 HEX = re.compile(r'[0-9a-f]+')
 
 
+class Unreadable(OSError):
+    """Settings that are there but cannot be read now: nothing is known, so nothing opens."""
+
+
 class Damaged(ValueError):
     """Settings that are there but cannot be read as settings; LABEL names the volume."""
     def __init__(self, message, label=''):
@@ -99,6 +103,18 @@ def valid(key, value):
 def volume_root(context, label, mode):
     volume = context.volume(label)
     if volume['mounted']:
+        if mode == 'rw' and volume['read_only'] and volume.get('write_supported', True) and volume.get('mount_owner') == 'filesystem':
+            # 2026-11-12 review: the list of saved BOOTs leaves cache mounted read-only; a change of
+            # the settings then went to userdata, and the older copy on cache won at the next start.
+            # The recovery's own read-only mount is opened for writing here and left read-only again.
+            context.mount(label, 'rw', True, volume['volume_token'])
+            try:
+                yield Path(context.volume(label)['mountpoint'])
+            finally:
+                os.sync()
+                with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
+                    context.mount(label, 'ro', True, context.volume(label)['volume_token'])
+            return
         if mode == 'rw' and (volume['read_only'] or not volume['write_supported']):
             raise OSError('Volume is read-only')
         yield Path(volume['mountpoint'])
@@ -138,13 +154,21 @@ def read_disk():
                     opened = True
                     copy_themes(root)
                     if (root / RELATIVE).is_file():
+                        # 2026-11-12 review: a file that cannot be read now (EIO, a busy card) is not a
+                        # damaged one: it is no reason to offer erasing userdata, and still opens nothing.
                         try:
-                            return checked(json.loads((root / RELATIVE).read_text()), label)
-                        except (OSError, ValueError) as error:
+                            text = (root / RELATIVE).read_text()
+                        except UnicodeDecodeError as error:
+                            raise Damaged('The settings on %s are damaged' % label, label) from error
+                        except OSError as error:
+                            raise Unreadable('The settings on %s cannot be read now' % label) from error
+                        try:
+                            return checked(json.loads(text), label)
+                        except ValueError as error:
                             if isinstance(error, Damaged):
                                 raise
                             raise Damaged('The settings on %s are damaged' % label, label) from error
-            except Damaged:
+            except (Damaged, Unreadable):
                 raise
             except (OSError, ValueError, fs.FilesystemError):
                 continue
@@ -225,6 +249,8 @@ def reset_damaged():
         return 1
     except Damaged as damaged:
         label = damaged.label
+    except OSError:
+        return 1
     context = fs.DeviceContext()
     with operation_lock(context.lock_path, context.mode):
         with contextlib.ExitStack() as stack:

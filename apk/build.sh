@@ -43,8 +43,26 @@ def entry(name, version):
 images = {'recovery': entry('recovery', recovery), 'boot': entry('boot', boot)}
 if embed != '1':
     # The recovery from its release on GitHub, the Linux BOOT from the catalog's address: both must
-    # be the very images given here, or the build stops.
+    # be the very images given here, or the build stops. The app checks the SHA-256 again after its
+    # download, so a release published with another image only fails there (2026-11-12 review): a
+    # release that is already out is compared here; one not out yet must get exactly this image.
     images['recovery']['url'] = 'https://github.com/Dodaskot/mainline-recovery/releases/download/v%s/recovery-a22x-%s.img' % (recovery, recovery)
+    import urllib.error, urllib.request
+    asset = 'recovery-a22x-%s.img' % recovery
+    try:
+        request = urllib.request.Request('https://api.github.com/repos/Dodaskot/mainline-recovery/releases/tags/v' + recovery,
+                                         headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'a22x-apk-build'})
+        with urllib.request.urlopen(request, timeout=20) as answer:
+            release = json.load(answer)
+        published = [a for a in release.get('assets', []) if a.get('name') == asset]
+        assert published, 'release v%s has no %s' % (recovery, asset)
+        assert published[0].get('digest') == 'sha256:' + images['recovery']['sha256'], \
+            'RECOVERY_IMG is not the %s published in release v%s' % (asset, recovery)
+        print('recovery: the published %s is this image' % asset, file=sys.stderr)
+    except urllib.error.HTTPError as error:
+        if error.code != 404:
+            raise
+        print('recovery: release v%s is not out yet: publish exactly this image, SHA-256 %s' % (recovery, images['recovery']['sha256']), file=sys.stderr)
     with open(os.path.join(source, 'catalog.json')) as f:
         offer = json.load(f)['linux_boot']
     assert offer['sha256'] == images['boot']['sha256'], 'BOOT_IMG is not the Linux BOOT the catalog names'

@@ -207,6 +207,7 @@ public class MainActivity extends Activity {
     static void keepBoot(Context context) {
         Root.Result r = RecoveryStore.keepBootAuto();
         String kept = r.marker("KEPT"), warn = r.marker("WARN");
+        if (kept == null && "busy".equals(warn)) return;  // another run keeps it and remembers its answer
         String answer = kept != null ? "KEPT " + kept : "WARN " + (warn != null ? warn : r.output.trim());
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_BOOT_KEPT, answer).apply();
     }

@@ -26,6 +26,7 @@ from install import require
 SAVED_BOOT = 'a22x-recovery/saved-boot'
 # Where Flash a partition keeps what a partition held before a write (flash.ROLLBACK_FOLDER).
 ROLLBACKS = 'A22xPartitionBackups'
+UPDATES = 'a22x-recovery/updates'  # updates.py downloads recoveries here
 ROLLBACK_NAME = re.compile(r'(.+)-(\d{8}-\d{6})(?:-(\d+))?\.img')
 
 
@@ -228,24 +229,49 @@ def prune_rollbacks(folder, keep=None):
     """2026-11-11: cache is 200 MiB, and two flashes of the recovery left 80 MiB of old recoveries
     in A22xPartitionBackups; a root install then found no room for its BOOT. Of each partition's
     copies kept before a write, only the newest stays (KEEP, the copy just written, when given: the
-    clock may have been wrong when an older one was named). Returns the bytes freed."""
+    clock may have been wrong when an older one was named). A copy whose write is not over yet
+    (NAME.pending.json, flash.py resume) is never removed, and counts as the newest. Without KEEP
+    and with a date this recovery cannot have seen in the group, nothing of it is removed: which
+    copy is newest is not known (2026-11-12 review). Returns the bytes freed."""
     groups = {}
     for name in os.listdir(folder):
         match = ROLLBACK_NAME.fullmatch(name)
-        if match and os.path.lexists(os.path.join('/proc/self/fd', str(folder), name + '.pending.json')):
-            continue  # a write that is not over yet needs its copy (flash.py resume, 2026-11-12)
-        if match:
-            # A date this recovery cannot have seen (Samsung's clock form, year 2086) sorts as oldest.
-            sane = '2026' <= match.group(2)[:4] < '2050'
-            groups.setdefault(match.group(1), []).append((name == keep, sane, match.group(2), int(match.group(3) or 0), name))
+        if not match:
+            continue
+        pending = os.path.lexists(os.path.join('/proc/self/fd', str(folder), name + '.pending.json'))
+        # A date this recovery cannot have seen (Samsung's clock form, year 2086) sorts as oldest.
+        sane = '2026' <= match.group(2)[:4] < '2050'
+        groups.setdefault(match.group(1), []).append((name == keep or pending, sane, match.group(2), int(match.group(3) or 0), name, pending))
     freed = 0
     for copies in groups.values():
-        for *_, name in sorted(copies)[:-1]:
+        if keep is None and not any(c[0] for c in copies) and not all(c[1] for c in copies):
+            continue
+        for *_, name, pending in sorted(copies)[:-1]:
+            if pending:
+                continue
             with contextlib.suppress(OSError):
                 size = os.stat(name, dir_fd=folder, follow_symlinks=False).st_size
                 os.unlink(name, dir_fd=folder)
                 freed += size
     return freed
+
+
+def prune_updates(folder):
+    """Of the recoveries downloaded by Settings, Updates (they can be downloaded again), only the
+    newest version stays (2026-11-12 review: each one is 40 MiB of a 200 MiB cache)."""
+    found = {}
+    for name in os.listdir(folder):
+        match = re.fullmatch(r'recovery-([0-9.]+)\.img', name)
+        if match:
+            found[name] = tuple(int(part) for part in match.group(1).split('.') if part)
+    if len(found) < 2:
+        return
+    newest = max(found, key=lambda name: (found[name], name))
+    for name in found:
+        if name != newest:
+            for suffix in ('', '.json', '.sha256'):
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(name + suffix, dir_fd=folder)
 
 
 def prune_rooted(folder):
@@ -338,7 +364,8 @@ def make_room(pin, downloadable=None):
     if downloadable is None:
         downloadable = downloadable_boots()
     for name, tidy in ((SAVED_BOOT, tidy_folder), (SAVED_BOOT, prune_rooted),
-                       (SAVED_BOOT, lambda folder: prune_downloadable(folder, downloadable)), (ROLLBACKS, prune_rollbacks)):
+                       (SAVED_BOOT, lambda folder: prune_downloadable(folder, downloadable)), (ROLLBACKS, prune_rollbacks),
+                       (UPDATES, prune_updates)):
         with contextlib.suppress(FileNotFoundError, NotADirectoryError, fs.FilesystemError, OSError):
             with pin.directory(name) as folder:
                 tidy(folder)

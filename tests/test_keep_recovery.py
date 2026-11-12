@@ -121,16 +121,52 @@ class KeepRecovery(unittest.TestCase):
             (folder / name).write_bytes(b'x' * 100)
         fd = os.open(folder, os.O_RDONLY)
         try:
-            # A date from Samsung's clock form (the year 2086) does not make an old copy the newest.
-            self.assertEqual(saved_boot.prune_rollbacks(fd), 300)
+            # A date from Samsung's clock form (the year 2086): which recovery copy is the newest is not
+            # known, so the tidy at start (no KEEP) leaves that partition's copies alone (2026-11-12 review:
+            # it removed the copy from just before the last write).
+            self.assertEqual(saved_boot.prune_rollbacks(fd), 100)
             self.assertEqual(sorted(p.name for p in folder.iterdir()), ['boot-20261110-120000-1.img', 'notes.txt',
-                                                                         'recovery-20261111-000102.img', 'super-odm-20261110-120000.img'])
+                                                                         'recovery-20261110-230129.img', 'recovery-20261111-000102.img',
+                                                                         'recovery-20861109-101010.img', 'super-odm-20261110-120000.img'])
             # The copy just written stays, whatever date an older one carries.
             (folder / 'recovery-20491231-235959.img').write_bytes(b'y')
             saved_boot.prune_rollbacks(fd, keep='recovery-20261111-000102.img')
         finally:
             os.close(fd)
         self.assertEqual(sorted(p.name for p in folder.iterdir() if p.name.startswith('recovery')), ['recovery-20261111-000102.img'])
+
+    def test_a_copy_a_write_still_needs_stays_and_counts_as_the_newest(self):
+        """2026-11-12 review: the copy save_rollback has just written has its journal already; it was
+        left out of its group, so the older copies beside it were never removed."""
+        folder = self.root / 'cache' / saved_boot.ROLLBACKS
+        folder.mkdir()
+        for name in ('boot-20261101-100000.img', 'boot-20261102-100000.img', 'boot-20861109-101010.img'):
+            (folder / name).write_bytes(b'x' * 100)
+        (folder / 'boot-20861109-101010.img.pending.json').write_text('{}')
+        fd = os.open(folder, os.O_RDONLY)
+        try:
+            self.assertEqual(saved_boot.prune_rollbacks(fd, keep='boot-20861109-101010.img'), 200)
+            self.assertEqual(sorted(p.name for p in folder.iterdir()), ['boot-20861109-101010.img', 'boot-20861109-101010.img.pending.json'])
+            # Two writes not over: both copies stay, also in the tidy at start.
+            (folder / 'boot-20261103-100000.img').write_bytes(b'z')
+            (folder / 'boot-20261103-100000.img.pending.json').write_text('{}')
+            self.assertEqual(saved_boot.prune_rollbacks(fd), 0)
+        finally:
+            os.close(fd)
+        self.assertEqual(len([p for p in folder.iterdir() if p.suffix == '.img']), 2)
+
+    def test_only_the_newest_downloaded_recovery_stays(self):
+        folder = self.root / 'cache' / saved_boot.UPDATES
+        folder.mkdir(parents=True)
+        for version in ('0.6.99', '0.6.206', '0.6.205'):
+            for suffix in ('', '.json', '.sha256'):
+                (folder / ('recovery-%s.img%s' % (version, suffix))).write_text('x')
+        fd = os.open(folder, os.O_RDONLY)
+        try:
+            saved_boot.prune_updates(fd)
+        finally:
+            os.close(fd)
+        self.assertEqual(sorted(p.name for p in folder.iterdir()), ['recovery-0.6.206.img', 'recovery-0.6.206.img.json', 'recovery-0.6.206.img.sha256'])
 
     def test_a_writable_cache_keeps_one_copy_per_partition_and_no_second_copy_of_a_boot(self):
         """Cache mounted for writing is where the old content of a partition goes when no card is in:

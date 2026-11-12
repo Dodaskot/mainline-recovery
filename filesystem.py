@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import stat
 import struct
 import subprocess
@@ -308,7 +309,9 @@ def probe_magic(data):
         if log_size <= 6 and struct.unpack_from('<I', sb, 32)[0] != 0:
             out.update(fs_type='ext4', filesystem_uuid=uuid_text(sb[104:120]),
                        filesystem_label=sb[120:136].split(b'\0', 1)[0].decode('utf-8', 'replace'),
-                       fscrypt_feature=bool(incompat & 0x10000))
+                       fscrypt_feature=bool(incompat & 0x10000),
+                       # Its journal holds writes not yet in place (EXT4_FEATURE_INCOMPAT_RECOVER).
+                       needs_recovery=bool(incompat & 0x4))
             return out
     for offset in (1024, 5120):
         if len(data) >= offset + 128 and data[offset:offset + 4] == b'\x10\x20\xf5\xf2':
@@ -669,6 +672,10 @@ class DeviceContext(BaseContext):
         result, state, mounts = [], self.state(), read_mounts()
         container = None
         supported = {line.split()[-1] for line in Path('/proc/filesystems').read_text().splitlines() if line.split()}
+        # 2026-11-12 review: two USB disks both gave usb-p1 (DUPLICATE_VOLUME_ID, and every command
+        # failed). The first USB disk keeps usb-pN; the next ones are usb-2-pN, usb-3-pN...
+        usb_disks = sorted(entry.name for entry in Path('/sys/class/block').iterdir()
+                           if re.fullmatch(r'sd[a-z]{1,2}', entry.name) and '/usb' in str(entry.resolve()))
         for entry in sorted(Path('/sys/class/block').iterdir()):
             usb_name = re.fullmatch(r'sd[a-z]{1,2}[0-9]*', entry.name) is not None
             if not usb_name and not re.fullmatch(r'mmcblk[01]p[0-9]+', entry.name):
@@ -696,9 +703,14 @@ class DeviceContext(BaseContext):
             fields = dict(line.split('=', 1) for line in (real / 'uevent').read_text().splitlines() if '=' in line)
             number = 0 if whole_disk else int((real / 'partition').read_text())
             label = fields.get('PARTNAME', '')
-            ident = 'usb-p' + str(number) if usb else 'sdcard-p' + str(number) if external else (label if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', label) else 'partition-' + str(number))
+            disk = (real if whole_disk else real.parent).name
+            usb_index = usb_disks.index(disk) if usb and disk in usb_disks else 0
+            usb_ident = ('usb-%d-p' % (usb_index + 1) if usb_index else 'usb-p') + str(number)
+            ident = usb_ident if usb else 'sdcard-p' + str(number) if external else (label if re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', label) else 'partition-' + str(number))
             devno = (real / 'dev').read_text().strip()
             size = int((real / 'size').read_text()) * 512
+            if external and size == 0:
+                continue  # a card reader without a card (2026-11-12 review: ENOMEDIUM failed every command)
             start = 0 if whole_disk else int((real / 'start').read_text())
             path = Path('/dev') / entry.name
             st = path.lstat()
@@ -708,7 +720,12 @@ class DeviceContext(BaseContext):
             info = {'fs_type': None, 'filesystem_uuid': None, 'fscrypt_feature': None}
             block_read_only = None
             if candidate:
-                fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+                try:
+                    fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+                except OSError:
+                    if external:
+                        continue  # a removable medium gone or not there: not a volume now
+                    raise
                 try:
                     actual = os.fstat(fd)
                     if actual.st_rdev != st.st_rdev or not stat.S_ISBLK(actual.st_mode):
@@ -1096,6 +1113,11 @@ class DeviceContext(BaseContext):
         if done.returncode:
             fail('FORMAT_FAILED', 'The filesystem could not be created', output=done.stdout[-400:])
         os.sync()
+        if ident == 'userdata':
+            # 2026-11-12 review: an unfinished switch of Linux systems went with userdata; its guard in
+            # RAM (distro.py) would block installing and a normal start until the recovery restarted.
+            with suppress(FileNotFoundError):
+                os.unlink('/run/a22x-recovery/distro-transaction.json')
         return {'volume': self.volume(ident), 'formatted': fs_type}
 
     def resize(self, ident, confirmed=False, expected=None):
@@ -1138,19 +1160,25 @@ class DeviceContext(BaseContext):
             fail('UNMOUNT_NOT_OBSERVED', 'The volume is still mounted')
         return {'volume': result}
 
-    def sync_usb(self):
-        """Follow removable USB storage: drop vanished sticks, open new ones read-only."""
-        state, dropped, mounted = self.state(), [], []
+    def drop_vanished(self):
+        """Mounts of removable media that left without an unmount: a USB stick, and since the
+        2026-11-12 review a microSD card too (its mount stayed for ever, and unmount-all, needed
+        before every restart, failed). Nothing more can reach them, so they are detached."""
+        state, dropped = self.state(), []
         for mount in read_mounts():
             target = Path(mount['mountpoint'])
-            if (target.parent == MOUNT_BASE and target.name.startswith('usb-')
+            if (target.parent == MOUNT_BASE and target.name.startswith(('usb-', 'sdcard-'))
                     and not (Path('/sys/dev/block') / mount['devno']).exists()):
-                # The stick left without an unmount, so nothing more can reach it.
                 self._command('umount', ['-l', str(target)])
                 state['volumes'].pop(target.name, None)
                 dropped.append(target.name)
         if dropped:
             atomic_state(self.state_path, state)
+        return dropped
+
+    def sync_usb(self):
+        """Follow removable USB storage: drop vanished sticks, open new ones read-only."""
+        dropped, mounted = self.drop_vanished(), []
         for volume in self.volumes():
             if volume['id'].startswith('usb-') and volume['mountable'] and not volume['mounted']:
                 try:
@@ -1161,6 +1189,7 @@ class DeviceContext(BaseContext):
         return {'mounted': mounted, 'dropped': dropped, 'volumes': self.usb_volumes()}
 
     def unmount_all(self):
+        self.drop_vanished()
         result = self.close_logical()
         for volume in self.volumes():
             if volume.get('container') == 'super':
@@ -2329,8 +2358,16 @@ def dispatch(context, args):
         return delete_entry(context, v, args.path, args.confirm, expected, args.expected_sha256)
 
 
+def cancelled(signum, frame):
+    """Cancel from the interface (SIGTERM) as an error, so a copy cut short removes its staging
+    files the way a failed one does (2026-11-12 review: Python ended at once and left them)."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)  # the cleanup itself is not cut short again
+    fail('CANCELLED', 'The operation was cancelled')
+
+
 def main(argv=None):
     operation = 'unknown'
+    signal.signal(signal.SIGTERM, cancelled)
     try:
         args = parser().parse_args(argv)
         operation = args.operation

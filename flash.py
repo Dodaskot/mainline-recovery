@@ -520,6 +520,25 @@ def rollback_folders(volume):
 
 
 PENDING_SUFFIX = '.pending.json'
+# 2026-11-12 review: beside the journal, a short hash of every page of the new image. resume then
+# undoes only what this write left half done (each page the new one or the old one), never a later
+# write made another way (Odin, a second flash).
+PAGES_SUFFIX = '.pending.pages'
+PAGE = 4096
+PAGE_HASH = 8
+TORN_PAGES = 8
+
+
+def page_hash(data):
+    return hashlib.blake2b(data, digest_size=PAGE_HASH).digest()
+
+
+def page_hashes(chunks):
+    out = bytearray()
+    for data in chunks:
+        for at in range(0, len(data), PAGE):
+            out += page_hash(data[at:at + PAGE])
+    return bytes(out)
 
 
 def save_rollback(context, target, progress, chunks=None, skip_cache=False, pending=None):
@@ -575,6 +594,17 @@ def save_rollback(context, target, progress, chunks=None, skip_cache=False, pend
                     require(done == target['size_bytes'], 'TARGET_READ_FAILED', 'The current partition could not be read')
                     os.fsync(out)
                     if pending is not None:
+                        pending = dict(pending)
+                        pages = pending.pop('pages', None)
+                        if pages is not None:
+                            sidecar = os.open(name + PAGES_SUFFIX, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                              0o600, dir_fd=folder)
+                            try:
+                                install.write_all(sidecar, pages)
+                                os.fsync(sidecar)
+                            finally:
+                                os.close(sidecar)
+                            pending.update(pages=name + PAGES_SUFFIX, page_size=PAGE, page_hash=PAGE_HASH)
                         journal = os.open(name + PENDING_SUFFIX, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
                                           0o600, dir_fd=folder)
                         try:
@@ -587,8 +617,9 @@ def save_rollback(context, target, progress, chunks=None, skip_cache=False, pend
                         os.fsync(folder)
                 except BaseException:
                     # A copy cut short is not a copy: nothing half-saved stays behind.
-                    with contextlib.suppress(OSError):
-                        os.unlink(name, dir_fd=folder)
+                    for suffix in ('', PAGES_SUFFIX, PENDING_SUFFIX):
+                        with contextlib.suppress(OSError):
+                            os.unlink(name + suffix, dir_fd=folder)
                     raise
                 finally:
                     os.close(out)
@@ -655,6 +686,8 @@ def end_pending(context, rollback):
         with fs.PinnedVolume(context.fs, rollback['volume_id'], writing=True) as pin:
             with pin.parent(rollback['path']) as (folder, name):
                 os.unlink(name + PENDING_SUFFIX, dir_fd=folder)
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(name + PAGES_SUFFIX, dir_fd=folder)
                 os.fsync(folder)
 
 
@@ -941,9 +974,24 @@ def write(context, args, progress):
             require(identity(fd) == args.expected_identity, 'IMAGE_CHANGED', 'The file changed after it was checked')
             compression = container(fd, getattr(args, 'member', None))
             image_format = layout(fd, compression, target['size_bytes'])
+            pending = {'new_sha256': args.expected_sha256, 'started': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}
+            if target['size_bytes'] <= ROLLBACK_LIMIT:
+                # The new image read once before anything is written: its page hashes go beside the
+                # journal, and a file that is not the checked one stops here.
+                digest = hashlib.sha256()
+                reader = open_reader(fd, compression, target['size_bytes'])
+                try:
+                    def checked():
+                        for data in install.fixed_chunks(install.decode_image(reader, image_format, target['size_bytes'])):
+                            digest.update(data)
+                            yield data
+                    pending['pages'] = page_hashes(checked())
+                finally:
+                    close_reader(reader)
+                require(digest.hexdigest() == args.expected_sha256, 'IMAGE_CHANGED', 'The file changed after it was checked')
             # A BOOT kept on cache as a saved BOOT is not kept there a second time.
             rollback = save_rollback(context, target, progress, skip_cache=bool(kept and (kept['kept'] or kept.get('note') == 'identical')),
-                                     pending={'new_sha256': args.expected_sha256, 'started': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
+                                     pending=pending)
             try:
                 writer = context.open_target(target, write=True)
                 reader = open_reader(fd, compression, target['size_bytes'])
@@ -1011,17 +1059,27 @@ def resume(context, progress):
                 path = '/'.join(rollback_folders(volume))
                 try:
                     with pin.directory(path) as folder:
-                        for name in sorted(os.listdir(folder)):
-                            if name.endswith(PENDING_SUFFIX):
+                        names = sorted(name for name in os.listdir(folder) if name.endswith(PENDING_SUFFIX))
+                        for name in names:
+                            # 2026-11-12 review: one journal that cannot be read no longer hides the others.
+                            try:
                                 journal = fs.open_regular(name, dir_fd=folder)
                                 try:
-                                    found.append(json.loads(os.read(journal, 65536)))
+                                    record = json.loads(os.read(journal, 65536))
                                 finally:
                                     os.close(journal)
-                except (OSError, fs.FilesystemError, ValueError):
+                                if not isinstance(record, dict) or not isinstance(record.get('copy'), str) or record['copy'] + PENDING_SUFFIX != name:
+                                    raise ValueError('not a journal')
+                                found.append((name, record))
+                            except (OSError, fs.FilesystemError, ValueError):
+                                found.append((name, None))
+                except (OSError, fs.FilesystemError):
                     continue
-            for record in found:
-                results.append(resume_one(context, volume, path, record, progress))
+            for name, record in found:
+                if record is None:
+                    results.append(drop_journal(context, volume, path, name))
+                else:
+                    results.append(resume_one(context, volume, path, record, progress))
         except (OSError, fs.FilesystemError):
             continue
         finally:
@@ -1029,6 +1087,73 @@ def resume(context, progress):
                 with contextlib.suppress(OSError, fs.FilesystemError):
                     context.fs.unmount(volume['id'])
     return {'resumed': results}
+
+
+def writable(context, volume_id):
+    if context.fs.volume(volume_id)['read_only']:
+        context.fs.mount(volume_id, 'rw', True, context.fs.volume(volume_id)['volume_token'])
+
+
+def drop_journal(context, volume, path, name):
+    """A journal nobody can read says nothing: it goes; the copy beside it stays."""
+    result = {'label': None, 'volume': volume.get('label') or volume['id'], 'outcome': 'unreadable'}
+    try:
+        writable(context, volume['id'])
+        with fs.PinnedVolume(context.fs, volume['id'], writing=True) as pin:
+            with pin.directory(path) as folder:
+                os.unlink(name, dir_fd=folder)
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(name[:-len(PENDING_SUFFIX)] + PAGES_SUFFIX, dir_fd=folder)
+                os.fsync(folder)
+    except (OSError, fs.FilesystemError) as error:
+        result['error'] = getattr(error, 'code', None) or type(error).__name__
+    return result
+
+
+def cut_short(context, target, rollback, record):
+    """Whether the partition is what this very write leaves when it stops early: every page the
+    new image's or the saved copy's, and at most TORN_PAGES pages caught in the middle, then only
+    with pages of the new image there too. Anything else was written another way."""
+    size = target['size_bytes']
+    if record.get('page_size') != PAGE or record.get('page_hash') != PAGE_HASH or not isinstance(record.get('pages'), str):
+        return False
+    pages_total = (size + PAGE - 1) // PAGE
+    pin, copy = copy_reader(context, rollback)
+    try:
+        with pin.parent(rollback['path']) as (folder, _):
+            sidecar = fs.open_regular(record['pages'], dir_fd=folder)
+        try:
+            new = os.pread(sidecar, pages_total * PAGE_HASH + 1, 0)
+        finally:
+            os.close(sidecar)
+        if len(new) != pages_total * PAGE_HASH:
+            return False
+        reader = context.open_target(target)
+        try:
+            ours = torn = 0
+            done = 0
+            while done < size:
+                length = min(install.CHUNK, size - done)
+                now, old = os.pread(reader, length, done), os.pread(copy, length, done)
+                if len(now) != length or len(old) != length:
+                    return False
+                for at in range(0, length, PAGE):
+                    index = (done + at) // PAGE
+                    here, before = page_hash(now[at:at + PAGE]), page_hash(old[at:at + PAGE])
+                    wanted = new[index * PAGE_HASH:(index + 1) * PAGE_HASH]
+                    if here == wanted:
+                        ours += here != before
+                    elif here != before:
+                        torn += 1
+                        if torn > TORN_PAGES:
+                            return False
+                done += length
+        finally:
+            os.close(reader)
+        return torn == 0 or ours > 0
+    finally:
+        os.close(copy)
+        pin.close()
 
 
 def resume_one(context, volume, path, record, progress):
@@ -1044,11 +1169,13 @@ def resume_one(context, volume, path, record, progress):
             result['outcome'] = 'completed'
         elif now == record['copy_sha256']:
             result['outcome'] = 'unchanged'
-        else:
+        elif cut_short(context, target, rollback, record):
             result['outcome'] = 'restored' if restore_copy(context, target, rollback, progress) else 'kept'
+        else:
+            # 2026-11-12 review: written another way since (Odin, a later flash): left as it is.
+            result['outcome'] = 'changed'
         if result['outcome'] != 'kept':
-            if context.fs.volume(volume['id'])['read_only']:
-                context.fs.mount(volume['id'], 'rw', True, context.fs.volume(volume['id'])['volume_token'])
+            writable(context, volume['id'])
             end_pending(context, rollback)
     except (OSError, ValueError, KeyError, fs.FilesystemError) as error:
         result['error'] = getattr(error, 'code', None) or type(error).__name__

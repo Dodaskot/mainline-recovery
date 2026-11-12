@@ -15,7 +15,9 @@ import contextlib
 import errno
 import hashlib
 import io
+import http.client
 import json
+import lzma
 import os
 from pathlib import Path
 import re
@@ -29,6 +31,7 @@ import sys
 import tarfile
 import time
 import types
+import zlib
 
 import bootimage
 import filesystem as fs
@@ -659,7 +662,11 @@ def _walk(tree, base, limit=MAX_ENTRIES):
             children = tree.list(path)
             require(len(children) <= limit - count, 'TREE_TOO_LARGE', 'Directory has too many children')
             for name in reversed(children):
-                path_parts(name)
+                # 2026-11-12 review: a name from an old ZIP or a FAT stick (not UTF-8) failed the walk of
+                # /home with a bare codec error. Any name the filesystem holds is one entry; only the
+                # names Linux itself forbids are refused, with the path said.
+                require(name not in ('', '.', '..') and '/' not in name and '\0' not in name and len(os.fsencode(name)) <= 255,
+                        'INVALID_PATH', 'A file name here cannot be handled', path=os.fsencode(path + '/' + name).decode('utf-8', 'replace'))
                 stack.append(path + '/' + name)
 
 
@@ -1114,7 +1121,16 @@ def validate_root(tree, profile, uuid=None, platform=True, shared_home=False):
 class BoundedTarInfo(tarfile.TarInfo):
     @classmethod
     def frombuf(cls, buf, encoding, errors):
-        value = super().frombuf(buf, encoding, errors)
+        return cls._bounded(super().frombuf(buf, encoding, errors))
+
+    @classmethod
+    def _frombuf(cls, buf, encoding, errors, **kwargs):
+        # 2026-11-12 review: Python 3.14 reads headers through _frombuf, never frombuf, so the bounds
+        # below did not apply in the recovery.
+        return cls._bounded(super()._frombuf(buf, encoding, errors, **kwargs))
+
+    @classmethod
+    def _bounded(cls, value):
         require(0 <= value.size <= MAX_FILE, 'ARCHIVE_MEMBER_TOO_LARGE', 'Archive member exceeds the size limit')
         if value.type in (tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK):
             require(value.size <= MAX_PAX, 'ARCHIVE_METADATA_TOO_LARGE', 'Tar metadata exceeds its bound')
@@ -1140,9 +1156,12 @@ class BoundedTarInfo(tarfile.TarInfo):
         depth = getattr(tar, '_a22x_metadata_depth', 0) + 1
         require(depth <= MAX_METADATA_CHAIN, 'ARCHIVE_METADATA_CHAIN', 'Too many chained tar metadata headers')
         tar._a22x_metadata_depth = depth
-        tar._a22x_metadata_bytes = getattr(tar, '_a22x_metadata_bytes', 0) + self.size + 512
-        require(tar._a22x_metadata_bytes <= MAX_ARCHIVE_METADATA,
-                'ARCHIVE_METADATA_TOO_LARGE', 'Aggregate tar metadata exceeds its budget')
+        # Headers in front of one member: scan_archive starts this count again for each member, since
+        # nothing of them stays in memory after it (2026-11-12 review: a whole pax rootfs of 50000
+        # files was refused).
+        tar._a22x_header_bytes = getattr(tar, '_a22x_header_bytes', 0) + self.size + 512
+        require(tar._a22x_header_bytes <= MAX_PAX * MAX_METADATA_CHAIN,
+                'ARCHIVE_METADATA_TOO_LARGE', 'Tar metadata of one member exceeds its budget')
         try:
             yield
         finally:
@@ -1228,9 +1247,12 @@ def scan_archive(fd, compression, expected_sha, target=None):
         for item in archive:
             require(0 <= item.size <= MAX_FILE, 'ARCHIVE_MEMBER_TOO_LARGE',
                     'Resolved PAX file size exceeds the per-file bound')
+            archive._a22x_header_bytes = 0
             metadata_size = pax_bytes(item.pax_headers)
             require(metadata_size <= MAX_PAX, 'ARCHIVE_METADATA_TOO_LARGE', 'Resolved tar metadata exceeds its bound')
-            archive._a22x_metadata_bytes = getattr(archive, '_a22x_metadata_bytes', 0) + metadata_size + len(item.name.encode('utf-8', 'surrogateescape')) + 128
+            # What stays in memory for the whole scan: the path, its record and its attributes.
+            kept_attributes = sum(len(k) + len(str(v)) for k, v in item.pax_headers.items() if k.startswith('SCHILY.xattr.'))
+            archive._a22x_metadata_bytes = getattr(archive, '_a22x_metadata_bytes', 0) + kept_attributes + len(item.name.encode('utf-8', 'surrogateescape')) + 128
             require(archive._a22x_metadata_bytes <= MAX_ARCHIVE_METADATA,
                     'ARCHIVE_METADATA_TOO_LARGE', 'Aggregate expanded metadata exceeds its budget')
             parts = path_parts(item.name, root=True)
@@ -1240,7 +1262,7 @@ def scan_archive(fd, compression, expected_sha, target=None):
             name = '/'.join(parts)
             require(name not in entries and len(entries) < MAX_ENTRIES, 'DUPLICATE_OR_LARGE_ARCHIVE',
                     'Duplicate archive path or too many files', path=name)
-            require(parts[0] not in (MANAGER, 'lost+found') and not parts[0].startswith('.a22x-systems-'),
+            require(parts[0] not in (MANAGER, STORE_DIR, 'lost+found') and not parts[0].startswith('.a22x-systems-'),
                     'RESERVED_ARCHIVE_PATH', 'Archive may not contain recovery management data', path=name)
             require(parts[0] not in RUNTIME_DIRS or len(parts) == 1 and item.isdir(),
                     'LIVE_RUNTIME_CONTENT', 'Rootfs /dev, /proc, /sys and /run must be empty directories', path=name)
@@ -1341,6 +1363,7 @@ def read_bundle(source, manifest_path):
     manifest_path = logical_path(manifest_path)
     raw = source.read(manifest_path)
     bundle = json.loads(raw)
+    require(isinstance(bundle, dict), 'INVALID_BUNDLE', 'Select an A22x ARM64 rootfs bundle manifest')
     require(bundle.get('schema') == 'a22x.distro.bundle.v1' and bundle.get('architecture') == 'aarch64',
             'INVALID_BUNDLE', 'Select an A22x ARM64 rootfs bundle manifest')
     identifier(bundle.get('id'))
@@ -1959,7 +1982,18 @@ def store_images(live):
 
 
 def store_bytes(live):
-    return sum(item['size'] for item in store_images(live))
+    """Everything the store holds, not only the images it lists (2026-11-12 review): copies flash.py
+    kept before a write and files copied in under other names stay too."""
+    if not live.exists(STORE_DIR):
+        return 0
+    total = 0
+    for folder, _, files in os.walk(real_path(live) / STORE_DIR):
+        for name in files:
+            with contextlib.suppress(OSError):
+                st = os.lstat(os.path.join(folder, name))
+                if stat.S_ISREG(st.st_mode):
+                    total += st.st_blocks * 512
+    return total
 
 
 # The store on a card (2026-11-11). Images are kept beside the Linux systems on userdata; a phone
@@ -2305,11 +2339,15 @@ def download_before_erase(context, remote, progress):
 
 
 def store_in_use(context):
-    """Whether userdata holds saved images that a format would destroy."""
+    """Whether userdata holds anything in the store that a format would destroy: saved images, and
+    since the 2026-11-12 review also the copies flash.py keeps there before a write and files copied
+    in under names the image list does not show. Only an unfinished download (.install-) is not."""
     try:
         with fs.PinnedVolume(context, 'userdata') as pin, Tree(pin) as live:
-            return bool(store_images(live))
-    except fs.FilesystemError:
+            if not live.exists(STORE_DIR):
+                return False
+            return any(not name.startswith('.install-') for name in os.listdir(real_path(live) / STORE_DIR))
+    except (fs.FilesystemError, OSError):
         return False
 
 
@@ -2679,7 +2717,7 @@ def refresh_catalog(context, only=None, max_age=CATALOG_FRESH):
             return entry, resolve_source(context, entry['source']), None
         except fs.FilesystemError as error:
             return entry, None, error.code
-        except (OSError, ValueError) as error:  # URLError, HTTPError and SSLError are OSErrors.
+        except (OSError, ValueError, http.client.HTTPException) as error:  # URLError, HTTPError and SSLError are OSErrors.
             if hasattr(error, 'close'):
                 error.close()
             reason = getattr(error, 'reason', None) or getattr(error, 'code', None) or error
@@ -3141,7 +3179,7 @@ def wifi_source(live):
     """Cloud images carry neither saved networks nor Wi-Fi tools, so look through every system."""
     for root in system_roots(live):
         prefix = root + '/' if root else ''
-        if live.exists(prefix + 'usr/bin/wpa_supplicant') and live.exists(prefix + 'etc/NetworkManager/system-connections') \
+        if any(live.exists(prefix + path) for path in WPA_PROGRAMS) and live.exists(prefix + 'etc/NetworkManager/system-connections') \
                 and live.list(prefix + 'etc/NetworkManager/system-connections'):
             return root
     return None
@@ -3216,9 +3254,21 @@ def nm_connection(entered):
     return '\n'.join(lines)
 
 
+def keyfile_ssid(value):
+    """An SSID as NetworkManager's keyfile writes it: plain text, or bytes as "77;121;105;"."""
+    if re.fullmatch(r'(?:[0-9]{1,3};)+[0-9]{0,3}', value):
+        numbers = [int(part) for part in value.split(';') if part]
+        if all(n < 256 for n in numbers):
+            return bytes(numbers)
+    return value.encode()
+
+
+WPA_PROGRAMS = ('usr/bin/wpa_supplicant', 'usr/sbin/wpa_supplicant')
+
+
 def wpa_network(ssid, password):
     """A wpa_supplicant network block: the name in hex and the derived key, so nothing needs quoting."""
-    raw = ssid.encode()
+    raw = ssid if isinstance(ssid, bytes) else ssid.encode()
     if not password:
         return 'network={\n ssid=%s\n scan_ssid=1\n key_mgmt=NONE\n}\n' % raw.hex()
     key = password.lower() if re.fullmatch(r'[0-9A-Fa-f]{64}', password) else \
@@ -3314,21 +3364,28 @@ def copy_wifi(platform_tree, source_root, root, entered=None, helpers=None):
         for path in sorted(networks.glob('*.nmconnection')):
             copy_entry(path, root / 'etc/NetworkManager/system-connections' / path.name)
             values = dict(line.split('=', 1) for line in path.read_text(errors='replace').splitlines() if '=' in line)
-            if values.get('ssid') and values.get('psk') and not (entered and values['ssid'] == entered['ssid']):
-                entries.append('network={\n ssid="%s"\n psk="%s"\n}\n' % (values['ssid'], values['psk']))
+            ssid = keyfile_ssid(values.get('ssid', '').strip()) if values.get('ssid') else b''
+            psk = values.get('psk', '').strip()
+            # 2026-11-12 review: the raw values went in quotes; a 64-character hex key (which
+            # nm_connection itself writes) made wpa_supplicant refuse the whole file.
+            if ssid and psk and not (entered and ssid == entered['ssid'].encode()) and 8 <= len(psk) <= 64:
+                entries.append(wpa_network(ssid, psk))
     if not entries:
         return False
     write(root, 'etc/a22x/wpa.conf', ''.join(entries), 0o600)
     if has_wifi_tool(root):
         return True
     target = root / 'opt/a22x-conn/wifi'
-    if platform_tree is not None and platform_tree.exists('usr/bin/wpa_supplicant'):
+    program = next((path for path in WPA_PROGRAMS if platform_tree is not None and platform_tree.exists(path)), None)
+    if program is not None:
         target.mkdir(parents=True, exist_ok=True)
-        files = list(elf_dependencies(platform_tree, 'usr/bin/wpa_supplicant')) + ['usr/bin/wpa_supplicant']
+        files = list(elf_dependencies(platform_tree, program)) + [program]
         for path in files:
             shutil.copyfile(source_root / path, target / path.rsplit('/', 1)[-1])
             (target / path.rsplit('/', 1)[-1]).chmod(0o755)
-        library_names(source_root / 'usr/lib', target)
+        for folder in sorted({path.rsplit('/', 1)[0] for path in files if '/' in path}):
+            if (source_root / folder).is_dir():
+                library_names(source_root / folder, target)
         return True
     bundled = helpers / 'wpa_supplicant' if helpers is not None else None
     if bundled is not None and bundled.is_file():
@@ -3424,7 +3481,7 @@ def chroot_processes(root):
                 continue
 
 
-def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT):
+def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT, home=None):
     """Run the first-start script in ROOT with proc, a read-only sys, a /dev without block
     devices, a fresh /run and the recovery's resolver. Everything is undone afterwards, also
     on failure or cancel. Returns the script's exit status (None: it could not start)."""
@@ -3444,6 +3501,13 @@ def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT):
         real_root = os.path.realpath(root)
         mount('--bind', real_root, real_root)
         subprocess.run(['mount', '-o', 'remount,bind,exec,suid,nodev', real_root], check=True, capture_output=True)
+        if home is not None:
+            # 2026-11-12 review: a system installed beside others shares /home; without it here, the
+            # new account's home went into the system's own placeholder and was gone after a switch.
+            shared = inside(root, 'home')
+            if shared is None:
+                raise OSError('the folder /home of the new system is missing or linked')
+            mount('--bind', str(home), str(shared))
         mount('-t', 'proc', '-o', 'nosuid,nodev,noexec', 'proc', str(places['proc']))
         mount('-t', 'sysfs', '-o', 'ro,nosuid,nodev,noexec', 'sysfs', str(places['sys']))
         dev = places['dev']
@@ -3541,7 +3605,7 @@ def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT):
                     subprocess.run(['umount', '-l', target], check=False, capture_output=True)
 
 
-def provision(context, root, progress, runner=None, network=True):
+def provision(context, root, progress, runner=None, network=True, home=None):
     """Install what the first start would, now, from the recovery. Returns whether the new
     system starts ready; otherwise its first start does the rest. NETWORK: the chosen desktop,
     apps or setup script need the internet, which the recovery has only on Wi-Fi."""
@@ -3575,7 +3639,7 @@ def provision(context, root, progress, runner=None, network=True):
                 kept.write(line if line.endswith('\n') else line + '\n')
         provision_step(line, progress)
     try:
-        status = runner(root, on_line)
+        status = runner(root, on_line, home=home) if home is not None and runner is chroot_script else runner(root, on_line)
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         # The recovery could not prepare the chroot: the first start still does everything.
         return {'provisioned': False, 'provision': 'first-start', 'provision_status': None, 'provision_error': str(error)[:200]}
@@ -3650,19 +3714,13 @@ def build_store(context):
         store.mkdir(exist_ok=True)
         yield store
         return
-    volume = context.volume('cache')
-    mounted_here = not volume['mounted']
-    if mounted_here:
-        context.mount('cache', 'rw', True, volume['volume_token'])
-    elif volume['read_only']:
-        raise OSError('The cache partition is read-only')
-    try:
-        store = Path(context.volume('cache')['mountpoint']) / 'a22x-recovery/build-cache'
+    import settings
+    # settings.volume_root opens the recovery's own read-only mount of cache for writing too
+    # (2026-11-12 review: the builds of phoc and Phrog were lost with userdata after a status).
+    with settings.volume_root(context, 'cache', 'rw') as root:
+        store = root / 'a22x-recovery/build-cache'
         store.mkdir(parents=True, exist_ok=True)
         yield store
-    finally:
-        if mounted_here:
-            context.unmount('cache', context.volume('cache')['volume_token'])
 
 
 def keep_builds(context, root):
@@ -3715,6 +3773,25 @@ def erase_userdata(context):
     context.mount('userdata', 'rw', True, context.volume('userdata')['volume_token'])
 
 
+def reserved_roots_dropped(root):
+    """An image made from a whole userdata (a dd copy of a phone) carries that phone's systems and
+    saved images at its top; they are the recovery's data there, not part of the system, and a
+    system holding them could never be switched to (2026-11-12 review). They go, and so does an
+    empty lost+found; one with files in it stops here, before the long setup."""
+    for name in os.listdir(root):
+        path = Path(root) / name
+        if name in (MANAGER, STORE_DIR) or name.startswith('.a22x-systems-'):
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        elif name == 'lost+found':
+            if path.is_dir() and not path.is_symlink() and not os.listdir(path):
+                path.rmdir()
+            else:
+                fail('RESERVED_ROOT_ENTRY', 'The image has files in lost+found at its top; move them out of the image first', path=name)
+
+
 def install_image(context, plan, confirmed=False):
     """A system from an image. When its plan takes a Linux BOOT with it (boot_for_linux), that BOOT is
     on cache before anything is erased and is written once the system is in place."""
@@ -3765,6 +3842,9 @@ def install_image_system(context, plan, confirmed=False):
             with fs.PinnedVolume(context, 'userdata', writing=True) as erase_pin, Tree(erase_pin) as erase_live:
                 require_userdata(erase_pin)
                 clear_userdata(erase_live)
+        # 2026-11-12 review: an unfinished switch went with userdata; its guard in RAM must go too, or
+        # status and boot-check refuse the new system with SENTINEL_UNRESOLVED.
+        clear_sentinel(context)
         progress('image-erase', 1, 1)
     script = None
     if options.get('script'):
@@ -3912,9 +3992,14 @@ def install_image_system(context, plan, confirmed=False):
             give_builds(context, root)
             shutil.rmtree(stage_path / 'work')
             shutil.rmtree(stage_path / 'platform', ignore_errors=True)
+            reserved_roots_dropped(root)
+            shared_home = None
+            if not clean and live.exists('home'):
+                shared_home = real_path(live) / 'home'
+                (root / 'home').mkdir(mode=0o755, exist_ok=True)
             provisioned = provision(context, root, progress, PROVISION_RUNNER,
                                     desktop not in ('console', 'image') or bool(options.get('apps')) or bool(options.get('packages'))
-                                    or script is not None)
+                                    or script is not None, home=shared_home)
             subprocess.run(['sync'], check=False)
             progress('image-check')
             with Tree(pin, stage + '/root') as target:
@@ -3993,11 +4078,25 @@ def remove_slot(context, slot, confirmed=False):
         require(state['active'] != slot, 'SLOT_ACTIVE', 'Switch to another system before removing this one')
         path = MANAGER + '/slots/' + slot
         require(live.exists(path), 'SLOT_UNAVAILABLE', 'The selected system does not exist')
-        shutil.rmtree(real_path(live) / path)
-        os.sync()
+        # 2026-11-12 review: a removal cut short (power, a killed helper) left slots/<id> without its
+        # slot.json, and every status and plan failed. The slot leaves the list in one rename first;
+        # what is deleted after that is no slot any more, and the next removal finishes it.
+        base = real_path(live) / MANAGER
+        for leftover in base.iterdir():
+            if leftover.name.startswith('.removing-') and leftover.is_dir() and not leftover.is_symlink():
+                shutil.rmtree(leftover)
+        trash = base / ('.removing-' + slot + '-' + os.urandom(4).hex())
+        os.rename(base / 'slots' / slot, trash)
+        fd = os.open(base / 'slots', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
         state.pop('seal')
         state['generation'] += 1
         live.write_json(MANAGER + '/state.json', seal(state))
+        shutil.rmtree(trash)
+        os.sync()
         return {'removed_slot': slot, 'active': state['active'], 'platform_profile_sha256': digest(profile)}
 
 
@@ -4229,6 +4328,14 @@ def boot_check(context):
     volume = context.volume('userdata')
     owned = not volume['mounted']
     mounted = False
+    if owned and volume.get('needs_recovery'):
+        # 2026-11-12 review: a read-only mount here does not replay the ext4 journal (noload), and a
+        # switch cut short by a power loss may be only in the journal: the check would see the state
+        # before it and allow a start the system's own kernel then breaks. Mounted for writing once,
+        # the journal is replayed as the system's kernel would.
+        context.mount('userdata', 'rw', True, volume['volume_token'])
+        context.unmount('userdata', context.volume('userdata')['volume_token'])
+        volume = context.volume('userdata')
     try:
         if owned:
             context.mount('userdata', 'ro', False, volume['volume_token'])
@@ -4419,7 +4526,10 @@ def main(argv=None):
     except fs.FilesystemError as exc:
         error = {'code': exc.code, 'message': exc.message, 'details': exc.details}
         code = 2
-    except (OSError, EOFError, ValueError, KeyError, TypeError, struct.error, tarfile.TarError) as exc:
+    except (OSError, EOFError, ValueError, KeyError, TypeError, struct.error, tarfile.TarError,
+            http.client.HTTPException, zlib.error, lzma.LZMAError) as exc:
+        # 2026-11-12 review: a cut chunked answer (IncompleteRead) or a damaged .gz/.xz image ended
+        # the command with a traceback and no answer for the interface.
         error = {'code': 'IO_OR_INPUT_ERROR', 'message': str(exc), 'details': {'errno': getattr(exc, 'errno', None)}}
         code = 3
     print(json.dumps({'ok': False, 'operation': operation, 'error': error}, ensure_ascii=True, separators=(',', ':')))

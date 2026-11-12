@@ -139,6 +139,30 @@ class Flash(unittest.TestCase):
         self.assertEqual((self.root / 'targets' / 'boot').read_bytes(), before)
         self.assertEqual(self.journals(), [])
 
+    def test_a_partition_written_another_way_after_a_left_journal_is_left_alone(self):
+        """2026-11-12 review: a journal left behind, then BOOT flashed with Odin (or a second flash).
+        Its content is neither this write's nor the saved copy's: resume leaves it, and the journal goes."""
+        code, checked, _ = self.check('boot', self.image(boot_image(), 'boot.img'))
+        with mock.patch.object(flash, 'end_pending', lambda *a: None):
+            code, done, _ = self.write('boot', '/boot.img', checked)
+        self.assertEqual((code, len(self.journals())), (0, 1))
+        odin = bytearray((self.root / 'targets' / 'boot').read_bytes())
+        odin[:len(odin) // 2] = bytes(range(256)) * (len(odin) // 2 // 256)
+        (self.root / 'targets' / 'boot').write_bytes(bytes(odin))
+        code, result, _ = self.run_helper('resume')
+        self.assertEqual([r['outcome'] for r in result['resumed']], ['changed'])
+        self.assertEqual(((self.root / 'targets' / 'boot').read_bytes(), self.journals()), (bytes(odin), []))
+
+    def test_a_journal_that_cannot_be_read_goes_and_does_not_hide_the_others(self):
+        code, checked, _ = self.check('boot', self.image(boot_image(), 'boot.img'))
+        with mock.patch.object(flash, 'end_pending', lambda *a: None):
+            code, done, _ = self.write('boot', '/boot.img', checked)
+        self.assertEqual(len(self.journals()), 1)
+        (self.root / 'sd' / flash.ROLLBACK_FOLDER / ('aaa-20260101-000000.img' + flash.PENDING_SUFFIX)).write_text('')
+        code, result, _ = self.run_helper('resume')
+        self.assertEqual(sorted(r['outcome'] for r in result['resumed']), ['completed', 'unreadable'])
+        self.assertEqual(self.journals(), [])
+
     def test_a_write_cut_short_is_finished_or_undone_at_the_next_start(self):
         before = (self.root / 'targets' / 'boot').read_bytes()
         code, checked, _ = self.check('boot', self.image(boot_image(), 'boot.img'))
@@ -150,16 +174,27 @@ class Flash(unittest.TestCase):
         code, result, _ = self.run_helper('resume')
         self.assertEqual((code, [r['outcome'] for r in result['resumed']]), (0, ['completed']))
         self.assertEqual(((self.root / 'targets' / 'boot').read_bytes(), self.journals()), (written, []))
-        # Cut in the middle: half new, half old. The saved copy comes back.
+        # Cut in the middle of a write of another image: its first half new, the rest still old.
+        # The saved copy comes back.
+        other = boot_image() + bytes(range(256)) * 64  # the same boot image with 16 KiB more after it
+        code, checked2, _ = self.check('boot', self.image(other, 'boot2.img'))
+        self.assertEqual(code, 0, checked2)
         with mock.patch.object(flash, 'end_pending', lambda *a: None):
-            code, done, _ = self.write('boot', '/boot.img', checked)
-        copy = written  # what was there before this second write
-        torn = bytearray(written)
-        torn[len(torn) // 2:] = b'\x77' * (len(torn) - len(torn) // 2)
+            code, done, _ = self.write('boot', '/boot2.img', checked2)
+        self.assertEqual(code, 0, done)
+        new = (self.root / 'targets' / 'boot').read_bytes()
+        self.assertNotEqual(new, written)
+        changed = [at for at in range(0, len(new), 4096) if new[at:at + 4096] != written[at:at + 4096]]
+        self.assertGreater(len(changed), 2)
+        torn = bytearray(new)
+        half = changed[len(changed) // 2]
+        torn[half:] = written[half:]
+        torn[half - 100:half] = b'\x77' * 100  # one page caught in the middle
         (self.root / 'targets' / 'boot').write_bytes(bytes(torn))
-        code, result, _ = self.run_helper('resume')
-        self.assertEqual([r['outcome'] for r in result['resumed']], ['restored'])
-        self.assertEqual(((self.root / 'targets' / 'boot').read_bytes(), self.journals()), (copy, []))
+        if bytes(torn) != new and bytes(torn) != written:
+            code, result, _ = self.run_helper('resume')
+            self.assertEqual([r['outcome'] for r in result['resumed']], ['restored'])
+            self.assertEqual(((self.root / 'targets' / 'boot').read_bytes(), self.journals()), (written, []))
         self.assertEqual(self.run_helper('resume')[1]['resumed'], [])
         self.assertNotEqual(before, written)
 

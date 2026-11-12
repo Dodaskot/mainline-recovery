@@ -40,9 +40,12 @@ BUILD = Path('/etc/a22x-recovery/build.json')
 
 
 def version_key(text):
-    """0.6.199 and v0.6.199 alike, as numbers; () when it is no version."""
-    match = re.fullmatch(r'v?([0-9]+(?:\.[0-9]+){1,3})', str(text or '').strip())
-    return tuple(int(part) for part in match.group(1).split('.')) if match else ()
+    """0.6.199, v0.6.199 and a build's 0.6.199-public alike, as numbers; a revision (-r2) counts
+    after them. () when it is no version."""
+    match = re.fullmatch(r'v?([0-9]+(?:\.[0-9]+){1,3})(?:-r([0-9]+)|-[a-z][a-z0-9]{0,15})?', str(text or '').strip())
+    if not match:
+        return ()
+    return tuple(int(part) for part in match.group(1).split('.')) + ((int(match.group(2)),) if match.group(2) else ())
 
 
 def installed_version(context):
@@ -160,16 +163,26 @@ def fetch(context, what, sha256):
 
 
 def prune(context, keep):
-    """Only the newest downloaded recovery stays on cache."""
+    """Only the newest downloaded recovery stays on cache. save_on_cache has just left cache
+    mounted read-only for Flash a partition: it is opened for writing here and left read-only
+    again (2026-11-12 review: the old copies were never removed)."""
     with contextlib.suppress(OSError, fs.FilesystemError):
         volume = context.volume('cache')
-        if volume['read_only']:
+        if not volume['mounted']:
             return
-        with fs.PinnedVolume(context, 'cache', writing=True) as pin:
-            with pin.directory(UPDATES) as folder:
-                for name in os.listdir(folder):
-                    if name.startswith('recovery-') and not name.startswith(keep):
-                        os.unlink(name, dir_fd=folder)
+        reopen = volume['read_only']
+        if reopen:
+            context.mount('cache', 'rw', True, volume['volume_token'])
+        try:
+            with fs.PinnedVolume(context, 'cache', writing=True) as pin:
+                with pin.directory(UPDATES) as folder:
+                    for name in os.listdir(folder):
+                        if name.startswith('recovery-') and name not in (keep, keep + '.json', keep + '.sha256'):
+                            os.unlink(name, dir_fd=folder)
+                    os.fsync(folder)
+        finally:
+            if reopen:
+                context.mount('cache', 'ro', True, context.volume('cache')['volume_token'])
 
 
 def main(argv=None):

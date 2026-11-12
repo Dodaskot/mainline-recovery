@@ -72,6 +72,21 @@ class Damaged(unittest.TestCase):
             settings.read_disk()
         self.assertEqual(raised.exception.label, 'cache')
 
+    def test_a_file_that_cannot_be_read_now_is_not_damaged_and_opens_nothing(self):
+        """2026-11-12 review: EIO or EACCES on the file offered erasing settings and userdata."""
+        self.write('cache', json.dumps(GOOD))
+        self.write('userdata', json.dumps({'theme': 'x'}))
+        real = Path.read_text
+        def failing(path, *a, **k):
+            if path.parent.parent.name == 'cache':
+                raise OSError(5, 'Input/output error')
+            return real(path, *a, **k)
+        with mock.patch.object(Path, 'read_text', failing):
+            with self.assertRaises(settings.Unreadable):
+                settings.read_disk()
+            self.assertEqual(settings.reset_damaged(), 1)
+        self.assertNotIn(('format', 'userdata', 'ext4'), self.calls)
+
     def test_cache_without_settings_asks_userdata_and_none_is_no_password(self):
         self.write('userdata', json.dumps(GOOD))
         self.assertEqual(settings.read_disk(), GOOD)

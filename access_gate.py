@@ -92,6 +92,12 @@ def console():
     for signum in (signal.SIGINT, signal.SIGQUIT, signal.SIGTSTP):
         signal.signal(signum, signal.SIG_IGN)
     gate = Gate()
+    # 2026-11-12 review: nothing is asked before someone is at the port. Deciding at once read the
+    # settings from the disk at every start, holding the storage lease while init's one-shot steps
+    # (flash.py resume, saved_boot.py tidy, handoff.py) needed it.
+    print('\nA22x recovery console. Press Enter.', flush=True)
+    while not sys.stdin.readline():
+        time.sleep(1)
     while gate.required():
         if gate.granted():
             break

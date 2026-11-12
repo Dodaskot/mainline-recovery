@@ -4,6 +4,31 @@ What changed in each version of A22x Mainline Recovery, newest first. Every item
 was checked on the phone unless it says otherwise. Before 0.6.124: [docs/CHANGELOG.md](docs/CHANGELOG.md);
 day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md).
 
+## Not released yet: fixes from code reviews
+
+Found by two automated code reviews (the changes of 0.6.198–0.6.206, and `distro.py`,
+`filesystem.py`, `dm_linear.py`), checked in the code and fixed; tested on the computer, the app's
+BOOT copy also on the phone.
+
+- **Flashing**: a write cut short is undone at the next start only when the partition is a mix of
+  that very image and its saved copy (page by page); a partition written another way since (Odin,
+  a second flash) is left alone. A journal that cannot be read no longer hides the others.
+- **Cache**: copies a write still needs count as the newest, so older ones go; with a wrong clock
+  nothing is removed; only the newest downloaded recovery stays.
+- **Settings**: a change no longer lands on userdata while cache was mounted read-only (it was lost
+  at the next start); a read error is no longer taken for damaged settings.
+- **Updates**: a public build (`0.6.NN-public`) sees newer releases.
+- **UART console**: the settings are read only when someone presses Enter, not at every start.
+- **Storage**: two USB drives, an empty card reader and a microSD card pulled out while mounted no
+  longer stop every command; Cancel during a copy removes the half-copied files.
+- **Linux systems**: a system is removed in one rename first, so a cut removal leaves no broken
+  entry; a clean install keeps every file of the image store; a dd copy of userdata can be installed
+  and switched to; the new account's home goes to the shared /home; saved Wi-Fi networks (also with
+  a 64-character key) reach a system installed beside; the start check replays the ext4 journal;
+  network and decompression errors give an answer instead of a traceback; pax rootfs archives of
+  any size and Python 3.14's tar bounds.
+- **App**: one copy of BOOT at a time; room is checked before the copy.
+
 ## 0.6.198 to 0.6.206
 
 - **Android keeps its data across restarts after a reset** (0.6.206). The reset of Android's data
