@@ -3063,6 +3063,12 @@ def image_plan(context, source_volume, image_path, options, expected_source=None
         if state is None and not clean:
             require(has_linux_root(live), 'USERDATA_NOT_EMPTY',
                     'Userdata holds files but no Linux system. Format it in Files for a clean install.')
+        if not clean and live is not None and live.exists('home'):
+            # 2026-11-12 review: the shared /home is walked with its bounds at the end of an
+            # installation beside the others (home_binding), after up to 150 minutes of setup. A home
+            # that cannot be shared stops the plan now instead.
+            for _ in _walk(live, 'home'):
+                pass
         if clean:
             require(options['account'] == 'new', 'ACCOUNT_REQUIRED',
                     'A clean install needs a new account: userdata has none to keep')
@@ -4209,11 +4215,80 @@ def switch_binding(context, live, slot, profile):
         return binding
 
 
+def share_accounts(live, slot):
+    """2026-11-12 review: /home is shared, and a switch requires every account with a home there to
+    exist the same in the system switched to. An account made for one system ("New user" of an
+    installation beside the others) therefore made every other system unreachable. Such an account
+    is added to SLOT before its switch is planned, copied line for line (name, UID, group, home,
+    password) from the running system; only when the name, the UID and the group are free there or
+    already the same. Anything else is left to the check below, which says what differs. SLOT is not
+    running. Returns the names added."""
+    if not live.exists(MANAGER + '/slots/' + slot + '/root'):
+        return []
+    root = real_path(live)
+    target = root / MANAGER / 'slots' / slot / 'root'
+    paths = {}
+    for side, base in (('live', root), ('target', target)):
+        for name in ('passwd', 'group', 'shadow'):
+            path = base / 'etc' / name
+            if os.path.realpath(path) != str(path) or (path.exists() and not path.is_file()) or (name != 'shadow' and not path.is_file()):
+                return []
+            paths[side, name] = path
+    old_users, old_groups = account_tables(live)
+    with Tree(live.pin, MANAGER + '/slots/' + slot + '/root') as other:
+        new_users, new_groups = account_tables(other)
+    lines = {key: path.read_text(errors='surrogateescape').splitlines() if path.is_file() else [] for key, path in paths.items()}
+    uids = {item['uid'] for item in new_users.values()}
+    group_names = {gid: name for name, gid in new_groups.items()}
+    added, add = [], {'passwd': [], 'group': [], 'shadow': []}
+    for name, item in sorted(old_users.items()):
+        if not (item['home'] == '/home' or item['home'].startswith('/home/')) or item['uid'] < 1000:
+            continue
+        if name in new_users or item['uid'] in uids:
+            continue
+        group = next((g for g, gid in old_groups.items() if gid == item['gid']), None)
+        if group is None or group_names.get(item['gid'], group) != group or new_groups.get(group, item['gid']) != item['gid']:
+            continue
+        row = next(line for line in lines['live', 'passwd'] if line.split(':')[0] == name).split(':')
+        if not (target / row[6].lstrip('/')).exists():
+            row[6] = '/bin/sh'
+        add['passwd'].append(':'.join(row))
+        if group not in new_groups:
+            add['group'].append('%s:x:%d:' % (group, item['gid']))
+            new_groups[group], group_names[item['gid']] = item['gid'], group
+        secret = next((line for line in lines['live', 'shadow'] if line.split(':')[0] == name), name + ':!:20000:0:99999:7:::')
+        add['shadow'].append(secret)
+        uids.add(item['uid'])
+        added.append(name)
+    for name, extra in add.items():
+        if not extra:
+            continue
+        path = paths['target', name]
+        info = path.stat() if path.exists() else None
+        text = '\n'.join(lines['target', name] + extra) + '\n'
+        temporary = path.with_name('.' + name + '.a22x-new')
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            os.write(fd, text.encode(errors='surrogateescape'))
+            os.fchown(fd, info.st_uid if info else 0, info.st_gid if info else 0)
+            os.fchmod(fd, stat.S_IMODE(info.st_mode) if info else (0o600 if name == 'shadow' else 0o644))
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(temporary, path)
+    if added:
+        os.sync()
+    return added
+
+
 def switch_plan(context, slot):
     identifier(slot)
     profile = load_profile(context)
     with fs.PinnedVolume(context, 'userdata', writing=True) as pin, Tree(pin) as live:
         require_userdata(pin)
+        state = read_state(live) if live.exists(MANAGER) else None
+        if state and slot != state['active'] and not read_transaction(live):
+            share_accounts(live, slot)
         binding = switch_binding(context, live, slot, profile)
         return {'plan': plan_envelope(context, 'switch', binding, slot=slot, name=slot,
                     preserved_paths=['/home'], whole_switch_atomic=False,

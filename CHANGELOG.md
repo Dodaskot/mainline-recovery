@@ -33,6 +33,10 @@ BOOT copy also on the phone.
   for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
   the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
   start removes descriptions of saved BOOTs whose image is gone.
+- **Switching systems**: an account made in one system (a "New user" of a system installed
+  beside the others) is added to the system switched to, when its name, UID and group are free
+  there, so it no longer locks the others out; the shared /home is checked when an installation
+  beside the others is planned, not at its end.
 - **More from the review of `distro.py` and `filesystem.py`**: file modes despite the recovery's
   umask (new folders, `resolv.conf`), FAT32's 4 GiB limit checked before a copy or sideload, a
   download stays on the card that holds the images, status reads BOOT once and answers for

@@ -203,6 +203,29 @@ class TestImageInstall(unittest.TestCase):
         self.assertTrue((self.f.live / 'usr/bin/a22x-reboot').exists())
         self.f.assert_home(self)
 
+    def test_an_account_made_in_one_system_does_not_lock_out_the_others(self):
+        """2026-11-12 review: a "New user" of a system installed beside the others has its home in
+        the shared /home, and every switch back failed with HOME_ACCOUNT_MISMATCH."""
+        d.install(self.f.context, self.plan(), True)
+        d.switch(self.f.context, d.switch_plan(self.f.context, 'distro-1-0')['plan'], True)
+        live = self.f.live
+        with open(live / 'etc/passwd', 'a') as out:
+            out.write('anna:x:1501:1501:Anna:/home/anna:/bin/bash\n')
+        with open(live / 'etc/group', 'a') as out:
+            out.write('anna:x:1501:\n')
+        with open(live / 'etc/shadow', 'a') as out:
+            out.write('anna:$y$annahash:20000:0:99999:7:::\n')
+        (live / 'home/anna').mkdir()
+        (live / 'home/anna/notes.txt').write_text('mine\n')
+        d.switch(self.f.context, d.switch_plan(self.f.context, 'original')['plan'], True)
+        self.assertIn('anna:x:1501:1501:Anna:/home/anna:', (live / 'etc/passwd').read_text())
+        self.assertIn('anna:$y$annahash:', (live / 'etc/shadow').read_text())
+        self.assertIn('anna:x:1501:', (live / 'etc/group').read_text())
+        self.assertEqual((live / 'home/anna/notes.txt').read_text(), 'mine\n')
+        # And back again: the account is there in both now.
+        d.switch(self.f.context, d.switch_plan(self.f.context, 'distro-1-0')['plan'], True)
+        self.f.assert_home(self)
+
     def platform_bundle(self):
         """What the recovery ships: the live platform files exactly as the profile names them."""
         names = [e['path'] for e in self.f.profile['entries']] + list(d.PLATFORM_EXTRAS)

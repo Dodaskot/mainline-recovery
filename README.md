@@ -129,7 +129,7 @@ updates itself from the newest release. `apk/build.sh` builds it without the And
    to RECOVERY in Download Mode, for example with Heimdall:
 
    ```fish
-   heimdall flash --RECOVERY recovery-a22x-0.6.206.img
+   heimdall flash --recovery recovery-a22x-0.6.206.img
    ```
 
    or install it from a rooted Android with the app.

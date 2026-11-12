@@ -131,7 +131,7 @@ English: [README.md](README.md) · Що змінилося в кожній ве�
    у RECOVERY у режимі Download, наприклад через Heimdall:
 
    ```fish
-   heimdall flash --RECOVERY recovery-a22x-0.6.206.img
+   heimdall flash --recovery recovery-a22x-0.6.206.img
    ```
 
    або встановіть його застосунком з Android з root.
