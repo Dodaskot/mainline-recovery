@@ -90,6 +90,7 @@ Done by touch on the phone unless said otherwise.
 | Settings > Updates: GitHub checked, the published recovery downloaded and checked | 202 | works |
 | Evolution X 11.11 (Treble GSI) from the catalog: downloaded, installed, started | 204 | starts |
 | Root with Magisk on Evolution X, data kept across restarts | 206 | works after the metadata fix; with 204 Android asked for a reset after its first restart |
+| Full copy of Evolution X with its data; then Arch Linux ARM with Plasma Mobile and automatic sign-in installed over it; then the copy restored (done by the owner) | 206 | Arch Linux: started the first time. After the restore Evolution X started with the same data: setup done, Magisk root (31.1) and both apps from before the copy, no reset asked |
 | Installer app: updates page, Android's BOOT kept on cache by itself | 205 | works |
 
 ### Android images tried on this phone
