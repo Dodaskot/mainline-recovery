@@ -5086,6 +5086,38 @@ static bool preview(App*a,const char*name){
         copy(a->ssh_address,sizeof(a->ssh_address),"172.16.42.1");copy(a->ssh_fingerprint,sizeof(a->ssh_fingerprint),"SHA256:ExamplePreviewKeyNotARealPhoneFingerprint");
         if(!strcmp(name,"tools-end")){a->screen=TOOLS;render(a);a->tools_scroll=tools_max_scroll(a);} /* 2026-11-11: the reset of the settings is the last thing on the page. */
     }
+    /* Pages for the published screenshots (2026-11-12, the owner: real distributions and English
+       names, not the test fixtures with their Ukrainian files and invented systems). */
+    else if(!strcmp(name,"doc-plan")){
+        a->systems_known=a->systems_mounted=a->systems_initialized=a->systems_platform=a->systems_empty=true;a->systems_slot_count=0;a->systems_active[0]=0;
+        a->systems_desktop=2;a->systems_apps=(1u<<0)|(1u<<1)|(1u<<7)|(1u<<8);copy(a->systems_wifi_ssid,sizeof(a->systems_wifi_ssid),"Home 5G");copy(a->systems_wifi_password,sizeof(a->systems_wifi_password),"preview-password");
+        a->screen=SYSTEMS_PLAN;a->systems_plan_valid=a->systems_plan_clean=true;a->systems_plan_expires=(uint64_t)time(NULL)+600;a->systems_plan_kind=J_SYS_IMPORT_PLAN;
+        copy(a->systems_plan_slot,sizeof(a->systems_plan_slot),"debian-13");copy(a->systems_plan_name,sizeof(a->systems_plan_name),"Debian 13 trixie (arm64)");
+        copy(a->systems_source_volume,sizeof(a->systems_source_volume),"catalog");copy(a->systems_manifest,sizeof(a->systems_manifest),"debian-13-nocloud-arm64.tar.xz");
+        a->systems_required_bytes=6442450944ULL;a->systems_available_bytes=52076478464ULL;
+    }
+    else if(!strcmp(name,"doc-terminal")){
+        a->screen=TERMINAL;a->terminal_known=a->terminal_available=true;terminal_reset_view(a);copy(a->terminal_state,sizeof(a->terminal_state),"active");
+        memset(a->terminal_session,'1',64);a->terminal_session[64]=0;a->terminal_rows=TERMINAL_ROWS;a->terminal_cols=TERMINAL_COLS;
+        const char*text="\033[1;32mroot@recovery\033[0m:~# uname -r\r\n7.2.0-a22x-recovery+\r\n"
+            "\033[1;32mroot@recovery\033[0m:~# ls /mnt/volumes\r\n\033[1;34mcache\033[0m  \033[1;34msdcard-p1\033[0m  \033[1;34msuper-system\033[0m  \033[1;34muserdata\033[0m\r\n"
+            "\033[1;32mroot@recovery\033[0m:~# df -h /mnt/volumes/userdata\r\nFilesystem      Size  Used Avail Use% Mounted on\r\n/dev/mmcblk0p54  49G   14G   35G  29% /mnt/volumes/userdata\r\n"
+            "\033[1;32mroot@recovery\033[0m:~# cat /etc/os-release | head -2\r\nPRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\r\nNAME=\"Debian GNU/Linux\"\r\n"
+            "\033[1;32mroot@recovery\033[0m:~# cat /sys/class/power_supply/battery/capacity\r\n87\r\n\033[1;32mroot@recovery\033[0m:~# ";
+        tm_feed(&a->terminal,text,strlen(text));a->terminal_scroll=terminal_max_scroll(a);
+    }
+    else if(!strcmp(name,"doc-systems")){
+        static const char*const ids[]={"debian-13","ubuntu-26-04","fedora-45"},*const names[]={"Debian 13 trixie  /  Phosh","Ubuntu 26.04 LTS  /  Plasma Mobile","Fedora 45  /  GNOME"};
+        a->screen=SYSTEMS;a->systems_known=a->systems_mounted=a->systems_initialized=a->systems_platform=true;copy(a->systems_active,sizeof(a->systems_active),"debian-13");a->systems_slot_count=3;
+        for(int n=0;n<3;n++){SystemSlot*slot=&a->systems_slots[n];copy(slot->id,sizeof(slot->id),ids[n]);copy(slot->name,sizeof(slot->name),names[n]);slot->active=n==0;slot->boot_tested=true;}
+    }
+    else if(!strcmp(name,"doc-files")){
+        static const char*const names[]={"Documents","Downloads","Pictures","config.ini","start-phosh.sh","notes.txt","backup-2026-11-12.tar.zst"};
+        static const char*const types[]={"directory","directory","directory","file","file","file","file"};
+        static const uint64_t sizes[]={0,0,0,1536,2048,4096,734003200ULL};
+        a->screen=FILE_BROWSER;copy(a->fs_path,sizeof(a->fs_path),"/home/user");a->file_count=7;a->file_total=7;a->files_more=false;
+        for(int n=0;n<7;n++){FileEntry*e=&a->files[n];copy(e->name,sizeof(e->name),names[n]);child_path(a->fs_path,names[n],e->path,sizeof(e->path));copy(e->type,sizeof(e->type),types[n]);copy(e->mode,sizeof(e->mode),n==4?"0755":"0644");e->metadata_supported=true;e->size=sizes[n];}
+    }
     else if(!strcmp(name,"terminal")||!strcmp(name,"terminal-unicode")||!strcmp(name,"terminal-scroll")||!strcmp(name,"terminal-ready")){
         a->screen=TERMINAL;a->terminal_known=a->terminal_available=true;terminal_reset_view(a);
         copy(a->terminal_state,sizeof(a->terminal_state),!strcmp(name,"terminal-ready")?"stopped":"active");
@@ -5359,9 +5391,11 @@ static bool preview(App*a,const char*name){
             {"Дім 5G","WPA2","5 GHz",4,true,true},{"Hotspot","WPA2","2.4 GHz",3,true,true},{"Кав'ярня біля парку","Open","2.4 GHz",2,false,true},
             {"Office-WPA3","WPA3","5 GHz",2,true,false},{"Сусіди","WPA2","2.4 GHz",1,true,true}};
         a->wifi_known=a->wifi_available=a->wifi_on=true;a->wifi_count=0;
+        /* wifi-doc: the joined list with English names, for the published screenshots. */
+        static const char*const english[]={"Home 5G","Hotspot","Cafe Guest","Office-WPA3","Neighbours"};bool doc=!strcmp(name,"wifi-doc");if(doc)name="wifi-connected";
         for(size_t n=0;n<sizeof(nets)/sizeof(nets[0]);n++){
-            WifiNet*w=&a->wifi_nets[a->wifi_count++];memset(w,0,sizeof(*w));copy(w->ssid,sizeof(w->ssid),nets[n].ssid);
-            for(size_t k=0;nets[n].ssid[k]&&k<32;k++)snprintf(w->hex+2*k,3,"%02x",(unsigned char)nets[n].ssid[k]);
+            WifiNet*w=&a->wifi_nets[a->wifi_count++];memset(w,0,sizeof(*w));const char*ssid=doc?english[n]:nets[n].ssid;copy(w->ssid,sizeof(w->ssid),ssid);
+            for(size_t k=0;ssid[k]&&k<32;k++)snprintf(w->hex+2*k,3,"%02x",(unsigned char)ssid[k]);
             copy(w->security,sizeof(w->security),nets[n].security);copy(w->band,sizeof(w->band),nets[n].band);
             w->bars=nets[n].bars;w->secure=nets[n].secure;w->supported=nets[n].supported;
         }

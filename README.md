@@ -110,8 +110,9 @@ More, page by page: [docs/screenshots/en](docs/screenshots/en).
 ### Interface
 
 - Six languages: English, Ukrainian, German, French, Polish, Spanish.
-- Themes, animations, 60/90 Hz, brightness, screen timeout, gesture or button
+- Themes, animations, 60/90 Hz, brightness, vibration strength, screen timeout, gesture or button
   navigation.
+- Your own themes and terminal colors from a file: [docs/MAKING_THEMES.md](docs/MAKING_THEMES.md).
 
 ### Android app
 
