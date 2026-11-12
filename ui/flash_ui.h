@@ -55,7 +55,10 @@ static void complete_flash_job(App*a,const Json*j,int kind,bool ok){
            partitions are known now, so BOOT is chosen and the kept copy checked like any image. */
         if(a->flash_after_targets){
             a->flash_after_targets=false;a->flash_selected=-1;
-            for(unsigned int n=0;n<a->flash_target_count;n++)if(!strcmp(a->flash_targets[n].label,"boot"))a->flash_selected=(int)n;
+            /* Settings > Updates names the partition (2026-11-12): recovery or boot; BOOT otherwise. */
+            const char*wanted=a->flash_after_label[0]?a->flash_after_label:"boot";
+            for(unsigned int n=0;n<a->flash_target_count;n++)if(!strcmp(a->flash_targets[n].label,wanted))a->flash_selected=(int)n;
+            a->flash_after_label[0]=0;
             /* Not for a page that was left while the partitions were read. */
             if(a->flash_selected>=0&&!a->nav_hold)start_flash_job(a,J_FLASH_CHECK);
         }

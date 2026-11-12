@@ -6,8 +6,15 @@ Recovery runs from RAM, so they live in one small file on cache, or on userdata
 when cache has no usable filesystem. Cache survives a userdata wipe and an
 Android install. A copy in RAM avoids a mount for every read.
 
-Exit 0 means yes or done, 1 means no, 2 an error, 3 kept in RAM until reboot.
-The password also guards SSH and UART, see access_gate.py.
+Exit 0 means yes or done, 1 means no, 2 an error, 3 kept in RAM until reboot,
+4 damaged settings. The password also guards SSH, UART and adb, see access_gate.py.
+
+Settings that cannot be read, or are damaged, never mean "no password" (2026-11-12, audit): the
+recovery and the gate stay locked, and nothing is saved over them. Damaged ones can be erased only
+together with userdata (reset-damaged), as Android's reset does: whoever holds the phone does not
+get past the password and keep the data it guarded. Settings that are not there at all, on a
+volume that was read, are the defaults: no password was ever set, or cache was erased, which takes
+Download Mode, and that the password cannot cover.
 """
 import argparse
 import contextlib
@@ -31,7 +38,8 @@ THEMES = Path('a22x-recovery/themes')
 RAM_THEMES = Path(os.environ.get('A22X_THEMES_RAM', '/run/a22x-recovery/themes'))
 VOLUMES = ('cache', 'userdata')
 ROUNDS = 120000
-LOCK_WAIT = 3.0
+# Wi-Fi joins at the start with the lock held; settings that cannot be read lock the recovery now.
+LOCK_WAIT = 20.0
 # timezone: a tz database zone (Europe/Berlin) for the recovery clock with summer time; empty keeps
 # the fixed utc_offset (2026-11-09).
 DEFAULTS = {'language': 'en', 'theme': 'graphite', 'terminal': 'auto', 'storage': 'sd', 'vibration': 2, 'timeout': 2, 'utc_offset': 0,
@@ -40,6 +48,26 @@ DEFAULTS = {'language': 'en', 'theme': 'graphite', 'terminal': 'auto', 'storage'
             'android_log': ''}  # the id of the failed start of Android the owner has read about (android_log.py)
 TEXT_KEYS = ('language', 'theme', 'terminal', 'storage', 'animation', 'timezone', 'android_log')
 ANIMATIONS = ('zoom', 'blur', 'slide', 'fade', 'dissolve', 'off')
+HEX = re.compile(r'[0-9a-f]+')
+
+
+class Damaged(ValueError):
+    """Settings that are there but cannot be read as settings; LABEL names the volume."""
+    def __init__(self, message, label=''):
+        super().__init__(message)
+        self.label = label
+
+
+def checked(record, label=''):
+    """RECORD as settings, or Damaged. A password needs its whole hash and its whole salt."""
+    if not isinstance(record, dict):
+        raise Damaged('The settings are not a record', label)
+    digest, salt = record.get('hash'), record.get('salt')
+    if digest is not None or salt is not None:
+        if not (isinstance(digest, str) and len(digest) == 64 and HEX.fullmatch(digest)
+                and isinstance(salt, str) and len(salt) == 32 and HEX.fullmatch(salt)):
+            raise Damaged('The password in the settings is damaged', label)
+    return record
 
 
 def valid(key, value):
@@ -97,7 +125,9 @@ def read_disk():
     """Empty only when a volume was really looked into and holds no settings.
 
     A volume that cannot be found or read is not an empty one: taking it for one
-    would show the phone unlocked and let the next save replace the password.
+    would show the phone unlocked and let the next save replace the password. Nor is a
+    file that is there but damaged (2026-11-12, audit): before, the next volume was
+    asked, and userdata without settings unlocked the phone.
     """
     context = fs.DeviceContext()
     opened = False
@@ -108,7 +138,14 @@ def read_disk():
                     opened = True
                     copy_themes(root)
                     if (root / RELATIVE).is_file():
-                        return json.loads((root / RELATIVE).read_text())
+                        try:
+                            return checked(json.loads((root / RELATIVE).read_text()), label)
+                        except (OSError, ValueError) as error:
+                            if isinstance(error, Damaged):
+                                raise
+                            raise Damaged('The settings on %s are damaged' % label, label) from error
+            except Damaged:
+                raise
             except (OSError, ValueError, fs.FilesystemError):
                 continue
     if not opened:
@@ -150,9 +187,13 @@ def remember(record):
 
 
 def load():
-    """An unread disk is an error. Taking it for an empty one would lose the password on the next save."""
+    """An unread disk is an error. Taking it for an empty one would lose the password on the next save.
+    A damaged copy in RAM is read again from the disk."""
     if RAM_COPY.is_file():
-        return json.loads(RAM_COPY.read_text())
+        try:
+            return checked(json.loads(RAM_COPY.read_text()))
+        except ValueError:
+            pass
     deadline = time.monotonic() + LOCK_WAIT
     while True:
         try:
@@ -172,6 +213,32 @@ def store(record):
         return 0 if write_disk(record) else 3
     except (OSError, ValueError, fs.FilesystemError):
         return 3
+
+
+def reset_damaged():
+    """Erase damaged settings together with userdata. Exit 1 when the settings are not damaged:
+    settings that cannot be read now are no proof. Userdata is erased first, so a stop halfway
+    leaves the data gone, never the password; cache is opened for writing before that, so a
+    cache that cannot be written stops it before anything is erased."""
+    try:
+        read_disk()
+        return 1
+    except Damaged as damaged:
+        label = damaged.label
+    context = fs.DeviceContext()
+    with operation_lock(context.lock_path, context.mode):
+        with contextlib.ExitStack() as stack:
+            cache = stack.enter_context(volume_root(context, 'cache', 'rw')) if label == 'cache' else None
+            volume = context.volume('userdata')
+            if volume['mounted']:
+                context.unmount('userdata', volume['volume_token'])
+                volume = context.volume('userdata')
+            context.format('userdata', 'ext4' if volume.get('fs_type') == 'ext4' else 'f2fs', True, volume['volume_token'])
+            if cache is not None:
+                (cache / RELATIVE).unlink(missing_ok=True)
+    RAM_COPY.unlink(missing_ok=True)
+    os.sync()
+    return 0
 
 
 def derive(secret, salt):
@@ -199,7 +266,10 @@ def main():
     password.add_argument('--secret-file', type=Path, required=True)
     password.add_argument('--old-secret-file', type=Path)
     commands.add_parser('clear-password').add_argument('--secret-file', type=Path)
+    commands.add_parser('reset-damaged')
     args = parser.parse_args()
+    if args.command == 'reset-damaged':
+        return reset_damaged()
     record = load()
     if args.command == 'status':
         print(json.dumps({**DEFAULTS, **{k: v for k, v in record.items() if k in DEFAULTS}, 'password': bool(record.get('hash')), 'password_digits': bool(record.get('digits'))}))
@@ -234,6 +304,9 @@ def main():
 if __name__ == '__main__':
     try:
         sys.exit(main())
+    except Damaged as error:
+        print(error, file=sys.stderr)
+        sys.exit(4)
     except (OSError, ValueError, fs.FilesystemError) as error:
         print(error, file=sys.stderr)
         sys.exit(2)

@@ -519,10 +519,16 @@ def rollback_folders(volume):
     return (ROLLBACK_FOLDER,)
 
 
-def save_rollback(context, target, progress, chunks=None, skip_cache=False):
+PENDING_SUFFIX = '.pending.json'
+
+
+def save_rollback(context, target, progress, chunks=None, skip_cache=False, pending=None):
     """The current content of TARGET, kept before it is written. CHUNKS: its bytes in order, for a
     partition inside super (2026-11-10); otherwise they are read from the target's own device.
-    On cache only the newest copy of a partition stays: the one written here."""
+    On cache only the newest copy of a partition stays: the one written here.
+    PENDING (2026-11-12 audit): what is about to be written. It is kept beside the copy as
+    NAME.pending.json until the write is over, so that a write cut short by a power loss is
+    finished or undone at the next start of the recovery (resume)."""
     if target['size_bytes'] > ROLLBACK_LIMIT:
         return None
     volume = rollback_volume(context, target['size_bytes'], skip_cache, make_room=True)
@@ -558,14 +564,27 @@ def save_rollback(context, target, progress, chunks=None, skip_cache=False):
                         break
                 else:
                     fs.fail('ROLLBACK_NAME_EXHAUSTED', 'The old content could not be saved')
+                digest = hashlib.sha256()
                 try:
                     done = 0
                     for data in (own() if chunks is None else chunks):
                         install.write_all(out, data)
+                        digest.update(data)
                         done += len(data)
                         progress('Saving the current partition', target, done)
                     require(done == target['size_bytes'], 'TARGET_READ_FAILED', 'The current partition could not be read')
                     os.fsync(out)
+                    if pending is not None:
+                        journal = os.open(name + PENDING_SUFFIX, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                          0o600, dir_fd=folder)
+                        try:
+                            install.write_all(journal, json.dumps({**pending, 'label': target['label'], 'partuuid': target.get('partuuid'),
+                                                                   'size_bytes': target['size_bytes'], 'copy': name,
+                                                                   'copy_sha256': digest.hexdigest()}).encode())
+                            os.fsync(journal)
+                        finally:
+                            os.close(journal)
+                        os.fsync(folder)
                 except BaseException:
                     # A copy cut short is not a copy: nothing half-saved stays behind.
                     with contextlib.suppress(OSError):
@@ -580,7 +599,63 @@ def save_rollback(context, target, progress, chunks=None, skip_cache=False):
     finally:
         if source is not None:
             os.close(source)
-    return {'volume': volume.get('label') or volume['id'], 'path': '/' + '/'.join(parts) + '/' + name}
+    return {'volume': volume.get('label') or volume['id'], 'volume_id': volume['id'], 'path': '/' + '/'.join(parts) + '/' + name,
+            'sha256': digest.hexdigest(), 'pending': pending is not None}
+
+
+def copy_reader(context, rollback):
+    """The saved copy, opened for reading on its pinned volume: (pin, fd)."""
+    pin = fs.PinnedVolume(context.fs, rollback['volume_id'])
+    try:
+        with pin.parent(rollback['path']) as (folder, name):
+            return pin, fs.open_regular(name, dir_fd=folder)
+    except BaseException:
+        pin.close()
+        raise
+
+
+def restore_copy(context, target, rollback, progress):
+    """Put the saved copy back on TARGET: only a copy whose SHA-256 is still the one saved, and the
+    partition is read back. True when it is back."""
+    pin, fd = copy_reader(context, rollback)
+    try:
+        digest, done = hashlib.sha256(), 0
+        while done < target['size_bytes']:
+            data = os.pread(fd, min(install.CHUNK, target['size_bytes'] - done), done)
+            require(data, 'ROLLBACK_DAMAGED', 'The saved copy is shorter than the partition')
+            digest.update(data)
+            done += len(data)
+        if digest.hexdigest() != rollback['sha256']:
+            return False
+        writer = context.open_target(target, write=True)
+        try:
+            done = 0
+            while done < target['size_bytes']:
+                data = os.pread(fd, min(install.CHUNK, target['size_bytes'] - done), done)
+                context.check_target(writer, target)
+                install.write_all(writer, data, offset=done)
+                done += len(data)
+                progress('Putting the old content back', target, done)
+            os.fsync(writer)
+            if context.mode == 'device':
+                fcntl.ioctl(writer, BLKFLSBUF)
+        finally:
+            os.close(writer)
+        return read_back(context, target, progress) == rollback['sha256']
+    finally:
+        os.close(fd)
+        pin.close()
+
+
+def end_pending(context, rollback):
+    """The write is over (done, or undone): its journal goes."""
+    if not rollback or not rollback.get('pending'):
+        return
+    with contextlib.suppress(OSError, fs.FilesystemError):
+        with fs.PinnedVolume(context.fs, rollback['volume_id'], writing=True) as pin:
+            with pin.parent(rollback['path']) as (folder, name):
+                os.unlink(name + PENDING_SUFFIX, dir_fd=folder)
+                os.fsync(folder)
 
 
 def open_super(context, write=False):
@@ -867,28 +942,43 @@ def write(context, args, progress):
             compression = container(fd, getattr(args, 'member', None))
             image_format = layout(fd, compression, target['size_bytes'])
             # A BOOT kept on cache as a saved BOOT is not kept there a second time.
-            rollback = save_rollback(context, target, progress, skip_cache=bool(kept and (kept['kept'] or kept.get('note') == 'identical')))
-            writer = context.open_target(target, write=True)
-            reader = open_reader(fd, compression, target['size_bytes'])
-            digest, position = hashlib.sha256(), 0
+            rollback = save_rollback(context, target, progress, skip_cache=bool(kept and (kept['kept'] or kept.get('note') == 'identical')),
+                                     pending={'new_sha256': args.expected_sha256, 'started': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())})
             try:
-                for data in install.fixed_chunks(install.decode_image(reader, image_format, target['size_bytes'])):
-                    context.check_target(writer, target)
-                    install.write_all(writer, data, offset=position)
-                    digest.update(data)
-                    position += len(data)
-                    progress('Writing', target, position)
-                os.fsync(writer)
-                if context.mode == 'device':
-                    fcntl.ioctl(writer, BLKFLSBUF)
-            finally:
-                close_reader(reader)
-                os.close(writer)
-        require(digest.hexdigest() == args.expected_sha256, 'IMAGE_CHANGED',
-                'The file changed during the write. Flash the partition again from a good image', rollback=rollback)
-        observed = read_back(context, target, progress)
-        require(observed == args.expected_sha256, 'READBACK_MISMATCH',
-                'The partition does not match the image after writing', rollback=rollback)
+                writer = context.open_target(target, write=True)
+                reader = open_reader(fd, compression, target['size_bytes'])
+                digest, position = hashlib.sha256(), 0
+                try:
+                    for data in install.fixed_chunks(install.decode_image(reader, image_format, target['size_bytes'])):
+                        context.check_target(writer, target)
+                        install.write_all(writer, data, offset=position)
+                        digest.update(data)
+                        position += len(data)
+                        progress('Writing', target, position)
+                    os.fsync(writer)
+                    if context.mode == 'device':
+                        fcntl.ioctl(writer, BLKFLSBUF)
+                finally:
+                    close_reader(reader)
+                    os.close(writer)
+                require(digest.hexdigest() == args.expected_sha256, 'IMAGE_CHANGED',
+                        'The file changed during the write. Flash the partition again from a good image', rollback=rollback)
+                observed = read_back(context, target, progress)
+                require(observed == args.expected_sha256, 'READBACK_MISMATCH',
+                        'The partition does not match the image after writing', rollback=rollback)
+            except BaseException as error:
+                # 2026-11-12 audit: a write that failed puts the saved copy back at once.
+                if rollback is not None and not isinstance(error, KeyboardInterrupt):
+                    try:
+                        restored = restore_copy(context, target, rollback, progress)
+                    except (OSError, fs.FilesystemError):
+                        restored = False
+                    if restored:
+                        end_pending(context, rollback)
+                    if isinstance(error, fs.FilesystemError):
+                        error.details['rollback_restored'] = restored
+                raise
+        end_pending(context, rollback)
         # 2026-11-10: an Android BOOT gets the mark that keeps this recovery (saved_boot.keep_recovery):
         # Samsung's Android otherwise puts its own recovery back at its next start.
         marked = saved_boot.keep_recovery(context, target) if args.target == 'boot' else None
@@ -900,6 +990,71 @@ def write(context, args, progress):
                 'keeps_recovery': bool(marked)}
 
 
+def resume(context, progress):
+    """At the start of the recovery (2026-11-12 audit): a write whose journal is still beside its
+    saved copy was cut short, by a power loss or a crash. The partition is read: the new image
+    whole means the write was over; the old content means nothing was written; anything else gets
+    the saved copy back, when its SHA-256 is still the saved one. A journal stays only when the
+    copy could not be put back."""
+    results = []
+    for volume in context.fs.volumes():
+        if not volume.get('volume_token') or not (volume['mounted'] or volume['mountable']):
+            continue
+        if volume.get('container') or not (volume.get('external') or volume['id'].startswith(('sdcard', 'usb-')) or volume['id'] in ('cache', 'userdata')):
+            continue
+        mounted_here = not volume['mounted']
+        try:
+            if mounted_here:
+                context.fs.mount(volume['id'], 'ro', False, volume['volume_token'])
+            found = []
+            with fs.PinnedVolume(context.fs, volume['id']) as pin:
+                path = '/'.join(rollback_folders(volume))
+                try:
+                    with pin.directory(path) as folder:
+                        for name in sorted(os.listdir(folder)):
+                            if name.endswith(PENDING_SUFFIX):
+                                journal = fs.open_regular(name, dir_fd=folder)
+                                try:
+                                    found.append(json.loads(os.read(journal, 65536)))
+                                finally:
+                                    os.close(journal)
+                except (OSError, fs.FilesystemError, ValueError):
+                    continue
+            for record in found:
+                results.append(resume_one(context, volume, path, record, progress))
+        except (OSError, fs.FilesystemError):
+            continue
+        finally:
+            if mounted_here:
+                with contextlib.suppress(OSError, fs.FilesystemError):
+                    context.fs.unmount(volume['id'])
+    return {'resumed': results}
+
+
+def resume_one(context, volume, path, record, progress):
+    label = record.get('label')
+    result = {'label': label, 'volume': volume.get('label') or volume['id'], 'outcome': 'kept'}
+    try:
+        target = context.target(label)
+        require(target['size_bytes'] == record.get('size_bytes') and target.get('partuuid') == record.get('partuuid'),
+                'TARGET_CHANGED', 'The partition is not the one that was written')
+        rollback = {'volume_id': volume['id'], 'path': '/' + path + '/' + record['copy'], 'sha256': record['copy_sha256'], 'pending': True}
+        now = read_back(context, target, progress)
+        if now == record.get('new_sha256'):
+            result['outcome'] = 'completed'
+        elif now == record['copy_sha256']:
+            result['outcome'] = 'unchanged'
+        else:
+            result['outcome'] = 'restored' if restore_copy(context, target, rollback, progress) else 'kept'
+        if result['outcome'] != 'kept':
+            if context.fs.volume(volume['id'])['read_only']:
+                context.fs.mount(volume['id'], 'rw', True, context.fs.volume(volume['id'])['volume_token'])
+            end_pending(context, rollback)
+    except (OSError, ValueError, KeyError, fs.FilesystemError) as error:
+        result['error'] = getattr(error, 'code', None) or type(error).__name__
+    return result
+
+
 def parser():
     result = argparse.ArgumentParser()
     mode = result.add_mutually_exclusive_group(required=True)
@@ -907,6 +1062,7 @@ def parser():
     mode.add_argument('--fixture', type=Path)
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('targets')
+    commands.add_parser('resume')
     for name in ('check', 'write'):
         command = commands.add_parser(name)
         command.add_argument('--target', type=target_choice, required=True)
@@ -938,6 +1094,9 @@ def main(argv=None):
         context = install.FixtureContext(args.fixture) if args.fixture else install.DeviceContext()
         if args.command == 'targets':
             result = targets(context)
+        elif args.command == 'resume':
+            with operation_lock(context.lock_path, context.mode):
+                result = resume(context, progress)
         elif args.command == 'check':
             result = check(context, args, progress)
         else:

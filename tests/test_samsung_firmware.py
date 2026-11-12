@@ -259,5 +259,17 @@ class Firmware(unittest.TestCase):
         self.assertEqual((code, refused['error']['code']), (2, 'PLAN_BLOCKED'))
 
 
+class MetadataReset(unittest.TestCase):
+    """2026-11-12: metadata gets an empty ext4 as the fstab describes it, never zeros alone."""
+    def test_metadata_is_formatted_ext4_like_the_fstab_says(self):
+        import install
+        self.assertEqual(install.RESET_MAKE_METADATA[:2], ('/sbin/mkfs.ext4', '-F'))
+        self.assertIn('4096', install.RESET_MAKE_METADATA)
+        source = (Path(install.__file__)).read_text()
+        start = source.rindex('def reset_android')
+        reset = source[start:source.index('def check_offline', start)]
+        self.assertLess(reset.index('RESET_MAKE_METADATA'), reset.index('RESET_MAKE_F2FS'))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -771,20 +771,39 @@ def serve_ffs(folder, keys, approve, log=None, gate=None, ready=None):
     os.write(control, ffs_strings())
     if ready:
         ready()
-    current = None
+    session = {'enabled': False, 'current': None, 'thread': None}
+
+    def sessions():
+        # 2026-11-12, on the owner's phone: a connection that ended while the cable stayed in (the
+        # password refused on the phone, or the computer's adb server restarted) left nobody reading
+        # the endpoints, and the computer saw the phone "offline" until the cable was pulled. While
+        # the configuration is enabled, every ended connection is followed by a new one.
+        while session['enabled']:
+            try:
+                out_fd = os.open(folder / 'ep1', os.O_RDONLY | os.O_CLOEXEC)
+                in_fd = os.open(folder / 'ep2', os.O_WRONLY | os.O_CLOEXEC)
+            except OSError:
+                time.sleep(0.5)
+                continue
+            session['current'] = Connection(EndpointTransport(out_fd, in_fd), keys, approve, 'usb', log, gate)
+            session['current'].serve()
+            session['current'] = None
+            time.sleep(0.2)
     while True:
         event = os.read(control, 12)
         if len(event) < 12:
             continue
         kind, request_type = event[8], event[0]
-        if kind == FFS_ENABLE and current is None:
-            out_fd = os.open(folder / 'ep1', os.O_RDONLY | os.O_CLOEXEC)
-            in_fd = os.open(folder / 'ep2', os.O_WRONLY | os.O_CLOEXEC)
-            current = Connection(EndpointTransport(out_fd, in_fd), keys, approve, 'usb', log, gate)
-            threading.Thread(target=current.serve, daemon=True).start()
-        elif kind in (FFS_DISABLE, FFS_UNBIND) and current is not None:
-            current.transport.close()
-            current = None
+        if kind == FFS_ENABLE and not session['enabled']:
+            session['enabled'] = True
+            if session['thread'] is None or not session['thread'].is_alive():
+                session['thread'] = threading.Thread(target=sessions, daemon=True)
+                session['thread'].start()
+        elif kind in (FFS_DISABLE, FFS_UNBIND) and session['enabled']:
+            session['enabled'] = False
+            current = session['current']
+            if current is not None:
+                current.transport.close()
         elif kind == FFS_SETUP:
             # No control requests of its own: acknowledge, as AOSP adbd does.
             try:

@@ -116,6 +116,33 @@ class ZipInstall(unittest.TestCase):
         self.assertEqual((self.root / 'targets/boot').read_bytes(), self.old)
 
 
+class ZipGuards(ZipInstall):
+    """2026-11-12 audit: what reaches past the room is caught, and the room loses its dangerous rights."""
+    def test_an_installer_that_changes_a_protected_partition_fails(self):
+        (self.root / 'protected').mkdir()
+        (self.root / 'protected/lk').write_bytes(b'lk' * 4096)
+        # In the fixture the installer is a plain process: writing outside its room stands for an escape.
+        path = self.archive('escape.zip', 'printf x | dd of="$A22X_ZIP_ROOT/../protected/lk" conv=notrunc 2>/dev/null')
+        about = self.helper('inspect', path)[1]
+        code, failed, _ = self.helper('run', path, '--expected-sha256', about['sha256'], '--confirm')
+        self.assertEqual((code, failed['error']['code'], failed['error']['details']['touched']), (2, 'PROTECTED_PARTITION_CHANGED', ['lk']))
+        path = self.archive('calm.zip', 'true')
+        about = self.helper('inspect', path)[1]
+        self.assertEqual(self.helper('run', path, '--expected-sha256', about['sha256'], '--confirm')[0], 0)
+
+    def test_the_rights_the_installer_loses(self):
+        dropped = zi.DROPPED_CAPABILITIES
+        for capability in (27, 16, 17, 18, 19, 22, 25, 12):  # mknod, modules, raw I/O, chroot, ptrace, boot, time, network
+            self.assertIn(capability, dropped)
+        self.assertNotIn(21, dropped)  # CAP_SYS_ADMIN: mount and the device mapper
+        self.assertEqual(dropped[-1], 8)  # CAP_SETPCAP, which dropping needs, goes last
+        labels = [label for label, _ in zi.protected_paths(type('C', (), {'mode': 'device'})())]
+        for label in ('preloader-boot0', 'lk', 'tee1', 'md1img', 'efs', 'recovery'):
+            self.assertIn(label, labels)
+        for writable in zi.WRITABLE:
+            self.assertNotIn(writable, labels)
+
+
 def area_lookup(area, name):
     """bionic's own way through a property area (prop_area::find_property), to read back what
     property_area wrote: None when the name has no value there."""

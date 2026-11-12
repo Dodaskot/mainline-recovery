@@ -16,6 +16,7 @@ import json
 import os
 import re
 import struct
+import sys
 import time
 
 import bootimage
@@ -231,6 +232,8 @@ def prune_rollbacks(folder, keep=None):
     groups = {}
     for name in os.listdir(folder):
         match = ROLLBACK_NAME.fullmatch(name)
+        if match and os.path.lexists(os.path.join('/proc/self/fd', str(folder), name + '.pending.json')):
+            continue  # a write that is not over yet needs its copy (flash.py resume, 2026-11-12)
         if match:
             # A date this recovery cannot have seen (Samsung's clock form, year 2086) sorts as oldest.
             sane = '2026' <= match.group(2)[:4] < '2050'
@@ -285,6 +288,26 @@ def downloadable_boots():
     return found
 
 
+def newest_linux(folder):
+    """The Linux BOOT kept last: it stays, whatever release it is (2026-11-12, the owner: the
+    newest copies of recovery and BOOT stay)."""
+    found = []
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith('.img'):
+            continue
+        try:
+            fd = fs.open_regular(name + '.json', dir_fd=folder)
+            try:
+                meta = json.loads(os.pread(fd, 65536, 0).decode('utf-8'))
+            finally:
+                os.close(fd)
+        except (OSError, ValueError, fs.FilesystemError):
+            continue
+        if isinstance(meta, dict) and meta.get('kind') == 'linux':
+            found.append((int(meta.get('saved', 0) or 0), name))
+    return max(found)[1] if found else None
+
+
 def prune_downloadable(folder, downloadable):
     """Kept Linux BOOTs that are older published releases go: they can be downloaded again
     (2026-11-12: three Linux BOOTs, the stock BOOT and a rooted one filled 160 of cache's 200 MiB,
@@ -301,7 +324,7 @@ def prune_downloadable(folder, downloadable):
                 os.close(fd)
         except (OSError, ValueError, fs.FilesystemError):
             continue
-        if isinstance(meta, dict) and meta.get('kind') == 'linux' and meta.get('sha256') in downloadable:
+        if isinstance(meta, dict) and meta.get('kind') == 'linux' and meta.get('sha256') in downloadable and name != newest_linux(folder):
             for suffix in ('', '.json', '.sha256'):
                 with contextlib.suppress(OSError):
                     os.unlink(name + suffix, dir_fd=folder)
@@ -319,6 +342,60 @@ def make_room(pin, downloadable=None):
         with contextlib.suppress(FileNotFoundError, NotADirectoryError, fs.FilesystemError, OSError):
             with pin.directory(name) as folder:
                 tidy(folder)
+
+
+def tidy_cache(context):
+    """Cache tidied at every start of the recovery (2026-11-12, the owner: "cache should clean
+    itself, removing old copies of recovery or BOOT; the settings and the newest copies of
+    recovery and BOOT, with the stock one, stay"). The same rules as make_room, without waiting
+    for cache to fill: what is there twice, older BOOTs with root, older published Linux BOOTs
+    while a newer Linux BOOT is kept, and all but the newest copy of each partition kept before a
+    write. The stock BOOT, the newest copies, a copy a pending write needs, settings, keys and
+    Wi-Fi stay. Returns the bytes freed."""
+    volume = context.fs.volume('cache')
+    mounted_here = not volume['mounted']
+    reopen = volume['mounted'] and volume['read_only'] and volume.get('mount_owner') == 'filesystem'
+    if not (volume['mounted'] or volume['mountable']):
+        return 0
+    if mounted_here or reopen:
+        context.fs.mount('cache', 'rw', True, volume['volume_token'])
+    try:
+        with fs.PinnedVolume(context.fs, 'cache', writing=True) as pin:
+            before = os.fstatvfs(pin.fd)
+            make_room(pin)
+            after = os.fstatvfs(pin.fd)
+            os.sync()
+            return max(0, (after.f_bavail - before.f_bavail) * after.f_frsize)
+    finally:
+        if mounted_here:
+            with contextlib.suppress(fs.FilesystemError, OSError):
+                context.fs.unmount('cache')
+        elif reopen:
+            with contextlib.suppress(fs.FilesystemError, OSError):
+                context.fs.mount('cache', 'ro', True, context.fs.volume('cache')['volume_token'])
+
+
+def main(argv=None):
+    """saved_boot.py --device|--fixture DIR tidy: tidy_cache under the operation lease."""
+    import argparse
+    import types
+    from operation_lock import operation_lock
+    parser = argparse.ArgumentParser()
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--device', action='store_true')
+    mode.add_argument('--fixture')
+    parser.add_argument('command', choices=('tidy',))
+    args = parser.parse_args(argv)
+    try:
+        files = fs.FixtureContext(args.fixture) if args.fixture else fs.DeviceContext()
+        with operation_lock(files.lock_path, files.mode):
+            freed = tidy_cache(types.SimpleNamespace(fs=files))
+        print(json.dumps({'ok': True, 'operation': 'tidy', 'freed_bytes': freed}))
+        return 0
+    except (OSError, ValueError, fs.FilesystemError) as error:
+        print(json.dumps({'ok': False, 'operation': 'tidy', 'error': {'code': getattr(error, 'code', None) or 'IO_ERROR',
+                                                                       'message': str(error)[:200]}}))
+        return 2
 
 
 def remove_from_cache(context, path):
@@ -423,3 +500,7 @@ def save_on_cache(context, name, image, meta, progress, keep_mounted=False, fold
             with contextlib.suppress(fs.FilesystemError, OSError):
                 context.fs.mount('cache', 'ro', True, context.fs.volume('cache')['volume_token'])
     return '/' + folder_name + '/' + name
+
+
+if __name__ == '__main__':
+    sys.exit(main())

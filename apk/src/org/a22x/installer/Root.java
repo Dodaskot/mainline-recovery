@@ -43,10 +43,21 @@ final class Root {
     private Root() {
     }
 
+    /** Magisk's su first (2026-11-12, on the phone: a TrebleDroid GSI puts its own /product/bin/su
+     *  earlier in PATH, which never asks Magisk, so the app got no root), then whatever su PATH finds. */
+    static final String[] SU = {"/debug_ramdisk/su", "/sbin/su", "/system/bin/su", "/system/xbin/su"};
+
+    static String su() {
+        for (String path : SU) {
+            if (new java.io.File(path).exists()) return path;
+        }
+        return "su";
+    }
+
     static Result run(String script, long timeoutSeconds) {
         Process process = null;
         try {
-            process = new ProcessBuilder("su").redirectErrorStream(true).start();
+            process = new ProcessBuilder(su()).redirectErrorStream(true).start();
             try (OutputStream in = process.getOutputStream()) {
                 in.write(("set -u\n" + script + "\nexit $?\n").getBytes(StandardCharsets.UTF_8));
             }

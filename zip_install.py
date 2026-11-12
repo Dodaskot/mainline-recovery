@@ -14,7 +14,15 @@ phone in reach. Here it runs as root too, as its owner asked, but in a room of i
     there: an installer that names them finds nothing;
   - /cache and /data are empty folders in RAM, so the recovery's settings, keys and Wi-Fi
     networks on cache cannot be wiped, and Android's encrypted data is not touched;
-  - a busybox shell at /sbin/sh with getprop, as installers expect in a recovery.
+  - a busybox shell at /sbin/sh with getprop, as installers expect in a recovery;
+  - (2026-11-12 audit) the room is entered by pivot_root in a mount space of its own, with the
+    recovery's root detached, not by chroot, which root leaves again at will; no network; and
+    without the capabilities that reach past the room's /dev: making device nodes (mknod, as
+    of the preloader's mmcblk0boot0), loading kernel modules, raw I/O, ptrace, restarting the
+    phone, setting the clock, chroot and the network's. CAP_SYS_ADMIN stays, as mount and the
+    device mapper need it, and with it a determined installer could still mount devtmpfs; so
+    the bootloader chain, the modem, the identity partitions and this recovery are hashed before
+    and after, and a change of any of them fails the run as PROTECTED_PARTITION_CHANGED.
 
 The BOOT there is kept on cache first. Afterwards the partitions are compared with what they
 were: the result names what changed, an Android BOOT gets the mark that keeps this recovery, and
@@ -38,6 +46,8 @@ super's layout changed (2026-11-11).
 """
 import argparse
 import contextlib
+import ctypes
+import errno
 import fcntl
 import hashlib
 import json
@@ -67,6 +77,17 @@ WRITABLE = ('boot', 'dtbo', 'vbmeta', 'vbmeta_system', 'vbmeta_vendor', 'super',
 WATCHED = ('boot', 'dtbo', 'vbmeta', 'vbmeta_system', 'vbmeta_vendor')
 LOGICAL = ('system', 'vendor', 'product', 'odm')
 ROOM = Path('/run/a22x-recovery/zip-room')
+# Partitions no installer may change, checked before and after it runs (2026-11-12 audit): the
+# preloader in the eMMC's boot areas, the bootloader chain, the modem, the identity and
+# calibration partitions, and this recovery.
+PROTECTED_AREAS = (('preloader-boot0', '/dev/mmcblk0boot0'), ('preloader-boot1', '/dev/mmcblk0boot1'))
+PROTECTED = ('lk', 'tee1', 'tzar', 'sspm_1', 'scp1', 'spmfw', 'gz1', 'mcupm_1', 'dpm_1', 'pi_img', 'md1img', 'efs', 'sec_efs',
+             'nvram', 'nvdata', 'nvcfg', 'proinfo', 'protect1', 'protect2', 'persist', 'seccfg', 'efuse', 'keydata', 'keyrefuge',
+             'sec1', 'steady', 'up_param', 'param', 'uh', 'recovery')
+# Capabilities the installer loses (linux/capability.h). CAP_SETPCAP (8), which dropping needs,
+# goes last. CAP_SYS_ADMIN (21) stays for mount and the device mapper.
+DROPPED_CAPABILITIES = (12, 13, 16, 17, 18, 19, 20, 22, 25, 27, 29, 30, 32, 33, 34, 35, 36, 37, 38, 39, 40, 8)
+PR_CAPBSET_DROP, SYS_PIVOT_ROOT, MNT_DETACH = 24, 41, 2
 RUN_SECONDS = 1800
 LOG_LINES = 400
 SECTOR = 512
@@ -475,6 +496,58 @@ class Room:
         self.run('mount', '-t', 'sysfs', '-o', 'ro', 'sysfs', str(root / 'sys'))
 
 
+def protected_paths(context):
+    if context.mode == 'fixture':
+        folder = context.root / 'protected'
+        return [(path.name, str(path)) for path in sorted(folder.iterdir())] if folder.is_dir() else []
+    return list(PROTECTED_AREAS) + [(label, '/dev/disk/by-partlabel/' + label) for label in PROTECTED]
+
+
+def protected_hashes(context):
+    """The SHA-256 of every protected partition that is there."""
+    found = {}
+    for label, path in protected_paths(context):
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+        except OSError:
+            continue
+        try:
+            digest, at = hashlib.sha256(), 0
+            while True:
+                data = os.pread(fd, 1 << 20, at)
+                if not data:
+                    break
+                digest.update(data)
+                at += len(data)
+            found[label] = digest.hexdigest()
+        finally:
+            os.close(fd)
+    return found
+
+
+def enter_room(root):
+    """pivot_root into ROOT in a mount space of its own, the recovery's root detached and gone
+    from reach; chroot would leave it within reach of root."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    os.unshare(os.CLONE_NEWNS | os.CLONE_NEWNET)
+    os.chdir(root)
+    os.mkdir('.old-root', 0o700)
+    if libc.syscall(SYS_PIVOT_ROOT, b'.', b'.old-root') != 0:
+        raise OSError(ctypes.get_errno(), 'pivot_root')
+    os.chdir('/')
+    if libc.umount2(b'/.old-root', MNT_DETACH) != 0:
+        raise OSError(ctypes.get_errno(), 'umount the old root')
+    os.rmdir('/.old-root')
+
+
+def drop_capabilities():
+    """Out of the bounding set: root keeps no more than this after it starts the installer."""
+    libc = ctypes.CDLL(None, use_errno=True)
+    for capability in DROPPED_CAPABILITIES:
+        if libc.prctl(PR_CAPBSET_DROP, capability, 0, 0, 0) != 0 and ctypes.get_errno() != errno.EINVAL:
+            raise OSError(ctypes.get_errno(), 'capability %d' % capability)
+
+
 def room_child(room, zip_fd, out_fd, kind):
     """The process the installer runs in: new spaces, the room, then update-binary as TWRP calls it."""
     os.setsid()
@@ -508,7 +581,8 @@ def room_child(room, zip_fd, out_fd, kind):
         (root / 'tmp/update-binary').chmod(0o755)
         os.dup2(out_fd, 9)
         os.set_inheritable(9, True)
-        os.chroot(root)
+        enter_room(root)
+        drop_capabilities()
         os.chdir('/tmp')
         env = {'PATH': '/sbin:/system/bin:/bin', 'HOME': '/tmp', 'TMPDIR': '/tmp', 'ANDROID_ROOT': '/system', 'ANDROID_DATA': '/data',
                'EXTERNAL_STORAGE': '/sdcard', 'SHELL': '/sbin/sh', 'ASH_STANDALONE': '1'}
@@ -606,6 +680,7 @@ def run(context, args, progress):
             # The BOOT there is kept on cache first: the way back from whatever the installer writes.
             kept = saved_boot.keep_current_boot(context, lambda *a: None)
             before = hashes(context, found)
+            guarded = protected_hashes(context)
             layout = layout_hash(context, found) if 'super' in found else None
             read_fd, write_fd = os.pipe()
             room = Room(context, found) if context.mode == 'device' else None
@@ -655,6 +730,10 @@ def run(context, args, progress):
         result = {'zip': about['name'], 'sha256': about['sha256'], 'title': about['title'], 'what': about['what'], 'exit': code,
                   'changed': changed, 'log': shown[-40:], 'kept_boot': kept.get('kept') if kept else None,
                   'keeps_recovery': bool(marked), 'mappings_left': left}
+        now = protected_hashes(context)
+        touched = sorted(label for label, digest in guarded.items() if now.get(label) != digest)
+        require(not touched, 'PROTECTED_PARTITION_CHANGED',
+                'The installer of this ZIP changed a partition it may not write: ' + ', '.join(touched), touched=touched, **result)
         require(code == 0, 'ZIP_INSTALLER_FAILED' if code > 0 else 'ZIP_INSTALLER_STOPPED',
                 'The installer of this ZIP ended with an error' if code > 0 else 'The installer of this ZIP did not end in time and was stopped',
                 **result)

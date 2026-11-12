@@ -8,6 +8,15 @@ import stat
 
 ENV_FD = 'A22X_RECOVERY_LOCK_FD'
 DEVICE_LOCK = '/run/lock/a22x-mainline-recovery.lock'
+# The leases this process holds now, by lock path. A second flock of the same file through a new
+# descriptor would be refused even inside the same process, so a step that needs the lease asks
+# held() first and then runs inside the caller's lease (filesystem.py close_logical, 2026-11-12).
+_HELD = []
+
+
+def held(path=DEVICE_LOCK):
+    """Whether this process holds the lease for PATH now."""
+    return str(Path(path).absolute()) in _HELD
 
 
 def _regular(fd, path):
@@ -44,7 +53,11 @@ def operation_lock(path, mode='device'):
         _regular(fd, path)
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         _regular(fd, path)
-        yield fd
+        _HELD.append(str(path))
+        try:
+            yield fd
+        finally:
+            _HELD.remove(str(path))
     finally:
         if fd is not None:
             # Closing the duplicate does not release a parent's shared open-file

@@ -13,6 +13,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -220,6 +221,40 @@ class KeepRecovery(unittest.TestCase):
         self.assertEqual(sorted(published.values()), ['v144', 'v145', 'v146'])
         current = json.loads(Path(saved_boot.__file__).with_name('catalog.json').read_text())['linux_boot']['sha256']
         self.assertNotIn(current, published)  # the current release is never given up
+
+    def test_cache_is_tidied_at_every_start_and_the_newest_copies_stay(self):
+        """2026-11-12, the owner: cache cleans itself of old copies of recovery and BOOT; the settings
+        and the newest copies of recovery and BOOT, with the stock one, stay."""
+        import filesystem as fs
+        import types
+        cache = self.root / 'cache'
+        boots = cache / saved_boot.SAVED_BOOT
+        boots.mkdir(parents=True)
+        rows = {}
+        for name, kind, saved in (('linux-v145.img', 'linux', 1), ('linux-v146.img', 'linux', 2),
+                                  ('stock-A226BXXSBDZC3-x.img', 'android', 3)):
+            data = signed(boot_image()) + name.encode()
+            rows[name] = hashlib.sha256(data).hexdigest()
+            (boots / name).write_bytes(data)
+            (boots / (name + '.json')).write_text(json.dumps({'kind': kind, 'saved': saved, 'sha256': rows[name], 'bytes': len(data)}))
+            (boots / (name + '.sha256')).write_text(rows[name] + '\n')
+        backups = cache / saved_boot.ROLLBACKS
+        backups.mkdir(parents=True)
+        for name in ('recovery-20261110-100000.img', 'recovery-20261111-100000.img', 'recovery-20261112-100000.img',
+                     'boot-20261110-100000.img', 'boot-20261112-100000.img'):
+            (backups / name).write_bytes(name.encode())
+        (cache / 'a22x-recovery/settings.json').write_text('{"theme": "aurora"}')
+        rows_fs = json.loads((self.root / 'filesystem-fixture.json').read_text())
+        rows_fs['volumes'][0].update(mounted=False)
+        (self.root / 'filesystem-fixture.json').write_text(json.dumps(rows_fs))
+        files = fs.FixtureContext(self.root)
+        # Both kept Linux BOOTs are older published releases: the newest of them stays all the same.
+        with unittest.mock.patch.object(saved_boot, 'downloadable_boots', lambda: {rows['linux-v145.img']: 'v145', rows['linux-v146.img']: 'v146'}):
+            self.assertGreaterEqual(saved_boot.tidy_cache(types.SimpleNamespace(fs=files)), 0)
+        self.assertEqual(sorted(p.name for p in boots.iterdir() if p.suffix == '.img'), ['linux-v146.img', 'stock-A226BXXSBDZC3-x.img'])
+        self.assertEqual(sorted(p.name for p in backups.iterdir()), ['boot-20261112-100000.img', 'recovery-20261112-100000.img'])
+        self.assertTrue((cache / 'a22x-recovery/settings.json').is_file())
+        self.assertFalse(files.volume('cache')['mounted'])  # left as it was found
 
     def test_a_signed_vbmeta_with_only_its_flags_set_is_not_damaged(self):
         """2026-11-10 on the phone: root's vbmeta (flags 3, as Magisk writes it for Samsung) was

@@ -158,6 +158,8 @@ class Device:
         return found
 
     def check_offline(self, part):
+        if part['label'] == 'super':
+            self.install.close_logical()  # what Files opened in super (install.py)
         self.install.raw.graph.require_unmounted(part['device'], self.install.raw.mounts)
         self.install.raw.graph.require_no_holders(part['device'])
 

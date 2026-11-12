@@ -19,6 +19,12 @@
 # interface binary inside the image with this source tree.
 set -euo pipefail
 NN=${1:?usage: tools/build-image.sh NN}
+# NN names the output folder, which is removed first: only a build number, with an optional plain
+# suffix ("197-public"), so that it can never reach outside WORK (2026-11-12 audit: "1/../.." did).
+if ! [[ "$NN" =~ ^[0-9]{1,5}(-[a-z0-9]{1,16})?$ ]]; then
+    echo "build-image.sh: NN must be a build number such as 199 or 199-public, not '$NN'" >&2
+    exit 2
+fi
 VERSION=${VERSION:-0.6.$NN}
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${A22X_RECOVERY_WORK:-$(dirname "$SRC")}
@@ -26,6 +32,10 @@ BASE=${BASE:-$WORK/base}
 KERNEL_DIR=${KERNEL_DIR:-$WORK/kernel}
 PRIVATE=${PRIVATE:-$WORK/platform-private}
 S=${SRC#"$WORK"/}           # the source tree relative to WORK, as the image tool expects
+if [ -z "$WORK" ] || [ "$WORK" = / ] || [ ! -d "$WORK" ] || [ "$SRC" = "$S" ]; then
+    echo "build-image.sh: A22X_RECOVERY_WORK must be the folder that holds this source tree" >&2
+    exit 2
+fi
 cd "$WORK"
 
 ADD=()
@@ -96,8 +106,8 @@ python3 -B "$S/tools/build_v06_image.py" --base "$BASE" --output "build-v06-$NN"
     --add "$R/themes/beaver.theme=build-themes/beaver.theme" --add "$R/flash.py=$S/flash.py" \
     --add "$R/image_import.py=$S/image_import.py" --add "$R/a22x_adapter.py=$S/a22x_adapter.py" \
     --add "$R/platform/a22x-wmt=helpers/a22x-wmt" --add "$R/platform/conn-start.sh=$S/platform/conn-start.sh" \
-    --add "$R/platform/a22x-firstboot.sh=$S/platform/a22x-firstboot.sh" --add "$R/adbd.py=$S/adbd.py" --add "$R/handoff.py=$S/handoff.py" --add "$R/bootimage.py=$S/bootimage.py" --add "$R/install_plan.py=$S/install_plan.py" --add "$R/restart_intent.py=$S/restart_intent.py" --add "$R/lp_metadata.py=$S/lp_metadata.py" \
-    --add "$R/samsung_firmware.py=$S/samsung_firmware.py" --add "$R/android_gsi.py=$S/android_gsi.py" --add "$R/android_rom.py=$S/android_rom.py" --add "$R/saved_boot.py=$S/saved_boot.py" --add "$R/zip_install.py=$S/zip_install.py" --add "$R/sdcard.py=$S/sdcard.py" --add "$R/sevenzip.py=$S/sevenzip.py" --add "$R/root.py=$S/root.py" --add "$R/clock.py=$S/clock.py" --add "$R/bcb.py=$S/bcb.py" --add "$R/android_log.py=$S/android_log.py" --replace "$R/management.py=$S/management.py" \
+    --add "$R/platform/a22x-firstboot.sh=$S/platform/a22x-firstboot.sh" --add "$R/adbd.py=$S/adbd.py" --add "$R/handoff.py=$S/handoff.py" --add "$R/bootimage.py=$S/bootimage.py" --add "$R/install_plan.py=$S/install_plan.py" --add "$R/restart_intent.py=$S/restart_intent.py" --add "$R/lp_metadata.py=$S/lp_metadata.py" --add "$R/dm_linear.py=$S/dm_linear.py" --add "$R/updates.py=$S/updates.py" \
+    --add "$R/samsung_firmware.py=$S/samsung_firmware.py" --add "$R/android_gsi.py=$S/android_gsi.py" --add "$R/android_rom.py=$S/android_rom.py" --add "$R/saved_boot.py=$S/saved_boot.py" --add "$R/zip_install.py=$S/zip_install.py" --add "$R/sdcard.py=$S/sdcard.py" --add "$R/sevenzip.py=$S/sevenzip.py" --add "$R/root.py=$S/root.py" --add "$R/clock.py=$S/clock.py" --add "$R/bcb.py=$S/bcb.py" --add "$R/android_log.py=$S/android_log.py" --replace "$R/management.py=$S/management.py" --replace "$R/operation_lock.py=$S/operation_lock.py" \
     --bytecode "$S/tools/python_bytecode_modules.txt" --link "$R/platform/busybox=/bin/busybox" \
     "${ADD[@]}" | tail -1 | cut -c1-90
 

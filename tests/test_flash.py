@@ -121,6 +121,48 @@ class Flash(unittest.TestCase):
         self.assertEqual(code, 0, written)
         self.assertEqual((self.root / 'targets' / 'recovery').read_bytes()[:8], b'ANDROID!')
 
+    def journals(self):
+        return sorted(p.name for p in (self.root / 'sd' / flash.ROLLBACK_FOLDER).glob('*' + flash.PENDING_SUFFIX))
+
+    def test_a_failed_write_puts_the_saved_copy_back(self):
+        """2026-11-12 audit: the old content came back only by hand."""
+        before = (self.root / 'targets' / 'boot').read_bytes()
+        code, checked, _ = self.check('boot', self.image(boot_image(), 'boot.img'))
+        real, calls = flash.read_back, []
+
+        def first_wrong(*args):
+            calls.append(1)
+            return '0' * 64 if len(calls) == 1 else real(*args)
+        with mock.patch.object(flash, 'read_back', first_wrong):
+            code, done, _ = self.write('boot', '/boot.img', checked)
+        self.assertEqual((code, done['error']['code'], done['error']['details']['rollback_restored']), (2, 'READBACK_MISMATCH', True))
+        self.assertEqual((self.root / 'targets' / 'boot').read_bytes(), before)
+        self.assertEqual(self.journals(), [])
+
+    def test_a_write_cut_short_is_finished_or_undone_at_the_next_start(self):
+        before = (self.root / 'targets' / 'boot').read_bytes()
+        code, checked, _ = self.check('boot', self.image(boot_image(), 'boot.img'))
+        with mock.patch.object(flash, 'end_pending', lambda *a: None):  # the power went before the journal went
+            code, done, _ = self.write('boot', '/boot.img', checked)
+        self.assertEqual(code, 0, done)
+        self.assertEqual(len(self.journals()), 1)
+        written = (self.root / 'targets' / 'boot').read_bytes()
+        code, result, _ = self.run_helper('resume')
+        self.assertEqual((code, [r['outcome'] for r in result['resumed']]), (0, ['completed']))
+        self.assertEqual(((self.root / 'targets' / 'boot').read_bytes(), self.journals()), (written, []))
+        # Cut in the middle: half new, half old. The saved copy comes back.
+        with mock.patch.object(flash, 'end_pending', lambda *a: None):
+            code, done, _ = self.write('boot', '/boot.img', checked)
+        copy = written  # what was there before this second write
+        torn = bytearray(written)
+        torn[len(torn) // 2:] = b'\x77' * (len(torn) - len(torn) // 2)
+        (self.root / 'targets' / 'boot').write_bytes(bytes(torn))
+        code, result, _ = self.run_helper('resume')
+        self.assertEqual([r['outcome'] for r in result['resumed']], ['restored'])
+        self.assertEqual(((self.root / 'targets' / 'boot').read_bytes(), self.journals()), (copy, []))
+        self.assertEqual(self.run_helper('resume')[1]['resumed'], [])
+        self.assertNotEqual(before, written)
+
     def ext_image(self, size=1 << 22):
         """A filesystem image as dd saves a partition: a superblock, some data, mostly zeros."""
         data = bytearray(size)

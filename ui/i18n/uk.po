@@ -252,6 +252,12 @@ msgstr "Нова система відформатує її для Linux"
 msgid "A new theme always spreads as a circle, unless animations are off."
 msgstr "Нова тема завжди розходиться колом, якщо анімації не вимкнено."
 
+msgid "A newer Linux BOOT is published."
+msgstr "Опубліковано новіший Linux BOOT."
+
+msgid "A newer recovery is published."
+msgstr "Опубліковано новіший recovery."
+
 msgid "A newer release came out since it was shown. Review again"
 msgstr "Відколи його показано, вийшов новіший випуск. Перегляньте знову"
 
@@ -329,6 +335,12 @@ msgstr "Пароль Wi-Fi має від 8 до 63 символів"
 
 msgid "A Wi-Fi password has 8 to 63 characters."
 msgstr "Пароль Wi-Fi має від 8 до 63 символів."
+
+msgid "A write to %s was cut short and could not be undone: flash it again"
+msgstr "Запис у %s обірвався, і його не вдалося скасувати: прошийте розділ ще раз"
+
+msgid "A write to %s was cut short: its old content was put back"
+msgstr "Запис у %s обірвався: попередній вміст повернуто"
 
 msgid "a22x-recovery: the recovery's settings and keys, saved Wi-Fi networks, plans from the Android app and setup scripts."
 msgstr "a22x-recovery: налаштування й ключі recovery, збережені мережі Wi-Fi, плани із застосунку Android і скрипти налаштування."
@@ -516,11 +528,14 @@ msgstr "Образи Android"
 msgid "Android kernel"
 msgstr "Ядро Android"
 
-msgid "Android logical-partition container; mapping is not implemented"
-msgstr "Контейнер логічних розділів Android; підключення не реалізовано"
+msgid "Android logical-partition container; its partitions are listed as separate volumes"
+msgstr "Контейнер логічних розділів Android; його розділи показано окремими томами"
 
 msgid "Android matches the copy"
 msgstr "Android уже відповідає копії"
+
+msgid "Android partition inside super; opened for reading only"
+msgstr "Розділ Android усередині super; відкривається лише для читання"
 
 msgid "Android partitions"
 msgstr "Розділи Android"
@@ -786,6 +801,9 @@ msgstr "BOOT і зайняті блоки ext4 читаються та стис�
 msgid "BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache."
 msgstr "BOOT отримає ядро Linux, коли система буде на місці; теперішній BOOT зберігається в cache."
 
+msgid "BOOT holds a Linux kernel of another build. Update only if you want the release."
+msgstr "У BOOT ядро Linux іншої збірки. Оновлюйте, лише якщо хочете випуск."
+
 msgid "BOOT holds an older Linux kernel than the one this recovery was made for. A new system gets the current one; the BOOT there is kept on cache."
 msgstr "У BOOT старіше ядро Linux, ніж те, під яке зроблено це recovery. Нова система отримає актуальне; теперішній BOOT зберігається в cache."
 
@@ -798,8 +816,14 @@ msgstr "У BOOT ядро Android. Linux BOOT для цього телефона 
 msgid "BOOT holds Android's kernel. The Linux BOOT kept on this phone is written when the new system is in place; Android's BOOT is kept on cache."
 msgstr "У BOOT ядро Android. Linux BOOT, збережений на цьому телефоні, записується, коли нова система вже на місці; BOOT від Android зберігається в cache."
 
+msgid "BOOT holds Android. It is changed in Install, Android."
+msgstr "У BOOT Android. Його змінюють у Встановлення → Android."
+
 msgid "BOOT holds no Linux kernel for this phone. Flash a Linux BOOT image first: Install, Flash a partition, boot"
 msgstr "У BOOT немає ядра Linux для цього телефона. Спершу прошийте образ Linux BOOT: «Встановлення», «Прошити розділ», boot"
+
+msgid "BOOT holds the current Linux release."
+msgstr "У BOOT поточний випуск Linux."
 
 msgid "BOOT holds the kernel of Android, and this phone keeps no Linux BOOT: join Wi-Fi so that it can be downloaded, or flash one in Flash a partition"
 msgstr "У BOOT ядро Android, а Linux BOOT на цьому телефоні не збережено: підключіться до Wi-Fi, щоб його завантажити, або прошийте його через «Прошити розділ»"
@@ -963,6 +987,9 @@ msgstr "Заряджається"
 msgid "Charging screen"
 msgstr "Екран зарядки"
 
+msgid "Check again"
+msgstr "Перевірити ще раз"
+
 msgid "Check and repair"
 msgstr "Перевірка й виправлення"
 
@@ -1025,6 +1052,9 @@ msgstr "Перевірка серверів на новіші образи..."
 
 msgid "Checking the source"
 msgstr "Перевірка джерела"
+
+msgid "Checking..."
+msgstr "Перевіряю…"
 
 msgid "Checkpoint space: %s"
 msgstr "Місце для контрольної точки: %s"
@@ -1587,6 +1617,9 @@ msgstr "Стирайте те, що більше не потрібне. Нічо
 msgid "ERASED"
 msgstr "СТИРАЄТЬСЯ"
 
+msgid "Erasing the damaged settings also erases userdata, as a reset of Android does: whoever holds the phone does not get its data. Copies on a card stay."
+msgstr "Стирання пошкоджених налаштувань стирає й userdata, як скидання Android: той, хто тримає телефон, не отримає його даних. Копії на картці лишаються."
+
 msgid "Erasing userdata"
 msgstr "Очищення userdata"
 
@@ -1950,6 +1983,9 @@ msgstr "Утримуйте 2 с: доступ лише для читання"
 msgid "Hold 3 s: delete"
 msgstr "Утримуйте 3 с: видалити"
 
+msgid "Hold 3 s: erase settings and userdata"
+msgstr "Утримайте 3 с: стерти налаштування й userdata"
+
 msgid "Hold 3 seconds to delete"
 msgstr "Утримуйте 3 с, щоб видалити"
 
@@ -2160,6 +2196,9 @@ msgstr "Результат встановлення"
 msgid "Installed over Wi-Fi: during the installation when recovery is connected, otherwise at the first start."
 msgstr "Встановлюється через Wi-Fi: під час встановлення, якщо recovery підключений, інакше під час першого запуску."
 
+msgid "Installed: %s"
+msgstr "Встановлено: %s"
+
 msgid "Installing a GSI must be confirmed"
 msgstr "Встановлення GSI треба підтвердити"
 
@@ -2354,6 +2393,9 @@ msgstr "Копія Linux"
 
 msgid "Linux backup saves allocated ext4 blocks with compression. The next screen reviews userdata before normal unmount."
 msgstr "Копія Linux зберігає зайняті блоки ext4 зі стисненням. На наступному екрані перед звичайним розмонтуванням буде показано userdata."
+
+msgid "Linux BOOT"
+msgstr "Linux BOOT"
 
 msgid "Linux boot + rootfs"
 msgstr "Linux boot + rootfs"
@@ -2775,6 +2817,9 @@ msgstr "Розділів цього виду не знайдено"
 msgid "No partitions"
 msgstr "Розділів немає"
 
+msgid "no password"
+msgstr "без пароля"
+
 msgid "No power action selected."
 msgstr "Дію живлення не вибрано."
 
@@ -2844,6 +2889,9 @@ msgstr "Недоступно. Торкніться, щоб вибрати нос
 msgid "Not charging"
 msgstr "Не заряджається"
 
+msgid "Not checked yet."
+msgstr "Ще не перевірено."
+
 msgid "Not completed"
 msgstr "Не завершено"
 
@@ -2901,8 +2949,8 @@ msgstr "Поки що нічого не записано."
 msgid "Nothing has run yet."
 msgstr "Ще нічого не запускалося."
 
-msgid "Nothing in this boot image names the Galaxy A22 5G or its MT6833 chip"
-msgstr "Ніщо в цьому образі boot не називає Galaxy A22 5G чи його чип MT6833"
+msgid "Nothing in this boot image names the Galaxy A22 5G (SM-A226B)"
+msgstr "У цьому образі завантаження ніщо не вказує на Galaxy A22 5G (SM-A226B)"
 
 msgid "Nothing is downloaded for the desktop."
 msgstr "Для робочого столу нічого не завантажується."
@@ -3105,6 +3153,9 @@ msgstr "Розбити картку"
 msgid "Partition flashed"
 msgstr "Розділ прошито"
 
+msgid "Partition in super"
+msgstr "Розділ у super"
+
 msgid "Partition restored"
 msgstr "Розділ відновлено"
 
@@ -3125,6 +3176,9 @@ msgstr "РОЗДІЛИ ДЛЯ ВІДНОВЛЕННЯ"
 
 msgid "Partitions to save"
 msgstr "Розділи для збереження"
+
+msgid "Parts of this partition lie outside super"
+msgstr "Частина цього розділу лежить поза super"
 
 msgid "PASSWORD"
 msgstr "ПАРОЛЬ"
@@ -3251,6 +3305,12 @@ msgstr "Процесор"
 
 msgid "Profile unavailable"
 msgstr "Профіль недоступний"
+
+msgid "Published: %s"
+msgstr "Опубліковано: %s"
+
+msgid "Putting the old content back"
+msgstr "Повертаю попередній вміст"
 
 msgid "raw"
 msgstr "raw"
@@ -3404,6 +3464,9 @@ msgstr "Recovery не зміг її налаштувати: %s"
 
 msgid "Recovery image"
 msgstr "Образ recovery"
+
+msgid "Recovery is locked"
+msgstr "Recovery заблоковано"
 
 msgid "Recovery is locked."
 msgstr "Recovery заблоковано."
@@ -3972,8 +4035,17 @@ msgstr "Налаштування нової системи"
 msgid "Settings"
 msgstr "Налаштування"
 
-msgid "Settings could not be read. Defaults are shown, and nothing is saved."
-msgstr "Налаштування не прочитано. Показано типові, і нічого не зберігається."
+msgid "Settings and userdata were erased"
+msgstr "Налаштування й userdata стерто"
+
+msgid "Settings could not be read"
+msgstr "Не вдалося прочитати налаштування"
+
+msgid "Settings could not be read, so the recovery stays locked"
+msgstr "Не вдалося прочитати налаштування, тому recovery лишається заблокованим"
+
+msgid "Settings could not be read: no password can be checked"
+msgstr "Не вдалося прочитати налаштування: пароль не можна перевірити"
 
 msgid "SETUP SCRIPT"
 msgstr "СКРИПТ НАЛАШТУВАННЯ"
@@ -4800,6 +4872,9 @@ msgstr "Інсталятор у цьому ZIP — програма для ін�
 msgid "The installer in this ZIP is neither a script nor a program"
 msgstr "Інсталятор у цьому ZIP не є ні скриптом, ні програмою"
 
+msgid "The installer of this ZIP changed a partition it may not write: "
+msgstr "Інсталятор цього ZIP змінив розділ, який йому не можна писати: "
+
 msgid "The installer of this ZIP did not end in time and was stopped"
 msgstr "Інсталятор цього ZIP не завершився вчасно, і його зупинено"
 
@@ -4817,6 +4892,9 @@ msgstr "Перервана транзакція змінилася. Перегл
 
 msgid "The kernel could not read the new partition table"
 msgstr "Ядро не змогло прочитати нову таблицю розділів"
+
+msgid "The kernel did not open this partition of super"
+msgstr "Ядро не відкрило цей розділ super"
 
 msgid "The kernel does not show the new partitions"
 msgstr "Ядро не показує нових розділів"
@@ -4908,6 +4986,9 @@ msgstr "Мережа не відповіла вчасно."
 msgid "The network is not in range."
 msgstr "Мережа поза зоною досяжності."
 
+msgid "The new image is downloaded and checked first. Then Flash a partition shows it: the old content is saved, and a hold writes it."
+msgstr "Новий образ спершу завантажується й перевіряється. Потім його показує «Прошити розділ»: старий вміст зберігається, а утримання записує новий."
+
 msgid "The new recovery starts at the next restart into recovery. If it does not start, flash a working one from a computer in Download Mode."
 msgstr "Новий recovery запуститься після наступного перезапуску в recovery. Якщо він не запуститься, прошийте робочий з комп’ютера в режимі Download."
 
@@ -4940,6 +5021,12 @@ msgstr "Старий вміст збережено тут:"
 
 msgid "The old page blurs away and the new one sharpens"
 msgstr "Стара сторінка розмивається, нова проявляється"
+
+msgid "The opened partition does not match super"
+msgstr "Відкритий розділ не відповідає super"
+
+msgid "The opened partition no longer matches super; unmount it, then open it again"
+msgstr "Відкритий розділ уже не відповідає super; розмонтуйте його й відкрийте знову"
 
 msgid "The operation or environment did not match the requested system action."
 msgstr "Операція чи середовище не збіглися із запитаною дією над системою."
@@ -4995,11 +5082,20 @@ msgstr "Розділ змонтовано. Розмонтуйте його у Ф
 msgid "The partition is not on the internal eMMC"
 msgstr "Розділ лежить не на внутрішній eMMC"
 
+msgid "The partition is not the one that was written"
+msgstr "Це не той розділ, у який писали"
+
 msgid "The partition layout differs from the backup"
 msgstr "Розташування розділів відрізняється від копії"
 
 msgid "The partition name changed"
 msgstr "Назва розділу змінилася"
+
+msgid "The partition of super is still in use"
+msgstr "Розділ super ще використовується"
+
+msgid "The partition of super is still mounted elsewhere"
+msgstr "Розділ super ще змонтовано деінде"
 
 msgid "The partitions that differ are saved to a new copy first, then written and read back."
 msgstr "Розділи, що відрізняються, спершу зберігаються в нову копію, потім записуються й зчитуються для перевірки."
@@ -5088,11 +5184,20 @@ msgstr "Ramdisk не розпаковується до кінця: образ п
 msgid "The ramdisk does not unpack: the image is damaged or incomplete"
 msgstr "Ramdisk не розпаковується: образ пошкоджений або неповний"
 
+msgid "The recovery settings are damaged. The password cannot be checked, so the recovery stays locked."
+msgstr "Налаштування recovery пошкоджені. Пароль не можна перевірити, тому recovery лишається заблокованим."
+
+msgid "The recovery settings could not be read. The password cannot be checked, so the recovery stays locked."
+msgstr "Не вдалося прочитати налаштування recovery. Пароль не можна перевірити, тому recovery лишається заблокованим."
+
 msgid "The recovery's own folder stays"
 msgstr "Власна тека Recovery лишається"
 
 msgid "The regional file is of another version than the AP"
 msgstr "Регіональний файл іншої версії, ніж AP"
+
+msgid "The releases could not be read. Join Wi-Fi, then check again."
+msgstr "Не вдалося прочитати випуски. Під’єднайтеся до Wi-Fi і перевірте ще раз."
 
 msgid "The removal was not confirmed. Refresh Systems."
 msgstr "Видалення не підтверджено. Оновіть Системи."
@@ -5136,6 +5241,9 @@ msgstr "Збережений архів утратив свій маніфест
 msgid "The saved copy differs from the partition"
 msgstr "Збережена копія відрізняється від розділу"
 
+msgid "The saved copy is shorter than the partition"
+msgstr "Збережена копія коротша за розділ"
+
 msgid "The saved refresh rate was not applied"
 msgstr "Збережену частоту оновлення не застосовано"
 
@@ -5160,8 +5268,20 @@ msgstr "Сервер більше не пропонує цей образ. Ви�
 msgid "The servers did not answer; the saved versions are shown."
 msgstr "Сервери не відповіли; показано збережені версії."
 
+msgid "The settings and userdata could not be erased"
+msgstr "Не вдалося стерти налаштування й userdata"
+
 msgid "The settings are back to their defaults"
 msgstr "Налаштування повернуто до типових"
+
+msgid "The settings are damaged, so the recovery stays locked"
+msgstr "Налаштування пошкоджені, тому recovery лишається заблокованим"
+
+msgid "The settings are not damaged: nothing was erased"
+msgstr "Налаштування не пошкоджені: нічого не стерто"
+
+msgid "The settings are still damaged"
+msgstr "Налаштування досі пошкоджені"
 
 msgid "The setup script changed since planning"
 msgstr "Скрипт налаштування змінився після перевірки"
@@ -5361,6 +5481,9 @@ msgstr "У цьому BOOT уже є інший root: спершу прибер�
 msgid "This build of the recovery has no APatch"
 msgstr "У цій збірці рекавері немає APatch"
 
+msgid "This can pass: storage may be busy for a moment. Try again."
+msgstr "Це може минути: сховище буває зайняте на мить. Спробуйте ще раз."
+
 msgid "This card is no longer attached"
 msgstr "Цю картку вже від’єднано"
 
@@ -5523,6 +5646,12 @@ msgstr "План застарів. Поверніться й переглянь�
 msgid "This plan expired. Return and review it again."
 msgstr "План застарів. Поверніться й перегляньте його знову."
 
+msgid "This recovery and the Linux BOOT"
+msgstr "Цей recovery і Linux BOOT"
+
+msgid "This recovery and the Linux BOOT, from the internet."
+msgstr "Цей recovery і Linux BOOT з інтернету."
+
 msgid "This recovery checks and repairs ext2, ext3 and ext4 only"
 msgstr "Цей recovery перевіряє й виправляє лише ext2, ext3 і ext4"
 
@@ -5534,6 +5663,9 @@ msgstr "У цьому recovery немає драйвера Wi-Fi."
 
 msgid "This recovery has no zstd to pack or unpack the archive"
 msgstr "У цьому recovery немає zstd, щоб запакувати чи розпакувати архів"
+
+msgid "This recovery is up to date."
+msgstr "Цей recovery актуальний."
 
 msgid "This recovery stays"
 msgstr "Цей Recovery лишається"
@@ -5606,6 +5738,9 @@ msgstr "Перевірено на SM-A226B: замість запуску тел
 
 msgid "Tried on an SM-A226B: it started. Not everything in it was checked; this recovery stays, and stock Android can be flashed again."
 msgstr "Перевірено на SM-A226B: запустився. Перевірено не все, що в ньому є; це recovery лишається, а стоковий Android можна прошити знову."
+
+msgid "Try again"
+msgstr "Спробувати ще раз"
 
 msgid "Tuesday"
 msgstr "Вівторок"
@@ -5703,11 +5838,20 @@ msgstr "Вгору"
 msgid "Up to 64 Latin letters, digits, dots, hyphens and underscores; the first is a letter or a digit."
 msgstr "До 64 латинських літер, цифр, крапок, дефісів і підкреслень; перший символ — літера або цифра."
 
+msgid "Update BOOT"
+msgstr "Оновити BOOT"
+
 msgid "Update packages, logs and temporary files"
 msgstr "Пакети оновлень, журнали й тимчасові файли"
 
+msgid "Update recovery"
+msgstr "Оновити recovery"
+
 msgid "Updated from the servers: %u"
 msgstr "Оновлено з серверів: %u"
+
+msgid "Updates"
+msgstr "Оновлення"
 
 msgid "USB address unavailable"
 msgstr "Адреса USB недоступна"

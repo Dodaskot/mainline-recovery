@@ -147,7 +147,11 @@ static const StoredImage*android_saved(const App*a,const CatalogImage*c){
 static void open_android_image(App*a,int n){
     a->android_selected=n;a->page_scroll=0;a->saved_note[0]=0;screen(a,ANDROID_IMAGE);
     /* Asked on every phone (2026-11-11): the helper says where the store is, userdata or a card. */
-    if(!a->job.pid){a->saved_known=false;start_images_job(a,J_IMAGES,NULL);}
+    /* 2026-11-12, on the phone: reached from Install > Android, the state of userdata was never read,
+       so "Mount userdata" stayed off. It is read first; the saved images follow (complete_job). */
+    if(!a->job.pid){a->saved_known=false;
+        if(!a->systems_known&&a->distro_helper[0]&&!a->preview&&(a->device||a->fixture[0]))(void)start_systems_job(a,J_SYS_STATUS);
+        else start_images_job(a,J_IMAGES,NULL);}
 }
 static void android_fact(App*a,int y,const char*label,const char*value){
     text(a,52,y,0,MUTED,label);raw_text(true);ellipsis(a,300,y,370,0,TEXT,value);raw_text(false);

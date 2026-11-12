@@ -29,7 +29,7 @@ import zlib
 
 import bootimage
 import filesystem as fs
-from operation_lock import operation_lock, ENV_FD
+from operation_lock import operation_lock, ENV_FD, held as lease_held
 
 CHUNK = 1024 * 1024
 MAX_JSON = 2 * CHUNK
@@ -108,6 +108,13 @@ STOCK_WRITE = tuple(label for label in STOCK_ORDER if label != 'recovery')
 RESET_MAKE_F2FS = ('/bin/make_f2fs', '-g', 'android', '-f', '-O', 'quota', '-O', 'compression', '-O', 'extra_attr',
                    '-l', 'data')
 ANDROID_DATA_FEATURES = 0x2499
+# An empty ext4 on metadata, as the phone's fstab describes it (2026-11-12, on the phone): zeros
+# there were not formatted by first-stage init under a GSI, which then mounts tmpfs on /metadata
+# (TrebleDroid's 00-fix-metadata.sh); userdata's encryption key landed in RAM, and after the next
+# restart Android found no key (vold: No key found in /metadata/vold/metadata_encryption/key) and
+# asked for a reset again, with or without root.
+RESET_MAKE_METADATA = ('/sbin/mkfs.ext4', '-F', '-q', '-b', '4096', '-L', 'metadata')
+EXT4_MAGIC_AT = 1080
 F2FS_MAGIC = b'\x10\x20\xf5\xf2'
 F2FS_FEATURE_AT = 1024 + 2180  # struct f2fs_super_block.feature, the superblock at 1 KiB
 METADATA_CLEAR_BYTES = 16 * CHUNK
@@ -648,6 +655,15 @@ class DeviceContext:
             os.fsync(fd)
         finally:
             os.close(fd)
+        done = subprocess.run([*RESET_MAKE_METADATA, str(paths['metadata'])], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True, errors='replace')
+        require(done.returncode == 0, 'METADATA_RESET_FAILED', 'mkfs.ext4 could not format metadata', output=done.stdout[-400:])
+        fd = os.open(paths['metadata'], os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            magic = os.pread(fd, 2, EXT4_MAGIC_AT)
+        finally:
+            os.close(fd)
+        require(magic == b'\x53\xef', 'METADATA_RESET_FAILED', 'metadata holds no ext4 after formatting')
         done = subprocess.run([*RESET_MAKE_F2FS, str(paths['userdata'])], stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True, errors='replace')
         require(done.returncode == 0, 'USERDATA_RESET_FAILED', 'make_f2fs could not format userdata', output=done.stdout[-400:])
@@ -660,7 +676,29 @@ class DeviceContext:
         require(head[1024:1028] == F2FS_MAGIC and features == ANDROID_DATA_FEATURES, 'USERDATA_RESET_FEATURES',
                 "userdata was formatted with other features than Samsung's", features=features)
 
+    def close_logical(self):
+        """Partitions of super that Files opened are closed before super itself is read or written
+        (2026-11-12): their read-only mapping holds super, so the checks below would refuse it, and
+        nothing may read a partition while super changes under it. Inside the caller's lease when
+        it holds one, else under a lease of its own; while another operation runs, nothing is closed
+        and the checks refuse super."""
+        if lease_held(self.lock_path):
+            closed = self.fs.close_logical()
+        else:
+            try:
+                with operation_lock(self.lock_path, self.mode):
+                    closed = self.fs.close_logical()
+            except BlockingIOError:
+                return []
+        if closed:
+            # The graph and the mounts were read when this context was made.
+            self.raw = _backend_storage().DeviceContext()
+            self.raw.assert_recovery()
+        return closed
+
     def check_offline(self, targets):
+        if any(target['label'] == 'super' for target in targets):
+            self.close_logical()
         for target in targets:
             self.raw.graph.require_unmounted(target['device'], self.raw.mounts)
             self.raw.graph.require_no_holders(target['device'])

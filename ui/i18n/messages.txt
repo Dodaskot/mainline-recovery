@@ -81,6 +81,8 @@ A new folder A22xIdentityBackups is written with every partition and its checksu
 A new partition table for an SD card or a USB drive.
 A new system formats it for Linux
 A new theme always spreads as a circle, unless animations are off.
+A newer Linux BOOT is published.
+A newer recovery is published.
 A newer release came out since it was shown. Review again
 A package download did not pass its check.
 A package download failed in recovery.
@@ -107,6 +109,8 @@ A vbmeta descriptor lies outside
 A whole volume
 A Wi-Fi password has 8 to 63 characters
 A Wi-Fi password has 8 to 63 characters.
+A write to %s was cut short and could not be undone: flash it again
+A write to %s was cut short: its old content was put back
 a22x-recovery: the recovery's settings and keys, saved Wi-Fi networks, plans from the Android app and setup scripts.
 About %u min
 About phone
@@ -169,8 +173,9 @@ Android image
 Android image installed
 Android images
 Android kernel
-Android logical-partition container; mapping is not implemented
+Android logical-partition container; its partitions are listed as separate volumes
 Android matches the copy
+Android partition inside super; opened for reading only
 Android partitions
 Android partitions restored and checked
 Android partitions saved
@@ -259,11 +264,14 @@ BOOT
 Boot + used ext4 blocks\nSave the Linux kernel and root filesystem offline.
 BOOT and allocated ext4 blocks are read and compressed. Existing files on the destination are retained.
 BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache.
+BOOT holds a Linux kernel of another build. Update only if you want the release.
 BOOT holds an older Linux kernel than the one this recovery was made for. A new system gets the current one; the BOOT there is kept on cache.
 BOOT holds Android's kernel. Linux starts with its own: flash a Linux BOOT image for this phone before the installation.
 BOOT holds Android's kernel. The Linux BOOT for this phone (32 MiB) is downloaded first and written when the new system is in place; Android's BOOT is kept on cache.
 BOOT holds Android's kernel. The Linux BOOT kept on this phone is written when the new system is in place; Android's BOOT is kept on cache.
+BOOT holds Android. It is changed in Install, Android.
 BOOT holds no Linux kernel for this phone. Flash a Linux BOOT image first: Install, Flash a partition, boot
+BOOT holds the current Linux release.
 BOOT holds the kernel of Android, and this phone keeps no Linux BOOT: join Wi-Fi so that it can be downloaded, or flash one in Flash a partition
 BOOT identical / no BOOT write
 BOOT image
@@ -318,6 +326,7 @@ Changes only this entry. No recursive mode changes.
 Changes only this entry. The kernel may clear setuid, setgid or file capabilities when ownership changes.
 Charging
 Charging screen
+Check again
 Check and repair
 Check and repair: ext4 only
 Check backup integrity
@@ -339,6 +348,7 @@ Checking the new system
 Checking the partition
 Checking the servers for newer images...
 Checking the source
+Checking...
 Checkpoint space: %s
 Chip
 Chip made
@@ -526,6 +536,7 @@ Enter the Unix mode as four octal digits.
 Erase userdata, then install from the internet or a file
 Erase what is no longer needed. Nothing is erased before you hold the button.
 ERASED
+Erasing the damaged settings also erases userdata, as a reset of Android does: whoever holds the phone does not get its data. Copies on a card stay.
 Erasing userdata
 Erasing userdata removes every Linux system and every saved image.
 Estimating the size
@@ -647,6 +658,7 @@ Hold 2 seconds to install
 Hold 2 seconds to share read / write
 Hold 2 seconds to share read-only
 Hold 3 s: delete
+Hold 3 s: erase settings and userdata
 Hold 3 seconds to delete
 Hold 3 seconds to flash
 Hold 3 seconds to flash BOOT
@@ -717,6 +729,7 @@ Installation completed. The new system is active: restart into it from Power. It
 INSTALLATION RECEIPT
 Installation result
 Installed over Wi-Fi: during the installation when recovery is connected, otherwise at the first start.
+Installed: %s
 Installing a GSI must be confirmed
 Installing Android needs userdata for Android: every Linux system and saved image there is erased. This recovery stays, and so does the SD card.
 Installing apps
@@ -782,6 +795,7 @@ Linux / boot + rootfs
 LINUX BACKUP
 Linux backup
 Linux backup saves allocated ext4 blocks with compression. The next screen reviews userdata before normal unmount.
+Linux BOOT
 Linux boot + rootfs
 Linux from SD or USB stick, switch systems
 Linux restore awaits qualification
@@ -922,6 +936,7 @@ No package with this name.
 No partition inventory received.
 No partition of this kind was found
 No partitions
+no password
 No power action selected.
 No retry is started automatically. Inspect the backend result before another operation.
 No room in RAM for the patch
@@ -945,6 +960,7 @@ Not Android's BOOT: install Android first
 Not Android: flash the Samsung firmware first
 Not available. Tap to choose storage
 Not charging
+Not checked yet.
 Not completed
 Not connected
 Not for arm64
@@ -964,7 +980,7 @@ Nothing
 Nothing has been erased yet.
 Nothing has been written yet.
 Nothing has run yet.
-Nothing in this boot image names the Galaxy A22 5G or its MT6833 chip
+Nothing in this boot image names the Galaxy A22 5G (SM-A226B)
 Nothing is downloaded for the desktop.
 Nothing is downloaded.
 NOTHING IS ERASED
@@ -1032,6 +1048,7 @@ Pages slide sideways, without blur
 PARTITION
 Partition a card
 Partition flashed
+Partition in super
 Partition restored
 Partitioning a card must be confirmed
 Partitions
@@ -1039,6 +1056,7 @@ Partitions already match this copy
 Partitions are unavailable.
 PARTITIONS TO RESTORE
 Partitions to save
+Parts of this partition lie outside super
 PASSWORD
 Password
 Password removed
@@ -1081,6 +1099,8 @@ Preparing...
 Previous
 Processor
 Profile unavailable
+Published: %s
+Putting the old content back
 raw
 Raw image
 Raw image; not a filesystem
@@ -1132,6 +1152,7 @@ Recovery and cache were not touched.
 Recovery copies the script into the new system and does not run it. Read it first: it gets full control of the new system.
 Recovery could not set it up: %s
 Recovery image
+Recovery is locked
 Recovery is locked.
 Recovery is not connected to Wi-Fi.
 Recovery is on Wi-Fi: the desktop and apps are installed now, and the system starts ready.
@@ -1321,7 +1342,10 @@ Set up during the installation, or at the first start.
 Set, but the screen is not locked
 Setting up the new system
 Settings
-Settings could not be read. Defaults are shown, and nothing is saved.
+Settings and userdata were erased
+Settings could not be read
+Settings could not be read, so the recovery stays locked
+Settings could not be read: no password can be checked
 SETUP SCRIPT
 Setup script
 Setup script source
@@ -1597,12 +1621,14 @@ The installer finished
 The installer in this ZIP has an unusable size
 The installer in this ZIP is a program for another processor
 The installer in this ZIP is neither a script nor a program
+The installer of this ZIP changed a partition it may not write: 
 The installer of this ZIP did not end in time and was stopped
 The installer of this ZIP ended with an error
 The installer result did not match the requested environment or operation.
 The installers finished
 The interrupted transaction changed. Review the refreshed Systems screen.
 The kernel could not read the new partition table
+The kernel did not open this partition of super
 The kernel does not show the new partitions
 The kernel does not unpack to its end: the image is damaged or incomplete
 The kernel does not unpack: the image is damaged or incomplete
@@ -1633,6 +1659,7 @@ The modem stays as it is
 The name uses lowercase letters, digits, - and _. The password signs in and confirms sudo.
 The network did not answer in time.
 The network is not in range.
+The new image is downloaded and checked first. Then Flash a partition shows it: the old content is saved, and a hold writes it.
 The new recovery starts at the next restart into recovery. If it does not start, flash a working one from a computer in Download Mode.
 The new system becomes the only one on userdata.
 The new system is active.
@@ -1644,6 +1671,8 @@ The offline plan rechecks partition identity and state.
 The old content could not be saved
 The old content was saved here:
 The old page blurs away and the new one sharpens
+The opened partition does not match super
+The opened partition no longer matches super; unmount it, then open it again
 The operation or environment did not match the requested system action.
 The operation was stopped.
 The package has no such image
@@ -1662,8 +1691,11 @@ The partition grows from %s to %s inside super.
 The partition is in use
 The partition is mounted. Unmount it in Files before writing
 The partition is not on the internal eMMC
+The partition is not the one that was written
 The partition layout differs from the backup
 The partition name changed
+The partition of super is still in use
+The partition of super is still mounted elsewhere
 The partitions that differ are saved to a new copy first, then written and read back.
 The password could not be changed
 The password is wrong.
@@ -1693,8 +1725,11 @@ The plan was discarded
 The private RAM work directory is unavailable.
 The ramdisk does not unpack to its end: the image is damaged or incomplete
 The ramdisk does not unpack: the image is damaged or incomplete
+The recovery settings are damaged. The password cannot be checked, so the recovery stays locked.
+The recovery settings could not be read. The password cannot be checked, so the recovery stays locked.
 The recovery's own folder stays
 The regional file is of another version than the AP
+The releases could not be read. Join Wi-Fi, then check again.
 The removal was not confirmed. Refresh Systems.
 The request could not be cleared
 The request is forgotten: Android starts as it is
@@ -1709,6 +1744,7 @@ The root directory switch was interrupted. Resume finishes it; Rollback restores
 The root helper did not return a result.
 The saved archive lost its manifest
 The saved copy differs from the partition
+The saved copy is shorter than the partition
 The saved refresh rate was not applied
 The screen goes dark when the phone is off.
 The screen turns off when the phone is not touched. Press Power to wake it; operations keep running.
@@ -1717,7 +1753,11 @@ The selected entry was not returned. Inspect it again before continuing.
 The selected journal changed. Inspect the refreshed installation status.
 The server no longer offers this image. Choose another one.
 The servers did not answer; the saved versions are shown.
+The settings and userdata could not be erased
 The settings are back to their defaults
+The settings are damaged, so the recovery stays locked
+The settings are not damaged: nothing was erased
+The settings are still damaged
 The setup script changed since planning
 The setup script must be a text file
 The shell has not stopped completely. The terminal remains open.
@@ -1784,6 +1824,7 @@ This backup belongs to another phone. Restoring it would give this phone a forei
 This BOOT already has another root: flash the stock BOOT back first (Remove root)
 This BOOT already has another root: remove it first.
 This build of the recovery has no APatch
+This can pass: storage may be busy for a moment. Try again.
 This card is no longer attached
 This compression is not supported
 This copy is no longer listed. Go back and read the cards again.
@@ -1838,10 +1879,13 @@ This phone
 This phone's partitions are laid out differently: the copy cannot be written back here.
 This plan expired. Return and review again.
 This plan expired. Return and review it again.
+This recovery and the Linux BOOT
+This recovery and the Linux BOOT, from the internet.
 This recovery checks and repairs ext2, ext3 and ext4 only
 This recovery does not know every choice of the plan.
 This recovery has no Wi-Fi driver.
 This recovery has no zstd to pack or unpack the archive
+This recovery is up to date.
 This recovery stays
 This recovery stays installed, so you can return to Linux from a backup.
 This recovery, from a new image
@@ -1866,6 +1910,7 @@ TRANSACTION
 Treble GSI: made to start on older vendors too
 Tried on an SM-A226B: it restarted into the bootloader instead of starting. You can still try it: this recovery stays, and stock Android can be flashed again.
 Tried on an SM-A226B: it started. Not everything in it was checked; this recovery stays, and stock Android can be flashed again.
+Try again
 Tuesday
 Turn the phone off
 Turning off
@@ -1898,8 +1943,11 @@ Unpacking the system image
 Unsupported
 Up
 Up to 64 Latin letters, digits, dots, hyphens and underscores; the first is a letter or a digit.
+Update BOOT
 Update packages, logs and temporary files
+Update recovery
 Updated from the servers: %u
+Updates
 USB address unavailable
 USB debugging
 USB drive

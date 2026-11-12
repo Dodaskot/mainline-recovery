@@ -162,6 +162,38 @@ class TorchOff(unittest.TestCase):
             self.assertEqual((r.stdout.strip(), r.stderr), ('rc=0', ''))
 
 
+class CheckCache(unittest.TestCase):
+    """check_cache from /init (2026-11-12: cache mounted 185 times, "maximal mount count reached"):
+    e2fsck in preen mode on cache, before anything else at the start mounts it, its answer kept."""
+    def test_cache_is_checked_in_preen_mode_before_it_is_used(self):
+        import subprocess
+        import tempfile
+        text = (ROOT / 'ramdisk/init').read_text()
+        call = text.index('\ncheck_cache\n')
+        # Only the read of the theme (read-only, no journal replay) comes before; every helper after.
+        self.assertLess(text.index('/run/a22x-theme 2>/dev/null; then'), call)
+        for later in ('bcb.py --device arrive', 'android_log.py --device read', 'adbd.py', 'starting native recovery UI'):
+            self.assertLess(call, text.index(later), later)
+        function = text[text.index('check_cache() {'):text.index('\n}\n', text.index('check_cache() {')) + 3]
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR')) as tmp:
+            tmp = Path(tmp)
+            (tmp / 'cache.img').write_bytes(b'')
+            tool = tmp / 'e2fsck'
+            tool.write_text('#!/bin/sh\necho "e2fsck $*"\nexit 1\n')
+            tool.chmod(0o755)
+            r = subprocess.run(['sh', '-c', function + 'check_cache "$1" "$2"; echo rc=$?', 'sh', str(tmp / 'cache.img'), str(tmp / 'log')],
+                               capture_output=True, text=True, timeout=30, env=dict(os.environ, E2FSCK=str(tool)))
+            self.assertEqual((r.stdout.strip(), r.stderr), ('rc=0', ''))
+            self.assertEqual((tmp / 'log').read_text(), 'e2fsck -p %s\nexit=1\n' % (tmp / 'cache.img'))
+            # No cache, or no e2fsck: nothing happens, and the start goes on.
+            r = subprocess.run(['sh', '-c', function + 'check_cache "$1" "$2"; echo rc=$?', 'sh', str(tmp / 'none'), str(tmp / 'log2')],
+                               capture_output=True, text=True, timeout=30, env=dict(os.environ, E2FSCK=str(tool)))
+            self.assertEqual((r.stdout.strip(), (tmp / 'log2').exists()), ('rc=0', False))
+            r = subprocess.run(['sh', '-c', function + 'check_cache "$1" "$2"; echo rc=$?', 'sh', str(tmp / 'cache.img'), str(tmp / 'log3')],
+                               capture_output=True, text=True, timeout=30, env=dict(os.environ, E2FSCK=str(tmp / 'missing')))
+            self.assertEqual((r.stdout.strip(), (tmp / 'log3').exists()), ('rc=0', False))
+
+
 class BusyWait(unittest.TestCase):
     """busy_wait from /init, run in a shell: it retries only while the lock is busy."""
     def run_sh(self, body):

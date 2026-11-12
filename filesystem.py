@@ -23,7 +23,10 @@ import stat
 import struct
 import subprocess
 import sys
+import time
 
+import dm_linear
+import lp_metadata
 from operation_lock import operation_lock as recovery_operation_lock
 
 MAX_TEXT = 1024 * 1024
@@ -46,6 +49,9 @@ FS_LABELS = frozenset(('userdata', 'cache', 'metadata', 'system', 'vendor',
                        'product', 'system_ext', 'odm', 'vendor_dlkm', 'odm_dlkm'))
 VERIFIED_LABELS = FS_LABELS - frozenset(('userdata', 'cache', 'metadata'))
 RAW_LABELS = frozenset(('boot', 'recovery', 'super', 'vbmeta', 'dtbo'))
+# Android's partitions in super (2026-11-12): each one a volume of its own ("super-system" and so
+# on), opened for reading only through a read-only device-mapper table ("a22x-ro-system").
+LOGICAL_PREFIX, MAPPING_PREFIX = 'super-', 'a22x-ro-'
 
 
 # Internal partitions that can be erased, as in TWRP. Everything else stays out of reach.
@@ -251,7 +257,10 @@ def all_namespace_mounts():
 
 def reason_text(code):
     return {
-        'LOGICAL_PARTITION_CONTAINER': 'Android logical-partition container; mapping is not implemented',
+        'LOGICAL_PARTITION_CONTAINER': 'Android logical-partition container; its partitions are listed as separate volumes',
+        'LOGICAL_PARTITION_READ_ONLY': 'Android partition inside super; opened for reading only',
+        'LOGICAL_PARTITION_LAYOUT_UNSUPPORTED': 'Parts of this partition lie outside super',
+        'LOGICAL_MAPPING_CHANGED': 'The opened partition no longer matches super; unmount it, then open it again',
         'RAW_IMAGE_NOT_FILESYSTEM': 'Raw image; not a filesystem',
         'PROTECTED_FIRMWARE_OR_SERVICE_PARTITION': 'Firmware or service partition; file access is not admitted',
         'PARTITION_HAS_BLOCK_HOLDERS': 'This partition is already used by another block mapping',
@@ -359,6 +368,26 @@ def ssh_session_active():
     return False
 
 
+def logical_partitions(fd, size):
+    """The partitions super's metadata names (slot 0: this phone has no A/B slots), the extents
+    that hold them and what their first blocks say. Read only. An empty partition is left out."""
+    meta = lp_metadata.Super(fd)
+    devices = meta.metadata['devices']
+    rows = []
+    for part in meta.metadata['partitions']:
+        extents = meta.extents_of(part)
+        if not extents or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,40}', part['name']):
+            continue
+        usable = len(devices) == 1 and all(e['type'] == lp_metadata.TARGET_LINEAR and e['device'] == 0 and e['sectors'] > 0
+                                           and (e['start'] + e['sectors']) * 512 <= size for e in extents)
+        info = {'fs_type': None, 'filesystem_uuid': None, 'filesystem_label': '', 'fscrypt_feature': None}
+        if usable:
+            info = probe_magic(os.pread(fd, min(8192, extents[0]['sectors'] * 512), extents[0]['start'] * 512))
+        rows.append({'name': part['name'], 'size_bytes': sum(e['sectors'] for e in extents) * 512,
+                     'extents': [[e['start'], e['sectors']] for e in extents], 'usable': usable, 'info': info})
+    return rows
+
+
 def mount_options(fs_type, mode):
     if fs_type not in SUPPORTED_FS or mode not in ('ro', 'rw'):
         fail('UNSUPPORTED_FILESYSTEM', 'The filesystem is not admitted for mounting')
@@ -452,7 +481,7 @@ class BaseContext:
             'teegris_transport_qualified': False, 'fscrypt_key_installation': False,
             'note': 'A recognizable filesystem or a successful mount does not imply Android data is decrypted.'},
             'capabilities': {'mount': True, 'read_files': True, 'write_files': True,
-                             'raw_partition_restore': False, 'logical_super_mapping': False,
+                             'raw_partition_restore': False, 'logical_super_mapping': self.mode == 'device',
                              'copy_directories': True, 'recursive_delete': False,
                              'file_metadata': True, 'chmod': True, 'chown': True,
                              'resolve_symlinks': True}}
@@ -638,6 +667,7 @@ class DeviceContext(BaseContext):
 
     def volumes(self):
         result, state, mounts = [], self.state(), read_mounts()
+        container = None
         supported = {line.split()[-1] for line in Path('/proc/filesystems').read_text().splitlines() if line.split()}
         for entry in sorted(Path('/sys/class/block').iterdir()):
             usb_name = re.fullmatch(r'sd[a-z]{1,2}[0-9]*', entry.name) is not None
@@ -739,9 +769,192 @@ class DeviceContext(BaseContext):
                       'write_supported': reason is None and write_reason is None,
                       'read_only_reason': reason_text(write_reason), 'read_only_reason_code': write_reason, **info}
             result.append(volume)
+            if internal and label == 'super':
+                container = volume
+        if container is not None:
+            result += self._logical_volumes(container, supported, state, mounts)
         if len({v['id'] for v in result}) != len(result):
             fail('DUPLICATE_VOLUME_ID', 'GPT volume identifiers are not unique')
         return result
+
+    def _logical_volumes(self, container, supported, state, mounts):
+        """Android's partitions in super, each a volume of its own (2026-11-12). They are opened for
+        reading only, through a read-only device-mapper table (dm_linear.py) that holds super while
+        it exists, so no helper writes super under them."""
+        found = self._read_super(container)
+        mapped = dm_linear.devices() if found else {}
+        rows = []
+        for part in found:
+            ident, mapping = LOGICAL_PREFIX + part['name'], MAPPING_PREFIX + part['name']
+            info = part['info']
+            fs = info['fs_type']
+            reason = None
+            if not part['usable']:
+                reason = 'LOGICAL_PARTITION_LAYOUT_UNSUPPORTED'
+            elif fs not in SUPPORTED_FS or info.get('fscrypt_feature'):
+                reason = 'ENCRYPTED_OR_UNSUPPORTED_FILESYSTEM'
+            elif fs not in supported:
+                reason = 'FILESYSTEM_DRIVER_UNAVAILABLE'
+            devno, path = '', ''
+            if mapping in mapped:
+                devno, path = mapped[mapping][0], '/dev/' + mapped[mapping][1]
+                try:
+                    live, read_only = dm_linear.status(mapping)
+                except (OSError, dm_linear.DmError):
+                    live, read_only = None, False
+                if live != dm_linear.linear_table(part['extents'], container['device']) or not read_only:
+                    reason = 'LOGICAL_MAPPING_CHANGED'
+            token = digest({'id': ident, 'container': container['volume_token'], 'extents': part['extents'],
+                            'filesystem': fs, 'filesystem_uuid': info.get('filesystem_uuid')})
+            target, mount_id, owner = str(MOUNT_BASE / ident), None, None
+            current = [m for m in mounts if devno and m['devno'] == devno]
+            record = state['volumes'].get(ident, {})
+            if current:
+                mount = current[0]
+                if (len(current) == 1 and mount['root'] == '/' and mount['mountpoint'] == target and 'ro' in mount['options']
+                        and record.get('volume_token') == token and record.get('mount_id') == mount['mount_id']):
+                    owner = 'filesystem'
+                elif reason is None:
+                    reason = 'VOLUME_MOUNTED_OUTSIDE_MANAGER'
+                target, mount_id = mount['mountpoint'], mount['mount_id']
+            rows.append({'id': ident, 'label': part['name'], 'path': path, 'device': devno,
+                         'device_identity': container['device_identity'],
+                         'partition_number': container['partition_number'], 'size_bytes': part['size_bytes'],
+                         'external': False, 'mountable': reason is None, 'reason': reason_text(reason),
+                         'reason_code': reason, 'mounted': bool(current), 'block_read_only': True if devno else None,
+                         'read_only_guarded': bool(devno), 'read_only': True, 'mountpoint': target,
+                         'mount_id': mount_id, 'mount_owner': owner, 'volume_token': token, 'mode': 'device',
+                         'write_supported': False, 'read_only_reason': reason_text('LOGICAL_PARTITION_READ_ONLY'),
+                         'read_only_reason_code': 'LOGICAL_PARTITION_READ_ONLY',
+                         'container': 'super', 'container_path': container['path'], 'container_device': container['device'],
+                         'logical_partition': part['name'], 'extents': part['extents'],
+                         'mapping': mapping if devno else None, **info})
+        return rows
+
+    def _read_super(self, container):
+        """The partitions super's metadata names; none when it cannot be read (super then stays a
+        raw container)."""
+        try:
+            fd = os.open(container['path'], os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        except OSError:
+            return []
+        try:
+            st = os.fstat(fd)
+            if not stat.S_ISBLK(st.st_mode) or f'{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}' != container['device']:
+                fail('BLOCK_IDENTITY_CHANGED', 'super changed during the probe')
+            return logical_partitions(fd, container['size_bytes'])
+        except (lp_metadata.MetadataError, OSError, struct.error):
+            return []
+        finally:
+            os.close(fd)
+
+    def _mapping_node(self, devno, volume):
+        """The /dev node of a mapping, checked against the kernel: read-only, the partition's size,
+        and super its only slave."""
+        sysfs = (Path('/sys/dev/block') / devno).resolve()
+        node = Path('/dev') / sysfs.name
+        for _ in range(100):  # devtmpfs adds the node as the disk appears
+            with suppress(FileNotFoundError):
+                st = node.lstat()
+                if stat.S_ISBLK(st.st_mode) and f'{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}' == devno:
+                    break
+            time.sleep(0.02)
+        else:
+            fail('BLOCK_IDENTITY_CHANGED', 'The opened partition has no device node')
+        slaves = sorted(entry.name for entry in (sysfs / 'slaves').iterdir())
+        if ((sysfs / 'ro').read_text().strip() != '1' or int((sysfs / 'size').read_text()) * 512 != volume['size_bytes']
+                or slaves != [Path(volume['container_path']).name]):
+            fail('LOGICAL_MAPPING_CHANGED', 'The opened partition does not match super')
+        return str(node)
+
+    def _mount_logical(self, volume):
+        """Open a partition of super for reading: map it read-only, then mount it read-only."""
+        ident = volume['id']
+        if volume['mounted']:
+            return {'volume': volume}
+        target = MOUNT_BASE / ident
+        absolute_no_symlinks(target, missing=True)
+        target.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if any(target.iterdir()) or any(m['mountpoint'] == str(target) for m in read_mounts()):
+            fail('MOUNTPOINT_OCCUPIED', 'The dedicated volume mountpoint is not empty')
+        mapping = MAPPING_PREFIX + volume['logical_partition']
+        devno = volume['device']
+        if not devno:
+            try:
+                devno = dm_linear.create(mapping, dm_linear.linear_table(volume['extents'], volume['container_device']))
+            except (OSError, dm_linear.DmError) as error:
+                fail('LOGICAL_MAPPING_FAILED', 'The kernel did not open this partition of super',
+                     errno=getattr(error, 'errno', None))
+        options = mount_options(volume['fs_type'], 'ro')
+        try:
+            path = self._mapping_node(devno, volume)
+            if any(m['devno'] == devno for m in all_namespace_mounts()):
+                fail('VOLUME_MOUNTED_ELSEWHERE', 'The partition is mounted in another namespace')
+            self._command('mount', ['-t', volume['fs_type'], '-o', options, path, str(target)])
+        except BaseException:
+            if not any(m['devno'] == devno for m in all_namespace_mounts()):
+                with suppress(OSError, dm_linear.DmError):
+                    dm_linear.remove(mapping)
+            raise
+        current = [m for m in read_mounts() if m['mountpoint'] == str(target)]
+        if (len(current) != 1 or current[0]['devno'] != devno or current[0]['root'] != '/'
+                or 'ro' not in current[0]['options']):
+            fail('MOUNT_IDENTITY_MISMATCH', 'The observed mount does not match the requested volume')
+        state = self.state()
+        state['volumes'][ident] = {'volume_token': volume['volume_token'], 'mount_id': current[0]['mount_id'], 'logical': True}
+        atomic_state(self.state_path, state)
+        result = self.volume(ident, volume['volume_token'])
+        if result['mount_owner'] != 'filesystem':
+            fail('MOUNT_STATE_MISMATCH', 'The new mount was not admitted')
+        return {'volume': result, 'mount_options': options}
+
+    def _unmap(self, mapping, devno):
+        if any(m['devno'] == devno for m in all_namespace_mounts()):
+            fail('LOGICAL_PARTITION_BUSY', 'The partition of super is still mounted elsewhere')
+        try:
+            dm_linear.remove(mapping)
+        except OSError as error:
+            fail('LOGICAL_PARTITION_BUSY', 'The partition of super is still in use', errno=error.errno)
+
+    def _unmount_logical(self, volume):
+        if volume['mounted']:
+            if volume['mount_owner'] != 'filesystem':
+                fail('UNMANAGED_MOUNT', 'This helper will not unmount an unrelated filesystem')
+            if self.nested_mounts(volume, '/'):
+                fail('NESTED_MOUNT', 'Nested mounts must be removed before unmounting this volume')
+            # Normal unmount flushes nothing here (read-only) and fails while busy; never lazy or forced.
+            self._command('umount', [volume['mountpoint']])
+        state = self.state()
+        if state['volumes'].pop(volume['id'], None) is not None:
+            atomic_state(self.state_path, state)
+        if volume.get('mapping'):
+            self._unmap(volume['mapping'], volume['device'])
+        result = self.volume(volume['id'], volume['volume_token'])
+        if result['mounted'] or result['device']:
+            fail('UNMOUNT_NOT_OBSERVED', 'The partition of super is still open')
+        return {'volume': result}
+
+    def close_logical(self):
+        """Close what was opened in super: unmount each partition and remove its mapping, also a
+        mapping super's metadata no longer names. Before super itself is read or written
+        (install.py check_offline), and by unmount-all. Returns the volumes closed."""
+        closed = []
+        for volume in self.volumes():
+            if volume.get('container') == 'super' and (volume['mounted'] or volume.get('mapping')):
+                self._unmount_logical(volume)
+                closed.append(volume['id'])
+        for mapping, (devno, _) in dm_linear.devices().items():
+            if not mapping.startswith(MAPPING_PREFIX):
+                continue
+            for mount in read_mounts():
+                if mount['devno'] == devno and mount['mountpoint'].startswith(str(MOUNT_BASE / LOGICAL_PREFIX)):
+                    self._command('umount', [mount['mountpoint']])
+            self._unmap(mapping, devno)
+            state = self.state()
+            if state['volumes'].pop(LOGICAL_PREFIX + mapping[len(MAPPING_PREFIX):], None) is not None:
+                atomic_state(self.state_path, state)
+            closed.append(LOGICAL_PREFIX + mapping[len(MAPPING_PREFIX):])
+        return closed
 
     def _block_ro(self, volume, value=None):
         """Change only the partition's kernel read-only flag, never its contents."""
@@ -822,6 +1035,8 @@ class DeviceContext(BaseContext):
             self.confirm(confirmed)
             if not volume['write_supported']:
                 fail('WRITE_NOT_QUALIFIED', 'This filesystem is admitted only for reading', reason=volume['read_only_reason'])
+        if volume.get('container') == 'super':
+            return self._mount_logical(volume)
         options = mount_options(volume['fs_type'], mode)
         if (volume['mounted'] and volume['read_only'] == (mode == 'ro')
                 and (mode == 'rw' or volume['read_only_guarded'])):
@@ -903,6 +1118,8 @@ class DeviceContext(BaseContext):
 
     def unmount(self, ident, expected=None):
         volume = self.volume(ident, expected)
+        if volume.get('container') == 'super':
+            return self._unmount_logical(volume)
         if not volume['mounted']:
             self._release_read_only(volume)
             return {'volume': self.volume(ident, volume['volume_token'])}
@@ -944,8 +1161,10 @@ class DeviceContext(BaseContext):
         return {'mounted': mounted, 'dropped': dropped, 'volumes': self.usb_volumes()}
 
     def unmount_all(self):
-        result = []
+        result = self.close_logical()
         for volume in self.volumes():
+            if volume.get('container') == 'super':
+                continue
             if volume['mounted'] and volume['mount_owner'] == 'filesystem':
                 self.unmount(volume['id'], volume['volume_token'])
                 result.append(volume['id'])

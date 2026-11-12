@@ -103,7 +103,7 @@
 enum Screen { HOME, SPLASH, FLASH, FLASH_REVIEW, LANGUAGE, THEME, TERMINAL_THEME, ANIMATIONS, LOCKSCREEN, ACCESS_REQUEST, OS_MENU, SYSTEMS_SETUP, BACKUP, LIST, DETAIL, PLAN, PROGRESS, RESULT, STORAGE, SYSTEM, POWER, POWER_CONFIRM, POWER_MENU, TOOLS, TOOLS_EXPORT, DISPLAY_SETTINGS, PREPARE_FILESYSTEM, USB_FILES, TERMINAL, SYSTEMS, SYSTEMS_PLAN, SYSTEMS_RECOVER,
     INSTALL, INSTALL_PLAN, INSTALL_RESULT,
     FILE_VOLUMES, FILE_VOLUME, FILE_BROWSER, FILE_INFO, FILE_TEXT, FILE_EDIT, FILE_PROMPT, FILE_CONFIRM, FILE_DISCARD, SYSTEMS_EXTRAS, SYSTEMS_DONE, WIFI, SYSTEMS_NEW, SYSTEMS_CATALOG,
-    SYSTEMS_APP_LIST, SYSTEMS_SEARCH, IDENTITY, IDENTITY_RESTORE, SYSTEMS_SHELLS, SYSTEMS_LOCALE, SYSTEMS_TIMEZONE, SYSTEMS_REMOVE, SYSTEMS_IMAGES, ADB_REQUEST, APLAN, FLASH_SUPER, ICON_SHEET, WIPE, WIPE_REVIEW, ANDROID_MENU, SAMSUNG_REVIEW, ANDROID_IMAGE, ROOT_PAGE, ZIP_REVIEW, CARD_PAGE, COPY_DETAIL, ANDROID_LOG };
+    SYSTEMS_APP_LIST, SYSTEMS_SEARCH, IDENTITY, IDENTITY_RESTORE, SYSTEMS_SHELLS, SYSTEMS_LOCALE, SYSTEMS_TIMEZONE, SYSTEMS_REMOVE, SYSTEMS_IMAGES, ADB_REQUEST, APLAN, FLASH_SUPER, ICON_SHEET, WIPE, WIPE_REVIEW, ANDROID_MENU, SAMSUNG_REVIEW, ANDROID_IMAGE, ROOT_PAGE, ZIP_REVIEW, CARD_PAGE, COPY_DETAIL, ANDROID_LOG, UPDATES };
 enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_REVIEW_BACKUP,A_REVIEW_RESTORE,A_VERIFY_ONE,A_CONFIRM,A_DONE,A_LIST_PREV,A_LIST_NEXT,A_REBOOT,A_SHUTDOWN,A_POWER_CONFIRM,A_MOUNT,A_UMOUNT,A_REFRESH,
     A_FILES,A_FS_PREV,A_FS_NEXT,A_FS_OPEN,A_FS_MOUNT_RO,A_FS_MOUNT_RW,A_FS_UNMOUNT,A_FS_UP,A_FS_VOLUME,A_FS_REFRESH,
     A_FS_READ,A_FS_EDIT,A_FS_NEW_FILE,A_FS_MKDIR,A_FS_RENAME,A_FS_COPY,A_FS_DELETE,A_FS_PROMPT_NEXT,A_FS_CONFIRM,
@@ -135,14 +135,14 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
     A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
-    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK };
+    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
     J_FS_STAT,J_FS_CHMOD,J_FS_CHOWN,J_FS_RESOLVE,J_FS_COPY_TREE,J_FS_FORMAT,J_FS_CHECK,J_FS_RESIZE,J_TOOLS_STATUS,J_TOOLS_EXPORT,J_DISPLAY_STATUS,J_DISPLAY_SET,J_WIPE_PLAN,J_WIPE,J_USB_STATUS,J_USB_START,J_USB_STOP,
     J_TERM_STATUS,J_TERM_START,J_TERM_READ,J_TERM_WRITE,J_TERM_RESIZE,J_TERM_STOP,J_SYS_STATUS,J_SYS_IMPORT_PLAN,J_SYS_SWITCH_PLAN,J_SYS_IMPORT,J_SYS_SWITCH,J_SYS_RECOVER,J_SYS_REMOVE,
     J_INSTALL_STATUS,J_INSTALL_BOOT_PLAN,J_INSTALL_STOCK_PLAN,J_INSTALL_RESUME_PLAN,J_INSTALL_EXECUTE,J_FLASH_TARGETS,J_FLASH_CHECK,J_FLASH_WRITE,J_USB_SYNC,J_USB_BACKUP,J_USB_EJECT,J_SYS_ACCOUNT_USER,J_SYS_ACCOUNT_PASS,J_SYS_WIFI_SSID,J_SYS_WIFI_PASS,J_LOCK_ENTER,J_LOCK_SET,J_LOCK_OLD,J_LOCK_CONFIRM,J_LOCK_ACCESS,J_SYSINFO,J_THEME_IMPORT,J_THEME_REMOVE,J_THEME_RESTORE,
     J_WIFI_STATUS,J_WIFI_SCAN,J_WIFI_CONNECT,J_WIFI_DISCONNECT,J_WIFI_FORGET,J_WIFI_SSID,J_WIFI_PASS,J_CATALOG,J_CATALOG_CHECK,J_PKG_SEARCH,J_PKG_QUERY,J_ID_LIST,J_ID_BACKUP,J_ID_BACKUPS,J_ID_RESTORE,J_ID_DELETE,J_CHARGER,J_IMAGES,J_IMAGES_DOWNLOAD,J_IMAGES_DELETE,J_APLAN_SHOW,J_APLAN_PREPARE,J_APLAN_FORGET,J_WIPE_CACHE,J_SAMSUNG_INSPECT,J_SAMSUNG_INSTALL,J_ANDROID_RESET,J_STOCK_BOOT,J_SAMSUNG_UNPACK,J_ROOT_LIST,J_ROOT_INSTALL,J_ROOT_PREPARE,J_ZIP_INSPECT,J_ZIP_RUN,J_BACKUP_RENAME,J_BACKUP_DELETE,J_CARD_LIST,J_CARD_APPLY,
-    J_COPY_LIST,J_COPY_VERIFY,J_COPY_RESTORE,J_COPY_DELETE,J_ROM_KIND,
+    J_COPY_LIST,J_COPY_VERIFY,J_COPY_RESTORE,J_COPY_DELETE,J_ROM_KIND,J_UPDATES_CHECK,J_UPDATES_FETCH,
     J_ROOT_SUPERKEY /* a prompt, not a job: APatch's SuperKey */,J_BACKUP_NAME /* a prompt: the new name of a backup */ };
 enum ScrollSurface { SCROLL_NONE,SCROLL_FOLDER,SCROLL_VOLUMES,SCROLL_TEXT,SCROLL_PROMPT,SCROLL_TERMINAL,SCROLL_SYSTEMS,SCROLL_TOOLS,SCROLL_INSTALL_REVIEW,SCROLL_INSTALL_PENDING,SCROLL_PAGE };
 enum DisplayCommand { DC_NONE,DC_STATUS,DC_BRIGHTNESS,DC_BLANK,DC_WAKE,DC_TOGGLE };
@@ -358,7 +358,7 @@ typedef struct {
        the pages passed on the way, Home first. nav_hold: a read ends for a page already left. */
     enum Screen nav_trail[NAV_TRAIL];int nav_depth;bool nav_backing,nav_hold;
     enum Screen job_page;bool job_page_mark,job_orphan,job_completing;
-    unsigned int splash_percent,splash_from,animation,lock_mode,lock_pending_mode,access_mode,lock_failures;int lock_flow,lock_start_y,lock_drag,lock_kept_kind,access_kind;
+    unsigned int splash_percent,splash_from,animation,lock_mode,lock_pending_mode,access_mode,lock_failures;int lock_flow,lock_start_y,lock_drag,lock_kept_kind,access_kind,settings_broken;
     uint64_t job_started,nav_settle_end,lock_wait_until,lock_shake_until,access_checked;int nav_settle_kind,nav_settle_amount;enum Screen lock_return,access_return;bool lock_frame_pending,lock_opened,lock_keyboard,lock_digits,tools_export_next,terminal_autostart,power_held,gesture_ready,gesture_terminal,usb_volumes_known,usb_mounting,usb_refresh_after;unsigned int nav_mode;int gesture,gesture_x0,gesture_y0,gesture_x,gesture_y,gesture_anchor_y,usb_rows[USB_VOLUME_ROWS],usb_row_count;uint64_t gesture_still_at;uint32_t*menu_backdrop;enum Screen menu_return;char usb_want[128];pid_t settings_pid;uint64_t settings_retry_at;uint32_t*lock_backdrop;
     char lock_note[96],lock_old[128],lock_new[128],lock_kept[PATH_LEN],access_id[40],access_channel[8],access_peer[72],access_prompt[PATH_LEN];
     char adb_id[40],adb_answered[40],adb_fingerprint[64],adb_comment[100],adb_peer[72];uint64_t adb_checked;enum Screen adb_return; /* An ADB key asked about on the phone. */
@@ -424,7 +424,7 @@ typedef struct {
     char zip_helper[PATH_LEN],zip_volume[96],zip_token[80],zip_path[PATH_LEN],zip_name[208],zip_sha[72],zip_title[128],zip_what[16],zip_installer[16],zip_warnings[512],zip_parts[160];
     uint64_t zip_size;unsigned int zip_files;bool zip_pick,zip_known;
     /* The list of ZIPs to run: zip_adding: the picker is open for one more; zip_restart: restart the system when all finished. */
-    ZipItem zip_queue[ZIP_QUEUE];unsigned int zip_count,zip_at,zip_restart_shown;bool zip_adding,zip_restart,zip_ran;uint64_t zip_restart_at;char gsi_helper[PATH_LEN];char saved_note[160],saved_argument[208]; /* Images saved on the phone; saved_delete counts from 1. */
+    ZipItem zip_queue[ZIP_QUEUE];unsigned int zip_count,zip_at,zip_restart_shown;bool zip_adding,zip_restart,zip_ran;uint64_t zip_restart_at;char gsi_helper[PATH_LEN];char updates_helper[PATH_LEN],flash_after_label[16],upd_rec_installed[24],upd_rec_latest[24],upd_rec_sha[72],upd_rec_error[64],upd_boot_kind[12],upd_boot_state[12],upd_boot_latest[24],upd_boot_sha[72];bool updates_known,upd_rec_newer,upd_boot_newer;char saved_note[160],saved_argument[208]; /* Images saved on the phone; saved_delete counts from 1. */
     bool catalog_checked,catalog_check_done;unsigned int catalog_servers,catalog_updated,catalog_gone,catalog_failed;char catalog_problem[120];
     bool systems_wipe,systems_plan_erase,systems_plan_format,systems_plan_boot,systems_adding;char systems_remote_id[48];uint64_t systems_plan_download;
     Job job;
@@ -501,7 +501,7 @@ static int64_t page_max_scroll(const App*a){return a->page_content>page_height(a
 /* The page measures itself when it is drawn (2026-11-11: a fixed sum left an empty stretch below
    the last card wherever the charging card was absent); the sum serves only before the first frame. */
 static int64_t tools_max_scroll(const App*a){
-    if(!a->tools_content)return 1308+212+268+(a->lock_enabled?188:0);
+    if(!a->tools_content)return 1308+212+268+116+(a->lock_enabled?188:0);
     int64_t most=a->tools_content-1254;return most>0?most:0;
 }
 static void page_scroll_to(App*a,int64_t value){a->page_scroll=(int64_t)scroll_clamp((double)value,(double)page_max_scroll(a));a->focus=-1;a->button_count=0;a->dirty=true;}
@@ -510,7 +510,7 @@ static bool install_job(int kind){return kind>=J_INSTALL_STATUS&&kind<=J_INSTALL
 static bool wifi_job(int kind){return kind>=J_WIFI_STATUS&&kind<=J_WIFI_FORGET;}
 /* These only read state. The page stays usable while they run: a tap waits for the
  * result instead of the whole page going grey. */
-static bool job_quiet(int kind){return wifi_job(kind)||kind==J_APLAN_SHOW||kind==J_APLAN_PREPARE||kind==J_APLAN_FORGET||kind==J_IMAGES||kind==J_CATALOG||kind==J_CATALOG_CHECK||kind==J_PKG_SEARCH||kind==J_ID_LIST||kind==J_ID_BACKUPS||kind==J_CHARGER||kind==J_SYSINFO||kind==J_TOOLS_STATUS||kind==J_DISPLAY_STATUS||kind==J_DISPLAY_SET||kind==J_USB_STATUS||kind==J_SYS_STATUS||kind==J_INSTALL_STATUS||kind==J_STORAGE_INVENTORY||kind==J_FS_INVENTORY||kind==J_FS_LIST||kind==J_LIST||kind==J_FLASH_TARGETS||kind==J_USB_SYNC||kind==J_TERM_STATUS||kind==J_TERM_STOP||kind==J_CARD_LIST||kind==J_COPY_LIST||kind==J_ROM_KIND;}
+static bool job_quiet(int kind){return wifi_job(kind)||kind==J_UPDATES_CHECK||kind==J_APLAN_SHOW||kind==J_APLAN_PREPARE||kind==J_APLAN_FORGET||kind==J_IMAGES||kind==J_CATALOG||kind==J_CATALOG_CHECK||kind==J_PKG_SEARCH||kind==J_ID_LIST||kind==J_ID_BACKUPS||kind==J_CHARGER||kind==J_SYSINFO||kind==J_TOOLS_STATUS||kind==J_DISPLAY_STATUS||kind==J_DISPLAY_SET||kind==J_USB_STATUS||kind==J_SYS_STATUS||kind==J_INSTALL_STATUS||kind==J_STORAGE_INVENTORY||kind==J_FS_INVENTORY||kind==J_FS_LIST||kind==J_LIST||kind==J_FLASH_TARGETS||kind==J_USB_SYNC||kind==J_TERM_STATUS||kind==J_TERM_STOP||kind==J_CARD_LIST||kind==J_COPY_LIST||kind==J_ROM_KIND;}
 enum { NAV_GESTURES,NAV_BUTTONS,NAV_OFF };
 enum { GESTURE_NONE,GESTURE_BACK,GESTURE_BOTTOM };
 static bool flash_job(int kind){return kind>=J_FLASH_TARGETS&&kind<=J_FLASH_WRITE;}
@@ -529,7 +529,7 @@ static bool start_install_job(App*a,int kind);
 static int complete_install_job(App*a,const Json*j,int kind,bool ok);
 static void complete_flash_job(App*a,const Json*j,int kind,bool ok);
 static void action(App*a,int id);
-static void update_battery(App*a);static void reset_request_poll(App*a);static void render_android_log(App*a);static void android_log_poll(App*a);static bool android_log_action(App*a,int id);static void zip_item_to_review(App*a,const ZipItem*it);static void settings_save(App*a,bool wait);
+static void update_battery(App*a);static void reset_request_poll(App*a);static void render_android_log(App*a);static void android_log_poll(App*a);static bool android_log_action(App*a,int id);static void render_updates(App*a);static bool updates_action(App*a,int id);static void zip_item_to_review(App*a,const ZipItem*it);static void settings_save(App*a,bool wait);
 static long sysfs_number(const char*path,long fallback);
 static void complete_usb_sync(App*a,const Json*j,bool ok);
 static void complete_usb_backup(App*a,const Json*j,bool ok);
@@ -1030,7 +1030,7 @@ static void home_grid(App*a,int y,int h,int gap){
     home_cell(a,(Rect){480,row3,212,h},0,A_HOME_CATALOG,ICON_BROWSER,"Catalog","Systems from the internet",MUTED,false,free_ui);
 }
 static void render_home_bento(App*a){
-    char now[16],date[96];clock_text(a,now,sizeof(now),date,sizeof(date));heading(a,"A22x Recovery",date,false);
+    char now[16],date[96];clock_text(a,now,sizeof(now),date,sizeof(date));heading(a,"Mainline Recovery",date,false);
     home_device(a);
     Rect hero={28,212,664,244};canvas_shadow(a->pixels,canvas_bounds(a),nx(hero.x),nx(hero.y),nx(hero.x+hero.w),nx(hero.y+hero.h),66.f,ui_theme->hero_bottom,110);gradient(a,hero,44,ui_theme->hero_top,ui_theme->hero_bottom);
     /* Two soft discs give the hero depth. They stay clear of its rounded corners. */
@@ -1047,7 +1047,7 @@ static void render_home_bento(App*a){
 }
 static void render_home(App*a){
     if(ui_theme->bento){render_home_bento(a);return;}
-    char now[16],date[96];clock_text(a,now,sizeof(now),date,sizeof(date));heading(a,"A22x Recovery",date,false);
+    char now[16],date[96];clock_text(a,now,sizeof(now),date,sizeof(date));heading(a,"Mainline Recovery",date,false);
     home_device(a);
     if(a->aplan_valid){char ready[160];snprintf(ready,sizeof(ready),T("Ready from the Android app: %s"),a->aplan_name);raw_text(true);os_card(a,214,150,A_OS,tr("Install"),ready,A_OS,ORANGE_DARK);raw_text(false);}
     else os_card(a,214,150,A_OS,"Install","Operating system, Android or a partition",A_OS,ORANGE_DARK);
@@ -1477,6 +1477,7 @@ static void render_tools(App*a){
     }
     y+=render_charger_card(a,y,free_ui);
     wifi_settings_row(a,y,free_ui);y+=116;
+    settings_row(a,y,ICON_FLASH,"Updates","This recovery and the Linux BOOT",A_UPDATES,free_ui);y+=116;
     char now[16],date[96],zone[48],line[144];clock_text(a,now,sizeof(now),date,sizeof(date));
     if(recovery_zone(a))copy(zone,sizeof(zone),tz_zones[a->recovery_tz].city);else utc_label(a->utc_offset,zone,sizeof(zone));snprintf(line,sizeof(line),"%s  %s",now,date);
     rounded(a,(Rect){28,y,664,180},24,PANEL);icon_tile(a,ICON_CLOCK,46,y+16,56,ICON_FILL);text(a,120,y+14,1,TEXT,"Date and time");ellipsis(a,120,y+52,540,0,MUTED,line);
@@ -1803,7 +1804,7 @@ static enum VolumeKind volume_kind(const FileVolume*v){
     return v->mountable?V_FILESYSTEM:V_UNSUPPORTED;
 }
 static uint32_t volume_color(const FileVolume*v){enum VolumeKind kind=volume_kind(v);return kind==V_FILESYSTEM?FILE_BLUE:(kind==V_SD?GREEN:(kind==V_LOCKED?ORANGE:(kind==V_IMAGE?LINK_PURPLE:MUTED)));}
-static const char*volume_type_label(const FileVolume*v){const char*labels[]={"Filesystem","microSD","Encrypted","Read-only image","Raw partition","Unsupported"};return labels[volume_kind(v)];}
+static const char*volume_type_label(const FileVolume*v){if(!strncmp(v->id,"super-",6))return "Partition in super";const char*labels[]={"Filesystem","microSD","Encrypted","Read-only image","Raw partition","Unsupported"};return labels[volume_kind(v)];}
 static void volume_icon(App*a,const FileVolume*v,int x,int y){
     uint32_t c=volume_color(v);enum VolumeKind kind=volume_kind(v);
     if(!strncmp(v->id,"usb-",4)){icon(a,ICON_USB,x-2,y-2,48,c);return;}
@@ -2152,8 +2153,20 @@ static const char*lock_button(const App*a){
     default:return a->lock_flow==LF_REMOVE?"Remove password":(a->lock_flow==LF_CHANGE?"Next":"Confirm");
     }
 }
+/* The lock when the settings could not be read: no password can be checked, so it does not open.
+ * Damaged settings can be erased together with userdata, as Android's reset does (2026-11-12). */
+static void render_settings_broken(App*a){
+    heading(a,"",NULL,true);centered(a,(Rect){100,92,520,70},2,TEXT,"Recovery is locked");
+    icon(a,ICON_LOCK,CW/2-24,196,48,TEXT);
+    wrapped(a,40,290,640,1,TEXT,a->settings_broken==4?"The recovery settings are damaged. The password cannot be checked, so the recovery stays locked.":"The recovery settings could not be read. The password cannot be checked, so the recovery stays locked.",4);
+    if(a->settings_broken==4)text_tile(a,560,0,MUTED,"Erasing the damaged settings also erases userdata, as a reset of Android does: whoever holds the phone does not get its data. Copies on a card stay.",4);
+    else text_tile(a,560,0,MUTED,"This can pass: storage may be busy for a moment. Try again.",3);
+    button(a,(Rect){28,1190,664,92},"Try again",A_LOCK_SETTINGS_RETRY,true,a->settings_broken!=4,0);
+    if(a->settings_broken==4)button(a,(Rect){28,1310,664,104},"Hold 3 s: erase settings and userdata",A_LOCK_SETTINGS_ERASE,true,true,3000);
+}
 static void render_lock_prompt(App*a){
     int kind=a->fs_prompt_kind;
+    if(a->settings_broken&&kind==J_LOCK_ENTER){render_settings_broken(a);return;}
     const char*title=kind==J_LOCK_ENTER?"Enter password":kind==J_LOCK_SET?"New password":kind==J_LOCK_OLD?"Current password":kind==J_LOCK_CONFIRM?"Repeat the password":"Allow this computer";
     const char*note=kind==J_LOCK_ENTER?"Recovery is locked.":kind==J_LOCK_SET?"At least 4 characters.":kind==J_LOCK_OLD?"Needed to change the protection.":kind==J_LOCK_CONFIRM?"Type it once more.":"Enter the recovery password.";
     heading(a,"",NULL,true);centered(a,(Rect){100,92,520,70},2,TEXT,title);centered(a,(Rect){40,170,640,44},0,MUTED,note);
@@ -2327,7 +2340,7 @@ static void render_toast(App*a){
 #define SPLASH_BAR_W 360
 #define SPLASH_BAR_H 8
 static void render_splash(App*a){
-    icon_tile(a,A_OS,CW/2-88,600,176,ICON_FILL);centered(a,(Rect){0,812,CW,70},3,TEXT,"A22x Recovery");centered(a,(Rect){0,888,CW,44},0,MUTED,"Mainline Recovery");
+    icon_tile(a,A_OS,CW/2-88,600,176,ICON_FILL);centered(a,(Rect){0,812,CW,70},3,TEXT,"Mainline Recovery");centered(a,(Rect){0,888,CW,44},0,MUTED,"Mainline Recovery");
     if(a->preview&&!a->splash_percent)return;
     gradient(a,(Rect){SPLASH_BAR_X,SPLASH_BAR_Y,SPLASH_BAR_W,SPLASH_BAR_H},4,PANEL2,PANEL2);
     int filled=(int)(SPLASH_BAR_W*a->splash_percent/100u);if(filled>=SPLASH_BAR_H)gradient(a,(Rect){SPLASH_BAR_X,SPLASH_BAR_Y,filled,SPLASH_BAR_H},4,ORANGE,ORANGE);
@@ -2348,7 +2361,7 @@ static void render_farewell(App*a,int intent){
     a->clip_active=false;a->button_count=0;
     rectangle(a,(Rect){0,0,CW,CH},BG);
     icon_tile(a,intent==201?A_POWER:A_OS,CW/2-88,560,176,ICON_FILL);
-    centered(a,(Rect){0,772,CW,70},3,TEXT,"A22x Recovery");
+    centered(a,(Rect){0,772,CW,70},3,TEXT,"Mainline Recovery");
     centered(a,(Rect){28,860,664,60},2,TEXT,farewell_text(intent));
     centered(a,(Rect){28,930,664,44},0,MUTED,intent==201?"The screen goes dark when the phone is off.":(intent==203?"Keep the cable connected to flash from the computer.":"Do not unplug the phone or remove storage."));
     ui_theme=chosen;
@@ -2407,7 +2420,7 @@ static void render(App*a){
     case POWER_CONFIRM:heading(a,"Power action",NULL,true);wrapped(a,40,350,640,2,TEXT,power_confirmation(a->power_intent),4);if(terminal_session_open(a)&&a->terminal_busy)wrapped(a,40,640,640,1,RED,"The command running in the terminal will be stopped.",3);button(a,(Rect){28,1220,664,110},"Hold 2 seconds to confirm",A_POWER_CONFIRM,a->allow_power&&!a->job.pid&&a->power_intent>=200&&a->power_intent<=203&&(a->power_intent!=200||(!a->systems_reboot_blocked&&!a->install.reboot_blocked)),true,2000);break;
     case TOOLS:render_tools(a);break;case TOOLS_EXPORT:render_tools_export(a);break;case DISPLAY_SETTINGS:render_display(a);break;case WIFI:render_wifi(a);break;case SYSTEMS_NEW:render_systems_new(a);break;case SYSTEMS_IMAGES:render_images(a);break;case ADB_REQUEST:render_adb_request(a);break;case SYSTEMS_CATALOG:render_catalog(a);break;
     case TERMINAL:render_terminal(a);break;
-    case SYSTEMS:render_systems(a);break;case SYSTEMS_EXTRAS:render_systems_extras(a);break;case SYSTEMS_SHELLS:render_systems_shells(a);break;case SYSTEMS_LOCALE:render_systems_locale(a);break;case SYSTEMS_TIMEZONE:render_systems_timezone(a);break;case SYSTEMS_APP_LIST:render_systems_apps(a);break;case SYSTEMS_SEARCH:render_package_search(a);break;case IDENTITY:render_identity(a);break;case APLAN:render_aplan(a);break;case FLASH_SUPER:render_flash_super(a);break;case ICON_SHEET:render_icon_sheet(a);break;case WIPE:render_wipe(a);break;case ANDROID_MENU:render_android_menu(a);break;case SAMSUNG_REVIEW:render_samsung_review(a);break;case ANDROID_IMAGE:render_android_image(a);break;case ROOT_PAGE:render_root(a);break;case ZIP_REVIEW:render_zip_review(a);break;case CARD_PAGE:render_card(a);break;case COPY_DETAIL:render_copy_detail(a);break;case WIPE_REVIEW:render_wipe_review(a);break;case ANDROID_LOG:render_android_log(a);break;case IDENTITY_RESTORE:render_identity_restore(a);break;case SYSTEMS_DONE:render_systems_done(a);break;case SYSTEMS_PLAN:render_systems_plan(a);break;case SYSTEMS_RECOVER:render_systems_recover(a);break;case SYSTEMS_REMOVE:render_systems_remove(a);break;
+    case SYSTEMS:render_systems(a);break;case SYSTEMS_EXTRAS:render_systems_extras(a);break;case SYSTEMS_SHELLS:render_systems_shells(a);break;case SYSTEMS_LOCALE:render_systems_locale(a);break;case SYSTEMS_TIMEZONE:render_systems_timezone(a);break;case SYSTEMS_APP_LIST:render_systems_apps(a);break;case SYSTEMS_SEARCH:render_package_search(a);break;case IDENTITY:render_identity(a);break;case APLAN:render_aplan(a);break;case FLASH_SUPER:render_flash_super(a);break;case ICON_SHEET:render_icon_sheet(a);break;case WIPE:render_wipe(a);break;case ANDROID_MENU:render_android_menu(a);break;case SAMSUNG_REVIEW:render_samsung_review(a);break;case ANDROID_IMAGE:render_android_image(a);break;case ROOT_PAGE:render_root(a);break;case ZIP_REVIEW:render_zip_review(a);break;case CARD_PAGE:render_card(a);break;case COPY_DETAIL:render_copy_detail(a);break;case WIPE_REVIEW:render_wipe_review(a);break;case ANDROID_LOG:render_android_log(a);break;case UPDATES:render_updates(a);break;case IDENTITY_RESTORE:render_identity_restore(a);break;case SYSTEMS_DONE:render_systems_done(a);break;case SYSTEMS_PLAN:render_systems_plan(a);break;case SYSTEMS_RECOVER:render_systems_recover(a);break;case SYSTEMS_REMOVE:render_systems_remove(a);break;
     case INSTALL:render_install(a);break;case INSTALL_PLAN:render_install_review(a,false);break;case INSTALL_RESULT:render_install_review(a,true);break;
     case FILE_VOLUMES:render_file_volumes(a);break;case FILE_VOLUME:render_file_volume(a);break;case FILE_BROWSER:render_file_browser(a);break;
     case FILE_INFO:render_file_info(a);break;case FILE_TEXT:render_file_text(a,false);break;case FILE_EDIT:render_file_text(a,true);break;
@@ -2530,6 +2543,8 @@ static const char*job_name(int kind){
     if(kind==J_ID_LIST)return "identity-list";
     if(kind==J_ID_BACKUP)return "identity-backup";
     if(kind==J_CHARGER)return "charger-mode";
+    if(kind==J_UPDATES_CHECK)return "updates-check";
+    if(kind==J_UPDATES_FETCH)return "updates-fetch";
     if(kind==J_ID_BACKUPS)return "identity-backups";
     if(kind==J_ID_RESTORE)return "identity-restore";
     if(wifi_job(kind))return (const char*[]){"wifi-status","wifi-scan","wifi-connect","wifi-disconnect","wifi-forget"}[kind-J_WIFI_STATUS];
@@ -2572,7 +2587,7 @@ static bool launch_job(App*a,int kind,char*const*args){
     if(!a->job_completing){a->job_orphan=false;a->job_page_mark=true;}
     if(kind==J_FS_LIST){a->pressed_action=0;a->button_count=0;a->focus=-1;}
     else if(!terminal_background_job(kind))stop_inertia(a,"operation");
-    if(!terminal_job(kind)&&kind!=J_INSTALL_STATUS&&kind!=J_SYS_STATUS&&kind!=J_INVENTORY&&kind!=J_STORAGE_INVENTORY&&kind!=J_FS_INVENTORY&&kind!=J_FS_LIST&&kind!=J_TOOLS_STATUS&&kind!=J_DISPLAY_STATUS&&kind!=J_DISPLAY_SET&&kind!=J_USB_STATUS&&kind!=J_FLASH_TARGETS&&kind!=J_USB_SYNC&&kind!=J_USB_BACKUP&&kind!=J_USB_EJECT&&kind!=J_SYSINFO&&!wifi_job(kind)&&kind!=J_CATALOG&&kind!=J_CATALOG_CHECK&&kind!=J_PKG_SEARCH&&kind!=J_ID_LIST&&kind!=J_ID_BACKUPS&&kind!=J_CHARGER&&!images_job(kind)&&kind!=J_APLAN_SHOW&&kind!=J_APLAN_PREPARE&&kind!=J_APLAN_FORGET&&kind!=J_ROOT_LIST&&kind!=J_CARD_LIST&&kind!=J_COPY_LIST&&kind!=J_ROM_KIND)screen(a,PROGRESS);
+    if(!terminal_job(kind)&&kind!=J_UPDATES_CHECK&&kind!=J_INSTALL_STATUS&&kind!=J_SYS_STATUS&&kind!=J_INVENTORY&&kind!=J_STORAGE_INVENTORY&&kind!=J_FS_INVENTORY&&kind!=J_FS_LIST&&kind!=J_TOOLS_STATUS&&kind!=J_DISPLAY_STATUS&&kind!=J_DISPLAY_SET&&kind!=J_USB_STATUS&&kind!=J_FLASH_TARGETS&&kind!=J_USB_SYNC&&kind!=J_USB_BACKUP&&kind!=J_USB_EJECT&&kind!=J_SYSINFO&&!wifi_job(kind)&&kind!=J_CATALOG&&kind!=J_CATALOG_CHECK&&kind!=J_PKG_SEARCH&&kind!=J_ID_LIST&&kind!=J_ID_BACKUPS&&kind!=J_CHARGER&&!images_job(kind)&&kind!=J_APLAN_SHOW&&kind!=J_APLAN_PREPARE&&kind!=J_APLAN_FORGET&&kind!=J_ROOT_LIST&&kind!=J_CARD_LIST&&kind!=J_COPY_LIST&&kind!=J_ROM_KIND)screen(a,PROGRESS);
     else if(kind==J_INVENTORY&&a->screen!=RESULT)copy(a->status,sizeof(a->status),"Reading device inventory...");
     if(!terminal_background_job(kind))a->dirty=true;
     return true;
@@ -3310,6 +3325,7 @@ static void theme_file_chosen(App*a){start_theme_job(a,J_THEME_IMPORT);}
 #include "android_plan_ui.h"
 #include "wipe_ui.h"
 #include "androidlog_ui.h"
+#include "updates_ui.h"
 #include "android_ui.h"
 #include "card_ui.h"
 #include "copies_ui.h"
@@ -3372,6 +3388,7 @@ static void complete_job(App*a){
     if(kind==J_USB_EJECT){complete_usb_eject(a,parsed?&doc:NULL,ok);free(tok);job_reply_done(a,ended);return;}
     /* The list of partitions can start the check of a chosen image (2026-11-10, "Flash it to BOOT"):
        that new job owns a->job, so this reply is taken off it first, as for the catalog. */
+    if(updates_job(kind)){char*reply=j->output;j->output=NULL;complete_updates_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
     if(flash_job(kind)){char*reply=j->output;j->output=NULL;complete_flash_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
     if(kind==J_SYSINFO){if(ok)complete_sysinfo(a,&doc);free(tok);job_reply_done(a,ended);return;}
     if(theme_job(kind)){complete_theme_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
@@ -3880,7 +3897,11 @@ static int settings_run(App*a,char*const*args,char*out,size_t size){
 }
 static void settings_load(App*a){
     if(!a->device)return;
-    char data[768],*args[]={a->python,"-B",(char*)settings_helper,"status",NULL};if(settings_run(a,args,data,sizeof(data))){copy(a->status,sizeof(a->status),"Settings could not be read. Defaults are shown, and nothing is saved.");a->successful=false;return;}
+    char data[768],*args[]={a->python,"-B",(char*)settings_helper,"status",NULL};int rc=settings_run(a,args,data,sizeof(data));
+    /* Settings that cannot be read, or are damaged (exit 4), never mean "no password" (2026-11-12,
+     * audit): the recovery stays locked, and nothing is saved over them. */
+    if(rc){a->settings_broken=rc==4?4:2;a->lock_enabled=true;a->lock_mode=1;a->locked=true;copy(a->status,sizeof(a->status),rc==4?"The settings are damaged, so the recovery stays locked":"Settings could not be read, so the recovery stays locked");a->successful=false;return;}
+    a->settings_broken=0;
     JsonToken t[64];Json j;if(json_parse(&j,data,t,64)<1)return;
     char code[8]={0};jstring(&j,0,"language",code,sizeof(code));for(unsigned int n=0;n<LANGUAGE_COUNT;n++)if(!strcmp(code,language_codes[n]))ui_language=n;
     theme_files_scan(); /* The settings helper has just brought imported themes to RAM. */
@@ -3983,13 +4004,26 @@ static void access_close(App*a){
     a->access_id[0]=0;a->lock_note[0]=0;a->fs_prompt_kind=a->access_kind;copy(a->fs_prompt,sizeof(a->fs_prompt),a->access_prompt);memset(a->access_prompt,0,sizeof(a->access_prompt));
     a->prompt_cursor=strlen(a->fs_prompt);screen(a,a->access_return);
 }
+static void lock_open(App*a);
+/* Settings read again: once they can be, the lock is the ordinary one, or none. */
+static void lock_settings_retry(App*a){
+    settings_load(a);
+    if(a->settings_broken){toast(a,a->settings_broken==4?"The settings are still damaged":"Settings could not be read");a->dirty=true;return;}
+    if(!a->locked)lock_open(a);else{a->lock_note[0]=0;a->dirty=true;}
+}
+static void lock_settings_erase(App*a){
+    char*args[]={a->python,"-B",(char*)settings_helper,"reset-damaged",NULL};
+    int rc=settings_run(a,args,NULL,0);
+    toast(a,rc==0?"Settings and userdata were erased":(rc==1?"The settings are not damaged: nothing was erased":"The settings and userdata could not be erased"));
+    lock_settings_retry(a);
+}
 static void lock_open(App*a){
     a->locked=false;a->lock_opened=true;a->lock_note[0]=0;a->fs_prompt_kind=a->lock_kept_kind;copy(a->fs_prompt,sizeof(a->fs_prompt),a->lock_kept);memset(a->lock_kept,0,sizeof(a->lock_kept));
     a->prompt_cursor=strlen(a->fs_prompt);screen(a,a->lock_return);
 }
 /* One step of a password flow. Every step that changes protection first proves the current password. */
 static void lock_submit(App*a){
-    int kind=a->fs_prompt_kind;char entered[128];copy(entered,sizeof(entered),a->fs_prompt);
+    int kind=a->fs_prompt_kind,verified=0;char entered[128];copy(entered,sizeof(entered),a->fs_prompt);
     memset(a->fs_prompt,0,sizeof(a->fs_prompt));a->prompt_cursor=0;a->prompt_scroll=0;a->lock_note[0]=0;a->dirty=true;
     if(kind==J_LOCK_SET){
         if(strlen(entered)<4)copy(a->lock_note,sizeof(a->lock_note),"Use at least 4 characters");
@@ -3998,8 +4032,9 @@ static void lock_submit(App*a){
         if(strcmp(entered,a->lock_new)){lock_prompt(a,J_LOCK_SET);copy(a->lock_note,sizeof(a->lock_note),"The passwords do not match");}
         else{int rc=lock_call(a,"set-password",a->lock_new,a->lock_flow==LF_CHANGE?a->lock_old:NULL);if(rc==0||rc==3){a->lock_enabled=true;a->lock_digits=strspn(a->lock_new,"0123456789")==strlen(a->lock_new);}lock_result(a,rc,"Password saved");lock_done(a);}
     }else if(a->now<a->lock_wait_until){/* The note on the page counts down. */
-    }else if(lock_call(a,"verify",entered,NULL))lock_wrong(a);
-    else{
+    }else if((verified=lock_call(a,"verify",entered,NULL))!=0){
+        if(verified==2||verified==4){copy(a->lock_note,sizeof(a->lock_note),"Settings could not be read: no password can be checked");a->dirty=true;}else lock_wrong(a);
+    }else{
         a->lock_failures=0;a->lock_wait_until=0;
         if(kind==J_LOCK_ENTER)lock_open(a);
         else if(kind==J_LOCK_ACCESS){access_file("granted");access_close(a);}
@@ -4070,6 +4105,7 @@ static void action_run(App*a,int id){
         else if(id==A_ACCESS_DENY){char name[64];snprintf(name,sizeof(name),"denied-%s.json",a->access_id);access_file(name);access_close(a);}
         return;
     }
+    if(lock_prompting(a)&&a->settings_broken&&(id==A_LOCK_SETTINGS_RETRY||id==A_LOCK_SETTINGS_ERASE)){if(id==A_LOCK_SETTINGS_RETRY)lock_settings_retry(a);else lock_settings_erase(a);return;}
     if(lock_prompting(a)){if(id==A_BACK)lock_cancel(a);else if(id==A_LOCK_KEYBOARD){a->lock_keyboard=!a->lock_keyboard;a->dirty=true;}else if(id==A_FS_PROMPT_NEXT||id==A_KB_ENTER)lock_submit(a);else(void)files_action(a,id);return;}
     if(a->locked)return;
     /* The flashlight waits for nothing: it is no job and touches no storage. */
@@ -4128,6 +4164,7 @@ static void action_run(App*a,int id){
     if(android_plan_action(a,id))return;
     if(wipe_action(a,id))return;
     if(android_log_action(a,id))return;
+    if(updates_action(a,id))return;
     if(root_action(a,id))return;
     if(manage_action(a,id))return;
     if(card_action(a,id))return;
@@ -4885,7 +4922,7 @@ static void initialize(App*a){
     {const char*shot_helper=getenv("A22X_RECOVERY_SCREENSHOT_HELPER");copy(a->shot_helper,sizeof(a->shot_helper),shot_helper&&*shot_helper?shot_helper:"/opt/a22x-recovery/screenshot.py");}
     {const char*card_helper=getenv("A22X_RECOVERY_CARD_HELPER");copy(a->card_helper,sizeof(a->card_helper),card_helper&&*card_helper?card_helper:"/opt/a22x-recovery/sdcard.py");a->card_index=-1;}
     const char*zip_helper=getenv("A22X_RECOVERY_ZIP_HELPER");copy(a->zip_helper,sizeof(a->zip_helper),zip_helper&&*zip_helper?zip_helper:"/opt/a22x-recovery/zip_install.py");
-    const char*gsi_helper=getenv("A22X_RECOVERY_GSI_HELPER");copy(a->gsi_helper,sizeof(a->gsi_helper),gsi_helper&&*gsi_helper?gsi_helper:"/opt/a22x-recovery/android_gsi.py");a->android_selected=-1;
+    const char*gsi_helper=getenv("A22X_RECOVERY_GSI_HELPER");copy(a->gsi_helper,sizeof(a->gsi_helper),gsi_helper&&*gsi_helper?gsi_helper:"/opt/a22x-recovery/android_gsi.py");{const char*updates=getenv("A22X_RECOVERY_UPDATES_HELPER");copy(a->updates_helper,sizeof(a->updates_helper),updates&&*updates?updates:"/opt/a22x-recovery/updates.py");}a->android_selected=-1;
     const char*samsung_helper=getenv("A22X_RECOVERY_SAMSUNG_HELPER");copy(a->samsung_helper,sizeof(a->samsung_helper),samsung_helper&&*samsung_helper?samsung_helper:"/opt/a22x-recovery/samsung_firmware.py");
     const char*flash_helper=getenv("A22X_RECOVERY_FLASH_HELPER");copy(a->flash_helper,sizeof(a->flash_helper),flash_helper&&*flash_helper?flash_helper:"/opt/a22x-recovery/flash.py");a->flash_selected=-1;a->vibration=2;a->systems_selected=-1;
     const char*install_helper=getenv("A22X_RECOVERY_INSTALL_HELPER");copy(a->install_helper,sizeof(a->install_helper),install_helper&&*install_helper?install_helper:"/opt/a22x-recovery/install.py");a->install.pending_selected=-1;
@@ -5637,6 +5674,25 @@ static int test_battery(void){
 /* 2026-11-12: how Android's last start ended, as init left it in RAM. The page opens once from the
    home page for a start that failed, never for an ordinary restart or a log that just ends, and
    not again for the start the owner has read about. */
+/* 2026-11-12: Settings > Updates reads what updates.py found, and a fetched image goes on to Flash
+   a partition with its partition chosen. */
+static int test_updates_page(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->inventory_ok=true;a->now=100000;a->preview=true;
+    static char check[]="{\"ok\":true,\"recovery\":{\"installed\":\"0.6.199\",\"latest\":{\"version\":\"v0.6.201\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"},\"newer\":true,\"error\":\"\"},"
+        "\"boot\":{\"kind\":\"linux\",\"state\":\"older\",\"latest\":{\"version\":\"v147\",\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"newer\":true}}";
+    JsonToken t[96];Json j;assert(json_parse(&j,check,t,96)>0);
+    a->screen=UPDATES;complete_updates_job(a,&j,J_UPDATES_CHECK,true);
+    assert(a->updates_known&&a->upd_rec_newer&&a->upd_boot_newer&&!strcmp(a->upd_rec_latest,"v0.6.201")&&!strcmp(a->upd_boot_state,"older")&&valid_sha256(a->upd_boot_sha));
+    render(a);
+    static char fetched[]="{\"ok\":true,\"what\":\"recovery\",\"volume\":\"cache\",\"volume_token\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"path\":\"/a22x-recovery/updates/recovery-0.6.201.img\",\"target\":\"recovery\"}";
+    assert(json_parse(&j,fetched,t,96)>0);copy(a->flash_after_label,sizeof(a->flash_after_label),"recovery");
+    complete_updates_job(a,&j,J_UPDATES_FETCH,true);
+    assert(a->screen==FLASH&&a->flash_after_targets&&!strcmp(a->flash_volume,"cache")&&!strcmp(a->flash_path,"/a22x-recovery/updates/recovery-0.6.201.img")&&!strcmp(a->flash_after_label,"recovery"));
+    static char offline[]="{\"ok\":true,\"recovery\":{\"installed\":\"0.6.199\",\"latest\":null,\"newer\":false,\"error\":\"UPDATE_UNAVAILABLE\"},\"boot\":{\"kind\":\"android\",\"latest\":null,\"newer\":false}}";
+    assert(json_parse(&j,offline,t,96)>0);a->screen=UPDATES;complete_updates_job(a,&j,J_UPDATES_CHECK,true);
+    assert(a->updates_known&&!a->upd_rec_newer&&!a->upd_boot_newer&&!strcmp(a->upd_boot_kind,"android"));render(a);
+    free(a->pixels);free(a);return 1;
+}
 static int test_android_log(void){
     char path[]="/tmp/a22x-alog-XXXXXX";int fd=mkstemp(path);assert(fd>=0);close(fd);setenv("A22X_RECOVERY_ANDROID_LOG",path,1);
     #define ALOG_FILE(text) do{FILE*f=fopen(path,"w");assert(f);fputs(text,f);fclose(f);}while(0)
@@ -5844,7 +5900,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;

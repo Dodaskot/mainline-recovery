@@ -144,8 +144,10 @@ class TestBoot(unittest.TestCase):
         self.error('BOOT_OTHER_PHONE', padded(boot(kernel(), ramdisk({'ro.product.bootimage.device': 'a32x'}))))
         self.error('BOOT_OTHER_PHONE', padded(boot(kernel(), ramdisk(), dt_table(fdt('Galaxy A32', ['samsung,a32x', 'mediatek,mt6853'])))))
         self.error('BOOT_PHONE_UNKNOWN', padded(boot(kernel(), ramdisk())))
-        info = bootimage.inspect('boot', padded(boot(kernel(), ramdisk(), dt_table(fdt('MT6833', ['mediatek,MT6833'])))))
-        self.assertEqual((info['device']['this_phone'], info['device']['soc']), (False, True))
+        # 2026-11-12 audit: the chip alone is not this phone, and another maker's board is another phone.
+        self.error('BOOT_PHONE_UNKNOWN', padded(boot(kernel(), ramdisk(), dt_table(fdt('MT6833', ['mediatek,MT6833'])))))
+        self.error('BOOT_OTHER_PHONE', padded(boot(kernel(), ramdisk(), dt_table(fdt('Redmi', ['xiaomi,camellia', 'mediatek,mt6833'])))))
+        self.error('BOOT_OTHER_PHONE', padded(boot(kernel(), ramdisk({'ro.product.model': 'SM-A325F'}))))
 
     def test_headers_this_bootloader_cannot_use_are_refused(self):
         self.error('BOOT_HEADER_UNSUPPORTED', padded(boot(kernel(), ramdisk(), dt_table(MAINLINE_TREE), version=3)))

@@ -1,6 +1,6 @@
 # Test results
 
-Recovery **0.6.197**, recovery kernel `7.2.0-a22x-recovery+ #137`, BOOT v147 (kernel `#138`), 2026-11-12.
+Recovery **0.6.206**, recovery kernel `7.2.0-a22x-recovery+ #137`, BOOT v147 (kernel `#138`), 2026-11-12.
 
 Two kinds of evidence are kept apart here. The first is automatic: tests that run on a computer
 against fixtures, with no phone attached. The second is what was done on the phone itself
@@ -9,13 +9,13 @@ is never listed as working on the phone.
 
 ## Automatic tests (computer, fixtures)
 
-One full run of every suite on the sources of 0.6.197: **24 of 24 suites passed**.
+One full run of every suite on the sources of 0.6.206: **24 of 24 suites passed**.
 
 | Suite | Result | Size |
 |---|---|---|
-| Helpers (Python): `tests/` | pass | 706 tests |
+| Helpers (Python): `tests/` | pass | 741 tests |
 | Backup backend: `backend/tests/` | pass | 106 tests |
-| Interface self-tests: `make test` | pass | 102 self-tests |
+| Interface self-tests: `make test` | pass | 103 self-tests |
 | `ui: make integration` | pass | 2 profiles |
 | `ui: make files-integration` | pass | 3 workflows |
 | `ui: make v03-integration` | pass | 10 workflows |
@@ -23,7 +23,7 @@ One full run of every suite on the sources of 0.6.197: **24 of 24 suites passed*
 | `ui: make motion-integration` | pass | 4 workflows |
 | `ui: make usb-ui-integration` | pass | 5 workflows |
 | `ui: make terminal-ui-integration` | pass | 13 workflows, 568 checks |
-| `ui: make display-ui-integration` | pass | 53 workflows, 1187 checks |
+| `ui: make display-ui-integration` | pass | 53 workflows, 1208 checks |
 | `ui: make locale-ui-test` | pass | 27 checks, 312 time zones |
 | `ui: make shells-ui-test` | pass | 32 checks |
 | `ui: make charger-ui-test` | pass |  |
@@ -80,6 +80,17 @@ Done by touch on the phone unless said otherwise.
 | ROM from a file: Google's Android 15 ZIP chosen on the SD card | 192, 193 | recognised as an Android image with its build; since 193 the review warns that it needs kernel 4.19 (not installed) |
 | Restore Android with its data from the copy (10 partitions, 57.3 GiB) over four Linux systems | 191 | boot, super, metadata and userdata written and read back, six partitions already the same; 27 minutes; the Linux BOOT that was there is kept on cache |
 | Download an Android image from the catalog to the SD card (crDroid 12.12 with microG, 1.0 GiB) and install it | 191 | downloaded and checked; system written into super and read back, userdata formatted for Android. Not started yet |
+| Partitions of super open read-only in Files: system mounted from Files, its build.prop read; super held while one is open; an installation that needs super closes them | 199 | works |
+| Cache checked at every start (e2fsck -p): it had been mounted 187 times without a check | 198 | works |
+| Access gate without the copy in RAM reads the disk; with storage busy it stays closed | 200 | works |
+| The stock BOOT, an APatch BOOT and Linux BOOTs pass the SM-A226B check | 200 | works |
+| A write cut short: its journal found at the next start and the write recognised as complete | 200 | works |
+| adb over USB comes back after the computer restarts its adb server | 200 | works |
+| ZIP installer room probed: no device nodes, no network, rights dropped, the recovery's root out of reach | 201 | works; devtmpfs can still be mounted, which the protected-partition check catches |
+| Settings > Updates: GitHub checked, the published recovery downloaded and checked | 202 | works |
+| Evolution X 11.11 (Treble GSI) from the catalog: downloaded, installed, started | 204 | starts |
+| Root with Magisk on Evolution X, data kept across restarts | 206 | works after the metadata fix; with 204 Android asked for a reset after its first restart |
+| Installer app: updates page, Android's BOOT kept on cache by itself | 205 | works |
 
 ### Android images tried on this phone
 
