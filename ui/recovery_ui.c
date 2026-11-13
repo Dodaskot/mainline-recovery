@@ -1441,7 +1441,10 @@ static void render_system(App*a){
     if(!a->partition_count){rounded(a,(Rect){28,y,664,84},26,PANEL);ellipsis(a,52,y+26,616,0,MUTED,a->message[0]?a->message:"No partition inventory received.");y+=102;}
     /* On a card, because a theme's picture may be behind this text. */
     rounded(a,(Rect){28,y,664,206},26,PANEL);wrapped(a,52,y+18,616,0,MUTED,"Recovery runs from RAM. Mounted Linux volumes can be maintained independently of the installed system. Encrypted volumes require their own unlock support.",4);
-    ellipsis(a,52,y+160,616,0,a->restore_qualified?GREEN:ORANGE,a->restore_qualified?"Restore admitted for regular-file fixtures":"Device restore is not qualified in this build");y+=224;
+    /* 2026-11-13, on the phone: the line of the 0.3 raw restore said restore was not qualified while
+       Linux snapshots restored; it now says what this recovery can restore. */
+    ellipsis(a,52,y+160,616,0,a->restore_qualified||a->linux_restore_available?GREEN:ORANGE,a->restore_qualified?"Restore admitted for regular-file fixtures":
+             a->linux_restore_available?"Linux snapshots: restore and wipe available":"Linux snapshots: restore unavailable on this phone");y+=224;
     button(a,(Rect){28,y,664,84},"Refresh inventory",A_REFRESH,ui_free(a),false,0);y+=108;
     a->page_content=y+a->page_scroll-230;a->clip_active=false;scroll_indicator(a,(Rect){698,230,5,1254},a->page_scroll,a->page_content,ORANGE);
 }
@@ -5452,7 +5455,7 @@ static bool preview(App*a,const char*name){
         a->pw_retry_kind=J_NONE;a->pw_return=BACKUP;a->fs_prompt_kind=J_BACKUP_PASSWORD;copy(a->fs_prompt,sizeof(a->fs_prompt),"pass7k");a->prompt_cursor=strlen(a->fs_prompt);a->secret_count=6;a->now=2000000;
         a->secret_typed_at=!strcmp(name,"secret-reveal")?a->now-200:(!strcmp(name,"secret-pop")?a->now-SECRET_REVEAL_MS-110:0);a->screen=FILE_PROMPT;}
     else if(!strcmp(name,"backup-password")){a->pw_retry_kind=J_NONE;a->pw_return=BACKUP;a->fs_prompt_kind=J_BACKUP_PASSWORD;copy(a->fs_prompt,sizeof(a->fs_prompt),"my pass 2026");a->prompt_cursor=strlen(a->fs_prompt);a->screen=FILE_PROMPT;}
-    else if(!strcmp(name,"backup-protected")){a->backup_encrypt=true;a->screen=BACKUP;}
+    else if(!strcmp(name,"backup-protected")){a->backup_encrypt=true;copy(a->backup_password,sizeof(a->backup_password),"my pass 2026");a->linux_backup_available=true;a->screen=BACKUP;}
     else if(!strcmp(name,"wipe-android")){a->wipe_android=true;a->screen=WIPE_REVIEW;}
     else if(!strncmp(name,"android-log",11)){
         /* What the owner met (kernel), init giving up for another reason (init), and a panic. */

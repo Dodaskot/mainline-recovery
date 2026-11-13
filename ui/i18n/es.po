@@ -1500,9 +1500,6 @@ msgstr "Dispositivo"
 msgid "Device inventory received"
 msgstr "Inventario del dispositivo recibido"
 
-msgid "Device restore is not qualified in this build"
-msgstr "La restauración en el dispositivo no está cualificada en esta versión"
-
 msgid "Device tree overlays"
 msgstr "Superposiciones del árbol de dispositivos"
 
@@ -2552,6 +2549,12 @@ msgstr "Linux desde SD o USB, cambiar de sistema"
 
 msgid "Linux restore awaits qualification"
 msgstr "La restauración de Linux espera cualificación"
+
+msgid "Linux snapshots: restore and wipe available"
+msgstr "Instantáneas de Linux: restaurar y borrar disponibles"
+
+msgid "Linux snapshots: restore unavailable on this phone"
+msgstr "Instantáneas de Linux: restaurar no disponible en este teléfono"
 
 msgid "Linux systems"
 msgstr "Sistemas Linux"

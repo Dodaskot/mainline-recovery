@@ -497,7 +497,6 @@ DESTINATION
 DESTINATION VOLUME
 Device
 Device inventory received
-Device restore is not qualified in this build
 Device tree overlays
 Diagnostic logs may include filenames, hardware identifiers and network details. Inspect the archive before sharing it.
 Diagnostics cannot be exported now.
@@ -848,6 +847,8 @@ Linux data saved
 Linux data saved, protected with the password
 Linux from SD or USB stick, switch systems
 Linux restore awaits qualification
+Linux snapshots: restore and wipe available
+Linux snapshots: restore unavailable on this phone
 Linux systems
 Linux used-block snapshot. Wipe empties userdata only and requires this backup to match its current contents. Boot and recovery are preserved.
 Live

@@ -8,6 +8,18 @@ against fixtures, with no phone attached. The second is what was done on the pho
 (SM-A226B), by touch, the way an owner would do it. Something that passed only on the computer
 is never listed as working on the phone.
 
+## Automatic tests (computer, fixtures), 1.0.0
+
+One full run of every suite on the sources of 1.0.0: **all 25 passed**.
+
+| Suite | Result | Size |
+|---|---|---|
+| Helpers (Python): `tests/` | pass | 797 tests |
+| Backup backend: `backend/tests/` | pass | 109 tests |
+| Interface self-tests: `make test` | pass | 105 self-tests |
+| 22 interface suites (`ui/Makefile`: `integration` … `catalog-chain-test`) | pass | as for 0.6.206, plus the Linux data and password pages |
+| `ui: make linux-integration` | pass | 4 workflows; with the x86-64 partclone of the qualification toolchain on the `PATH` |
+
 ## On the phone, 0.6.207 to 1.0.0 (2026-11-12 and 2026-11-13)
 
 Done by touch on the phone unless said otherwise.
@@ -30,6 +42,7 @@ Done by touch on the phone unless said otherwise.
 | vbmeta read for root through the checked loop | 237 | read: verification off on this phone |
 | The sound profile entry in the image's platform files | 237 | a link to the phone's UCM folder |
 | A screenshot while nothing holds the operation lock | 237 | saved on the card |
+| The public image 1.0.0: version, Linux snapshots without a capsule, the update check | 1.0.0 | shows 1.0.0; no SSH key, no capsule; snapshots: backup, restore and wipe offered; v0.6.206 on GitHub is not offered as an update |
 | Stock firmware A226BXXSBDZC3 installed from its ZIP on the card | 218 | unpacked, MD5-checked, written and read back; stock Android started |
 | LineageOS 20 for A226B installed by its own `update-binary` | 221 | installed; started after the offered reset of Android's data |
 | An AnyKernel3 kernel ZIP (BakaSU + SUSFS) | 220 | installed; Android started after the data reset |
