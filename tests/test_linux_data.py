@@ -52,7 +52,7 @@ class LinuxData(unittest.TestCase):
     def make_arch(self, top):
         for folder in ('etc/NetworkManager/system-connections', 'etc/ssh', 'home/akisha/.cache/junk', 'home/akisha/Документи', 'root',
                        'var/lib/pacman/local/firefox-1-1', 'var/lib/pacman/local/htop-3-1', 'var/lib/pacman/local/libfoo-1-1',
-                       'var/lib/pacman/local/zsh-5-1', 'var/tmp', 'lib/modules/7.2.0'):
+                       'var/lib/pacman/local/zsh-5-1', 'var/lib/pacman/local/linux-aarch64-1-1', 'var/tmp', 'lib/modules/7.2.0'):
             (top / folder).mkdir(parents=True)
         (top / 'etc/os-release').write_text('NAME="Arch Linux ARM"\nID=archarm\nID_LIKE=arch\nPRETTY_NAME="Arch Linux ARM"\n')
         (top / 'etc/passwd').write_text('root:x:0:0::/root:/bin/bash\nakisha:x:1000:1000::/home/akisha:/bin/zsh\nnobody:x:65534:65534::/:/sbin/nologin\n')
@@ -69,7 +69,7 @@ class LinuxData(unittest.TestCase):
         (top / 'home/akisha/.zshrc').write_text('alias ll=ls\n')
         (top / 'home/akisha/.cache/junk/big').write_bytes(b'x' * 4096)
         (top / 'root/.bash_history').write_text('ls\n')
-        for name, reason in (('firefox', None), ('htop', '0'), ('libfoo', '1'), ('zsh', None)):
+        for name, reason in (('firefox', None), ('htop', '0'), ('libfoo', '1'), ('zsh', None), ('linux-aarch64', None)):
             (top / ('var/lib/pacman/local/%s-%s-1/desc' % (name, '3' if name == 'htop' else '5' if name == 'zsh' else '1'))).write_text(
                 '%NAME%\n' + name + '\n\n' + ('%REASON%\n' + reason + '\n\n' if reason else ''))
 

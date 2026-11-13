@@ -23,6 +23,7 @@ import contextlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import subprocess
@@ -163,7 +164,16 @@ def accounts_table(accounts):
                              a['hash'] or '-', ','.join(a['groups']) or '-')) + '\n' for a in accounts).encode()
 
 
+HARDWARE = re.compile(r'^(linux|linux-.*|.*-keyring|base|base-files|grub.*|mkinitcpio.*|dracut.*|systemd|systemd-.*|uboot-.*|zram-generator)$')
+
+
 def packages_of(root_fd, family):
+    found = packages_read(root_fd, family)
+    # The kernel, firmware, boot and base of this system belong to it, not to its owner.
+    return None if found is None else [name for name in found if not HARDWARE.match(name)]
+
+
+def packages_read(root_fd, family):
     """The packages the owner asked for, by name, as the package manager's own records say; None when
     this recovery cannot read them."""
     if family == 'arch':
@@ -490,6 +500,12 @@ def restore(context, volume, token, path, parts, confirmed, progress):
             require(parts, 'NOTHING_SELECTED', 'The backup holds none of the chosen parts')
             with linux_root(context, write=True) as (pin, root, release):
                 staging = unpack_into(archive_fd, root, parts, progress)
+                # The recovery's own script does the work here; the archive's copy is for other devices.
+                script = staging / 'restore.sh'
+                script.unlink(missing_ok=True)
+                fd = os.open(script, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o700)
+                with os.fdopen(fd, 'wb') as out:
+                    out.write(SCRIPT.read_bytes())
                 lines, status, note = [], None, ''
                 try:
                     run_parts = list(parts)
@@ -562,9 +578,21 @@ def main(argv=None):
                 print(json.dumps({'event': 'progress', 'operation': 'linux-data-' + operation, 'phase': phase,
                                   'partition': label[-100:], 'bytes_done': done, 'bytes_total': max(total, 1)},
                                  separators=(',', ':')), file=sys.stderr, flush=True)
-        with context.operation_lock():
+        if operation == 'inspect':
+            # Only a look: it waits out a short job of the recovery's own (2026-11-13, on the phone:
+            # OPERATION_BUSY right after the start).
+            for attempt in range(30):
+                try:
+                    with context.operation_lock():
+                        value = inspect(context)
+                    break
+                except fs.FilesystemError as error:
+                    if error.code != 'OPERATION_BUSY' or attempt == 29:
+                        raise
+                    time.sleep(0.5)
+        with context.operation_lock() if operation != 'inspect' else contextlib.nullcontext():
             if operation == 'inspect':
-                value = inspect(context)
+                pass
             elif operation == 'backup':
                 value = backup(context, args.parts.split(','), args.volume, args.expected_volume_token, args.confirm, progress)
             else:

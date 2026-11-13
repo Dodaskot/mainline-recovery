@@ -525,7 +525,7 @@ static bool install_job(int kind){return kind>=J_INSTALL_STATUS&&kind<=J_INSTALL
 static bool wifi_job(int kind){return kind>=J_WIFI_STATUS&&kind<=J_WIFI_FORGET;}
 /* These only read state. The page stays usable while they run: a tap waits for the
  * result instead of the whole page going grey. */
-static bool job_quiet(int kind){return wifi_job(kind)||kind==J_UPDATES_CHECK||kind==J_APLAN_SHOW||kind==J_APLAN_PREPARE||kind==J_APLAN_FORGET||kind==J_IMAGES||kind==J_CATALOG||kind==J_CATALOG_CHECK||kind==J_PKG_SEARCH||kind==J_ID_LIST||kind==J_ID_BACKUPS||kind==J_CHARGER||kind==J_SYSINFO||kind==J_TOOLS_STATUS||kind==J_DISPLAY_STATUS||kind==J_DISPLAY_SET||kind==J_USB_STATUS||kind==J_SYS_STATUS||kind==J_INSTALL_STATUS||kind==J_STORAGE_INVENTORY||kind==J_FS_INVENTORY||kind==J_FS_LIST||kind==J_LIST||kind==J_FLASH_TARGETS||kind==J_USB_SYNC||kind==J_TERM_STATUS||kind==J_TERM_STOP||kind==J_CARD_LIST||kind==J_COPY_LIST||kind==J_ROM_KIND;}
+static bool job_quiet(int kind){return wifi_job(kind)||kind==J_LD_INSPECT||kind==J_UPDATES_CHECK||kind==J_APLAN_SHOW||kind==J_APLAN_PREPARE||kind==J_APLAN_FORGET||kind==J_IMAGES||kind==J_CATALOG||kind==J_CATALOG_CHECK||kind==J_PKG_SEARCH||kind==J_ID_LIST||kind==J_ID_BACKUPS||kind==J_CHARGER||kind==J_SYSINFO||kind==J_TOOLS_STATUS||kind==J_DISPLAY_STATUS||kind==J_DISPLAY_SET||kind==J_USB_STATUS||kind==J_SYS_STATUS||kind==J_INSTALL_STATUS||kind==J_STORAGE_INVENTORY||kind==J_FS_INVENTORY||kind==J_FS_LIST||kind==J_LIST||kind==J_FLASH_TARGETS||kind==J_USB_SYNC||kind==J_TERM_STATUS||kind==J_TERM_STOP||kind==J_CARD_LIST||kind==J_COPY_LIST||kind==J_ROM_KIND;}
 enum { NAV_GESTURES,NAV_BUTTONS,NAV_OFF };
 enum { GESTURE_NONE,GESTURE_BACK,GESTURE_BOTTOM };
 static bool flash_job(int kind){return kind>=J_FLASH_TARGETS&&kind<=J_FLASH_MEMBERS;}
@@ -2681,7 +2681,7 @@ static bool launch_job(App*a,int kind,char*const*args){
     if(!a->job_completing){a->job_orphan=false;a->job_page_mark=true;}
     if(kind==J_FS_LIST){a->pressed_action=0;a->button_count=0;a->focus=-1;}
     else if(!terminal_background_job(kind))stop_inertia(a,"operation");
-    if(!terminal_job(kind)&&kind!=J_UPDATES_CHECK&&kind!=J_INSTALL_STATUS&&kind!=J_SYS_STATUS&&kind!=J_INVENTORY&&kind!=J_STORAGE_INVENTORY&&kind!=J_FS_INVENTORY&&kind!=J_FS_LIST&&kind!=J_TOOLS_STATUS&&kind!=J_DISPLAY_STATUS&&kind!=J_DISPLAY_SET&&kind!=J_USB_STATUS&&kind!=J_FLASH_TARGETS&&kind!=J_USB_SYNC&&kind!=J_USB_BACKUP&&kind!=J_USB_EJECT&&kind!=J_SYSINFO&&!wifi_job(kind)&&kind!=J_CATALOG&&kind!=J_CATALOG_CHECK&&kind!=J_PKG_SEARCH&&kind!=J_ID_LIST&&kind!=J_ID_BACKUPS&&kind!=J_CHARGER&&!images_job(kind)&&kind!=J_APLAN_SHOW&&kind!=J_APLAN_PREPARE&&kind!=J_APLAN_FORGET&&kind!=J_ROOT_LIST&&kind!=J_CARD_LIST&&kind!=J_COPY_LIST&&kind!=J_ROM_KIND)screen(a,PROGRESS);
+    if(!terminal_job(kind)&&kind!=J_LD_INSPECT&&kind!=J_UPDATES_CHECK&&kind!=J_INSTALL_STATUS&&kind!=J_SYS_STATUS&&kind!=J_INVENTORY&&kind!=J_STORAGE_INVENTORY&&kind!=J_FS_INVENTORY&&kind!=J_FS_LIST&&kind!=J_TOOLS_STATUS&&kind!=J_DISPLAY_STATUS&&kind!=J_DISPLAY_SET&&kind!=J_USB_STATUS&&kind!=J_FLASH_TARGETS&&kind!=J_USB_SYNC&&kind!=J_USB_BACKUP&&kind!=J_USB_EJECT&&kind!=J_SYSINFO&&!wifi_job(kind)&&kind!=J_CATALOG&&kind!=J_CATALOG_CHECK&&kind!=J_PKG_SEARCH&&kind!=J_ID_LIST&&kind!=J_ID_BACKUPS&&kind!=J_CHARGER&&!images_job(kind)&&kind!=J_APLAN_SHOW&&kind!=J_APLAN_PREPARE&&kind!=J_APLAN_FORGET&&kind!=J_ROOT_LIST&&kind!=J_CARD_LIST&&kind!=J_COPY_LIST&&kind!=J_ROM_KIND)screen(a,PROGRESS);
     else if(kind==J_INVENTORY&&a->screen!=RESULT)copy(a->status,sizeof(a->status),"Reading device inventory...");
     if(!terminal_background_job(kind))a->dirty=true;
     return true;
@@ -6067,6 +6067,28 @@ static int test_files_select(void){
     a->animation=3;pointer(a,false,x,y,t+3600);assert(a->animation==3);   /* the lift does it no second time */
     free(a->pixels);free(a);return 1;
 }
+/* 2026-11-13: Linux data: what the helper found, the toggles, an archive opened for its restore. */
+static int test_linux_data(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->preview=true;a->inventory_ok=true;
+    static const char seen[]="{\"ok\":true,\"operation\":\"inspect\",\"linux\":true,\"reason\":\"\",\"os\":{\"id\":\"archarm\",\"name\":\"Arch Linux ARM\",\"family\":\"arch\"},\"accounts\":[\"akisha\",\"guest\"],"
+        "\"parts\":{\"home\":1048576,\"settings\":2048,\"accounts\":2,\"packages\":-1},\"destinations\":[{\"volume\":\"sdcard-p1\",\"label\":\"card\",\"free_bytes\":5000000000},{\"volume\":\"usb-p1\",\"label\":\"stick\",\"free_bytes\":1000}],"
+        "\"archives\":[{\"volume\":\"sdcard-p1\",\"volume_token\":\"tok\",\"label\":\"card\",\"path\":\"/A22xDataBackups/x.tar.zst\",\"name\":\"x.tar.zst\",\"bytes\":900,\"created\":1794580000,\"os\":{\"name\":\"Debian 13\"},\"parts\":[\"home\",\"packages\"],\"accounts\":[\"akisha\"],\"packages\":12}]}";
+    JsonToken tokens[256];Json j;assert(json_parse(&j,seen,tokens,256)>0);
+    a->ld_parts=15u;a->screen=PROGRESS;complete_ld_job(a,&j,J_LD_INSPECT,true);
+    assert(a->screen==LINUX_DATA&&a->ld_known&&a->ld_linux&&!strcmp(a->ld_os,"Arch Linux ARM")&&!strcmp(a->ld_accounts,"akisha, guest")&&a->ld_home==1048576&&a->ld_account_count==2);
+    assert(a->ld_packages==-1&&a->ld_parts==7u&&a->ld_dest_count==2&&a->ld_archive_count==1&&a->ld_archives[0].parts==9u&&a->ld_archives[0].packages==12);
+    render(a);Button*b=test_button(a,A_LD_PART+3);assert(b&&!b->enabled);assert(test_button(a,A_LD_BACKUP)->enabled&&test_button(a,A_LD_BACKUP)->hold_ms==2000);
+    assert(test_press(a,A_LD_PART+0,50)&&a->ld_parts==6u&&test_press(a,A_LD_DEST,50)&&a->ld_dest_index==1);
+    assert(test_press(a,A_LD_PART+1,50)&&test_press(a,A_LD_PART+2,50)&&!a->ld_parts);render(a);assert(!test_button(a,A_LD_BACKUP)->enabled);
+    assert(test_press(a,A_LD_ARCHIVE+0,50)&&a->screen==LINUX_DATA_RESTORE&&a->ld_restore_parts==9u);
+    render(a);assert(test_button(a,A_LD_RPART+0)&&test_button(a,A_LD_RPART+3)&&!test_button(a,A_LD_RPART+1)&&test_button(a,A_LD_RESTORE)->hold_ms==3000);
+    assert(test_press(a,A_LD_RPART+0,50)&&test_press(a,A_LD_RPART+3,50)&&!a->ld_restore_parts);render(a);assert(!test_button(a,A_LD_RESTORE)->enabled);
+    assert(test_press(a,A_BACK,50)&&a->screen==LINUX_DATA);
+    static const char back[]="{\"ok\":true,\"operation\":\"restore\",\"parts\":[\"home\",\"packages\"],\"into\":{\"id\":\"ubuntu\",\"name\":\"Ubuntu 26.04\"},\"accounts_created\":[\"akisha\"],\"accounts_kept\":[],\"owners_changed\":1,\"packages_installed\":9,\"packages_missing\":3,\"missing\":[\"zsh\"],\"packages_unsupported\":false,\"note\":\"\"}";
+    a->ld_restore_parts=9u;assert(json_parse(&j,back,tokens,256)>0);complete_ld_job(a,&j,J_LD_RESTORE,true);
+    assert(a->screen==RESULT&&a->successful&&a->result_return==LINUX_DATA&&strstr(a->message,"Ubuntu 26.04")&&strstr(a->message,"akisha")&&strstr(a->message,"zsh")&&!a->ld_known);
+    free(a->pixels);free(a);return 1;
+}
 static int test_settings_reset(void){
     App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->preview=true;a->inventory_ok=true;
     unsigned int language=ui_language;const Theme*theme=ui_theme;const TerminalScheme*scheme=ui_terminal;
@@ -6181,7 +6203,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;

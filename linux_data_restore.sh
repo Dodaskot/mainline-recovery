@@ -177,6 +177,10 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
     installed=0
     missing=0
     for n in $names; do
+        # The kernel, firmware, boot and base of the system the archive came from stay there.
+        case $n in
+            linux|linux-*|*-keyring|base|base-files|grub*|mkinitcpio*|dracut*|systemd|systemd-*|uboot-*|zram-generator) continue ;;
+        esac
         if has "$n"; then installed=$((installed + 1))
         elif have "$n"; then ok="$ok $n"
         else missing=$((missing + 1)); say "missing $n"; fi

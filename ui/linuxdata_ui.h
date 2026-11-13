@@ -71,7 +71,7 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
             int os=json_get(j,i,"os");if(os>=0)jstring(j,os,"name",x->os,sizeof(x->os));
             x->bytes=json_uint(j,json_get(j,i,"bytes"),0);x->created=json_uint(j,json_get(j,i,"created"),0);x->packages=(unsigned int)json_uint(j,json_get(j,i,"packages"),0);
             x->parts=ld_mask(j,json_get(j,i,"parts"));ld_names(j,json_get(j,i,"accounts"),x->accounts,sizeof(x->accounts));}
-        a->ld_known=true;a->dirty=true;return;
+        a->ld_known=true;a->dirty=true;if(a->screen==PROGRESS)screen(a,LINUX_DATA);return;
     }
     a->successful=true;a->result_return=LINUX_DATA;a->ld_known=false;
     if(kind==J_LD_BACKUP){
