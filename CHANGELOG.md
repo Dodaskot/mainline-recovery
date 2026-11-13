@@ -33,6 +33,13 @@ BOOT copy also on the phone.
   for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
   the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
   start removes descriptions of saved BOOTs whose image is gone.
+- **Block-based ROMs installed by the recovery itself** (0.6.217): a ZIP with full block OTA images
+  (`*.new.dat` or Brotli `*.new.dat.br` with transfer lists) is written by the recovery, image by
+  image into its logical partitions laid out for the ROM, each read back, then the ROM's boot.img
+  when it is a BOOT of this phone; the ZIP's own updater is not run. A static Brotli decoder
+  (tools/brotli_dec.c on google/brotli 1.1.0) comes with the image. Checked on the phone with the
+  KKRT One UI 6.1 port: 5.5 GB written and read back; it then stopped at Samsung's Secure OS, which
+  refuses its trusted apps on this phone's bootloader (binary 11).
 - **What is inside an archive** (0.6.215): Flash a partition opens a ZIP, a Samsung tar or a 7z and
   lists its images with the partition each is for (a ROM's boot.img goes to boot, vendor.img to
   super/vendor), and says when the ZIP installs itself as a whole ROM; the review names the image

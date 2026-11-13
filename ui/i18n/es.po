@@ -4548,6 +4548,9 @@ msgstr "La imagen de arranque es mayor que la parte que cubre su pie AVB"
 msgid "The boot image is larger than the partition"
 msgstr "La imagen de arranque es mayor que la partición"
 
+msgid "The BOOT image of this ROM is larger than BOOT"
+msgstr ""
+
 msgid "The BOOT in the firmware is damaged: its AVB hash does not match"
 msgstr "El BOOT del firmware está dañado: su hash AVB no coincide"
 
@@ -5211,6 +5214,9 @@ msgstr "Los ajustes de recovery están dañados. No se puede comprobar la contra
 msgid "The recovery settings could not be read. The password cannot be checked, so the recovery stays locked."
 msgstr "No se pudieron leer los ajustes de recovery. No se puede comprobar la contraseña, así que recovery sigue bloqueado."
 
+msgid "The recovery writes the images of this ROM itself and reads them back; the script of the ZIP is not run"
+msgstr "El recovery escribe las imágenes de esta ROM y las relee; el script del ZIP no se ejecuta"
+
 msgid "The recovery's own folder stays"
 msgstr "La carpeta propia del recovery se queda"
 
@@ -5600,6 +5606,9 @@ msgstr "Esta imagen guarda su sistema en btrfs, que este recovery no puede leer"
 
 msgid "This image keeps its system on xfs, which this recovery cannot read"
 msgstr "Esta imagen guarda su sistema en xfs, que este recovery no puede leer"
+
+msgid "This installer is a program"
+msgstr ""
 
 msgid "This installer is a program: it can map and rewrite the logical partitions of super by itself"
 msgstr "Este instalador es un programa: puede mapear y reescribir por sí mismo las particiones lógicas de super"
@@ -6252,8 +6261,14 @@ msgstr "Las escrituras no son atómicas. Mantén la alimentación y la microSD c
 msgid "Writing"
 msgstr "Escribiendo"
 
+msgid "Writing "
+msgstr ""
+
 msgid "Writing a partition must be confirmed"
 msgstr "La escritura de una partición debe confirmarse"
+
+msgid "Writing boot"
+msgstr ""
 
 msgid "Writing the Linux BOOT"
 msgstr "Escribiendo el BOOT de Linux"

@@ -1513,6 +1513,7 @@ The boot image has an unusual page size
 The boot image has no kernel
 The boot image is larger than the part its AVB footer covers
 The boot image is larger than the partition
+The BOOT image of this ROM is larger than BOOT
 The BOOT in the firmware is damaged: its AVB hash does not match
 The BOOT that was there is kept on cache:
 The BOOT there is kept on cache before it is replaced. Magisk lives in the ramdisk and APatch in the kernel; their modules are installed in their apps in Android.
@@ -1734,6 +1735,7 @@ The ramdisk does not unpack to its end: the image is damaged or incomplete
 The ramdisk does not unpack: the image is damaged or incomplete
 The recovery settings are damaged. The password cannot be checked, so the recovery stays locked.
 The recovery settings could not be read. The password cannot be checked, so the recovery stays locked.
+The recovery writes the images of this ROM itself and reads them back; the script of the ZIP is not run
 The recovery's own folder stays
 The regional file is of another version than the AP
 The releases could not be read. Join Wi-Fi, then check again.
@@ -1864,6 +1866,7 @@ This image has no Wi-Fi program, so the desktop and apps cannot be downloaded at
 This image is already on the partition. There is nothing to flash.
 This image keeps its system on btrfs, which this recovery cannot read
 This image keeps its system on xfs, which this recovery cannot read
+This installer is a program
 This installer is a program: it can map and rewrite the logical partitions of super by itself
 This is a recovery image, not a boot image
 This is an update for phones with two system slots (payload.bin). This phone has one: choose a ROM made for it, or a system image.
@@ -2081,7 +2084,9 @@ WRITE ORDER
 Write text
 Writes are not atomic. Keep power and microSD connected. If interrupted, inspect installation status and review Resume; do not repeat the old execute command.
 Writing
+Writing 
 Writing a partition must be confirmed
+Writing boot
 Writing the Linux BOOT
 Writing the partition table
 WRITTEN

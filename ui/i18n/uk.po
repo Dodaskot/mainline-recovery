@@ -4548,6 +4548,9 @@ msgstr "Образ boot більший за частину, яку охоплю�
 msgid "The boot image is larger than the partition"
 msgstr "Образ boot більший за розділ"
 
+msgid "The BOOT image of this ROM is larger than BOOT"
+msgstr ""
+
 msgid "The BOOT in the firmware is damaged: its AVB hash does not match"
 msgstr "BOOT у прошивці пошкоджено: його AVB-хеш не збігається"
 
@@ -5211,6 +5214,9 @@ msgstr "Налаштування recovery пошкоджені. Пароль н�
 msgid "The recovery settings could not be read. The password cannot be checked, so the recovery stays locked."
 msgstr "Не вдалося прочитати налаштування recovery. Пароль не можна перевірити, тому recovery лишається заблокованим."
 
+msgid "The recovery writes the images of this ROM itself and reads them back; the script of the ZIP is not run"
+msgstr "Recovery сам записує образи цього ROM і перечитує їх; скрипт із ZIP не запускається"
+
 msgid "The recovery's own folder stays"
 msgstr "Власна тека Recovery лишається"
 
@@ -5600,6 +5606,9 @@ msgstr "Система в цьому образі лежить на btrfs, а ц
 
 msgid "This image keeps its system on xfs, which this recovery cannot read"
 msgstr "Система в цьому образі лежить на xfs, а цей рекавері не читає xfs"
+
+msgid "This installer is a program"
+msgstr ""
 
 msgid "This installer is a program: it can map and rewrite the logical partitions of super by itself"
 msgstr "Цей інсталятор — програма: вона може сама відображати й перезаписувати логічні розділи super"
@@ -6252,8 +6261,14 @@ msgstr "Записи не атомарні. Тримайте живлення й
 msgid "Writing"
 msgstr "Запис"
 
+msgid "Writing "
+msgstr ""
+
 msgid "Writing a partition must be confirmed"
 msgstr "Запис розділу треба підтвердити"
+
+msgid "Writing boot"
+msgstr ""
 
 msgid "Writing the Linux BOOT"
 msgstr "Запис Linux BOOT"

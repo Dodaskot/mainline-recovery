@@ -390,6 +390,78 @@ def package_sizes(fd):
     return sizes
 
 
+NATIVE_NOTE = 'The recovery writes the images of this ROM itself and reads them back; the script of the ZIP is not run'
+
+
+def native_possible(fd, sizes):
+    """Whether the recovery can write this block-based ROM itself: every image plain or Brotli with
+    the decoder at hand."""
+    import android_rom
+    if not sizes:
+        return False
+    with os.fdopen(os.dup(fd), 'rb') as raw, zipfile.ZipFile(raw) as archive:
+        names = set(archive.namelist())
+    return all(name + '.new.dat' in names or os.path.exists(android_rom.BROTLI) for name in sizes)
+
+
+def native_install(context, room, fd, sizes, found, progress):
+    """2026-11-13, the KKRT One UI port on the phone: its own updater, a program made for Android
+    8.1, wrote nothing in the room and crashed. A full block-based OTA is data this recovery can
+    write itself: each image through the transfer list into its logical partition, read back, then
+    the ROM's boot.img when it is a BOOT of this phone. Returns (lines for the result, exit code)."""
+    import android_rom
+    import bootimage
+    shown = []
+    parts = sorted(sizes)
+    try:
+        with os.fdopen(os.dup(fd), 'rb') as raw, zipfile.ZipFile(raw) as archive:
+            names = set(archive.namelist())
+            for index, name in enumerate(parts):
+                require(name in room.loops, 'ZIP_SUPER_LAYOUT', 'super has no logical partition ' + name)
+                node = os.open(room.loops[name], os.O_RDWR | os.O_CLOEXEC)
+                try:
+                    size = os.lseek(node, 0, os.SEEK_END)
+                    # Real bytes of each image (2026-11-13, the owner: "why only 1000 B?"), so the
+                    # screen shows sizes and speed; a script's installer gives only a fraction.
+                    done = android_rom.write_block_image(
+                        archive, name, node, size,
+                        lambda part, at, total: progress('Writing ' + part, {'label': 'super/' + part, 'size_bytes': total}, at))
+                finally:
+                    os.close(node)
+                shown.append('%s: %d MiB written and read back' % (name, done['blocks'] * android_rom.BLOCK >> 20))
+            if 'boot.img' in names and 'boot' in found:
+                target = found['boot']
+                info = archive.getinfo('boot.img')
+                require(info.file_size <= target['size_bytes'], 'BOOT_TOO_LARGE', 'The BOOT image of this ROM is larger than BOOT')
+                data = archive.read('boot.img')
+                try:
+                    this_phone = bootimage.inspect('boot', data)['device']['this_phone']
+                except (ValueError, KeyError):
+                    this_phone = False
+                if not this_phone:
+                    shown.append('boot.img: not a BOOT of this phone, left out')
+                else:
+                    progress('Writing boot', target, 0)
+                    image = data + bytes(target['size_bytes'] - len(data))
+                    writer = context.open_target(target, write=True)
+                    try:
+                        at = 0
+                        while at < len(image):
+                            at += os.pwrite(writer, image[at:at + (1 << 20)], at)
+                        os.fsync(writer)
+                        if context.mode == 'device':
+                            fcntl.ioctl(writer, flash.BLKFLSBUF)
+                    finally:
+                        os.close(writer)
+                    require(install.target_hash(context, target) == hashlib.sha256(image).hexdigest(), 'READBACK_MISMATCH',
+                            'BOOT does not match the image after writing')
+                    shown.append('boot: written and read back')
+    except android_rom.RomError as error:
+        fail(error.code, error.message, **error.details)
+    shown.append(NATIVE_NOTE)
+    return shown, 0
+
+
 def fit_plan(opened, sizes):
     """2026-11-13, a One UI 6 port for this phone (KKRT, made from the A06): its odm is 263 MB where
     this phone's is 4.3 MB, and it carries no dynamic_partitions_op_list, so its installer would
@@ -828,11 +900,12 @@ def run(context, args, progress):
             before = hashes(context, found)
             guarded = protected_hashes(context)
             layout = layout_hash(context, found) if 'super' in found else None
-            fitted = {}
+            fitted, sizes = {}, {}
             if 'super' in found and context.mode == 'device':
+                sizes = package_sizes(fd)
                 _, sfd, opened = flash.open_super(context)
                 try:
-                    fitted = fit_plan(opened, package_sizes(fd))
+                    fitted = fit_plan(opened, sizes)
                 finally:
                     os.close(sfd)
                 if fitted:
@@ -841,9 +914,14 @@ def run(context, args, progress):
             room = Room(context, found) if context.mode == 'device' else None
             if room:
                 room.attach_logical()
+            native = room is not None and native_possible(fd, sizes)
             try:
-                pid = os.fork()
-                if pid == 0:
+                pid = -1 if native else os.fork()
+                if native:
+                    os.close(write_fd)
+                    os.close(read_fd)
+                    shown, code = native_install(context, room, fd, sizes, found, progress)
+                elif pid == 0:
                     try:
                         os.close(read_fd)
                         null = os.open(os.devnull, os.O_RDWR)
@@ -856,12 +934,13 @@ def run(context, args, progress):
                             fixture_child(context, found, fd, write_fd, about['installer'])
                     finally:
                         os._exit(127)
-                os.close(write_fd)
-                try:
-                    shown, code = follow(read_fd, pid, lambda text, part: progress(text, {'label': 'zip', 'size_bytes': 1000}, int(part * 1000)),
-                                         time.monotonic() + RUN_SECONDS)
-                finally:
-                    os.close(read_fd)
+                if not native:
+                    os.close(write_fd)
+                    try:
+                        shown, code = follow(read_fd, pid, lambda text, part: progress(text, {'label': 'zip', 'size_bytes': 1000}, int(part * 1000)),
+                                             time.monotonic() + RUN_SECONDS)
+                    finally:
+                        os.close(read_fd)
             finally:
                 os.sync()
                 written, left = unmap_after(room.mapped_before) if room else ([], [])
@@ -919,6 +998,9 @@ def inspect(context, args, progress):
         finally:
             os.close(sfd)
         about['super_fit'] = {name: {'from': now, 'to': then} for name, (now, then) in plan.items()}
+        with flash.source_file(context, args.volume, args.volume_token, args.path) as fd:
+            if native_possible(fd, sizes):
+                about['warnings'] = [w for w in about['warnings'] if not w.startswith('This installer is a program')] + [NATIVE_NOTE]
         if plan:
             about['warnings'].append('super is laid out for this ROM first: ' + ', '.join(
                 '%s %d -> %d MiB' % (name, now >> 20, then >> 20) for name, (now, then) in sorted(plan.items())))

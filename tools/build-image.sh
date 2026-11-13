@@ -42,6 +42,9 @@ ADD=()
 add() { ADD+=(--add "$1=$2"); }
 for f in glibc-runtime/lib/* glibc-runtime/bin/*; do add "opt/a22x-recovery/glibc/${f#glibc-runtime/}" "$f"; done
 for t in make_f2fs lz4 unsquashfs; do add "bin/$t" "rt-wrappers/$t"; done
+# The Brotli decoder for block-based ROM packages (*.new.dat.br): tools/brotli_dec.c with c/common and
+# c/dec of google/brotli 1.1.0, built static for arm64 (2026-11-13). Without it such ROMs are refused.
+if [ -f helpers/brotli-dec ]; then add bin/brotli-dec helpers/brotli-dec; fi
 for f in "$S"/platform/build/*.sh "$S"/platform/build/*.patch "$S"/platform/build/keys/*.gpg; do
     add "opt/a22x-recovery/platform/build/${f#"$S"/platform/build/}" "$f"
 done
