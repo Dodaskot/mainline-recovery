@@ -33,6 +33,14 @@ BOOT copy also on the phone.
   for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
   the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
   start removes descriptions of saved BOOTs whose image is gone.
+- **From the review of flashing, installation and copies** (0.6.209): a tar image can no longer
+  write outside its folder (absolute names, `..`, a file over a link); another phone's Android data
+  is never restored here; an old Android copy in a folder follows the archive's rules (locked
+  partitions left, BOOT kept); a failed write inside super puts its copy back; progress output that
+  nobody reads no longer stops a write (checked on the phone); old installation journals are pruned;
+  an unreadable plan from the app can be forgotten; a non-list "wifi" in the app's handoff no longer
+  loses the language and time zone; a tar with a folder beside its disk image imports; diagnostics
+  with long logs are trimmed instead of failing.
 - **Switching systems**: an account made in one system (a "New user" of a system installed
   beside the others) is added to the system switched to, when its name, UID and group are free
   there, so it no longer locks the others out; the shared /home is checked when an installation

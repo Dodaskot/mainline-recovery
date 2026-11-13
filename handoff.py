@@ -56,7 +56,10 @@ def checked(record):
     """The parts that may be applied: (networks as (ssid bytes, password), language, time zone)."""
     import wifi
     networks = []
-    for item in (record.get('wifi') or [])[:MAX_WIFI]:
+    # 2026-11-12 review: a "wifi" that is no list (an object, a number) raised TypeError after the
+    # file was already gone, and the language and time zone were lost with it. It is taken as empty.
+    listed = record.get('wifi')
+    for item in (listed if isinstance(listed, list) else [])[:MAX_WIFI]:
         if not isinstance(item, dict):
             continue
         ssid, password = item.get('ssid'), item.get('password', '')
@@ -139,7 +142,7 @@ def main(argv=None):
         clock = advance_clock(record)
         if clock:
             applied['clock_set_to'] = clock
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, TypeError, KeyError) as exc:
         print(json.dumps({'ok': False, 'error': str(exc)[:200]}))
         return 1
     try:

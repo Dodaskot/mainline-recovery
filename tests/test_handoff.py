@@ -73,6 +73,15 @@ class TestHandoff(unittest.TestCase):
             self.assertIsNone(handoff.advance_clock({'time_utc': strange}, now=0, setter=moved.append))
         self.assertEqual(moved, [1794306000])
 
+    def test_wifi_that_is_no_list_does_not_lose_the_rest(self):
+        """2026-11-12 review: an object as "wifi" raised TypeError after the file was gone."""
+        for value in ({'ssid': 'Home', 'password': 'secret-pass'}, 7, 'Home'):
+            stored = []
+            applied = handoff.apply_record({'schema': 'a22x.handoff.v1', 'wifi': value, 'language': 'uk'},
+                                           remember=lambda ssid, key: None, load=lambda: {'language': 'en'},
+                                           store=lambda current: stored.append(dict(current)))
+            self.assertEqual((applied['wifi'], stored), ([], [{'language': 'uk'}]))
+
     def test_at_most_eight_networks(self):
         record = {'schema': 'a22x.handoff.v1', 'wifi': [{'ssid': 'Net %d' % i, 'password': 'password%d' % i} for i in range(12)]}
         remembered = []

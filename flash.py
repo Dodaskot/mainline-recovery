@@ -837,38 +837,71 @@ def write_logical(context, args, progress, name):
                 current = found.size_of(found.partition(name))
                 # The old content first, before super's metadata or the partition changes.
                 rollback = save_rollback(context, {'label': args.target, 'size_bytes': current}, progress, found.chunks(name))
-                if args.image_bytes > current:
-                    found.resize(name, args.image_bytes)  # The metadata, every copy, read back.
-                total = found.size_of(found.partition(name))
-                image_format = layout(fd, compression, total)
-                reader = open_reader(fd, compression, total)
-                shown = {'label': args.target, 'size_bytes': total}
-                image, length = hashlib.sha256(), 0
-
-                def stream():
-                    nonlocal length
-                    for data in install.decode_image(reader, image_format, total):
-                        if reader.payload_bytes is None:  # The image itself; then the zeros to the end.
-                            image.update(data)
-                            length += len(data)
-                        yield data
                 try:
-                    _, _, whole_sha = found.write_chunks(name, stream(), lambda done, all_: progress('Writing', shown, done))
-                finally:
-                    close_reader(reader)
-                image_sha = image.hexdigest()
-                if context.mode == 'device':
-                    fcntl.ioctl(sfd, BLKFLSBUF)
-                if length != args.image_bytes or image_sha != args.expected_sha256:
-                    fs.fail('IMAGE_CHANGED', 'The file changed during the write. Flash the partition again from a good image',
-                            rollback=rollback)
-                observed = found.read_partition(name)
-                if observed != whole_sha:
-                    fs.fail('READBACK_MISMATCH', 'The partition does not match the image after writing', rollback=rollback)
+                    result = write_logical_content(context, args, progress, name, fd, compression, found, sfd, current, rollback)
+                except BaseException as error:
+                    # 2026-11-12 review: a failed write inside super put nothing back, unlike the other
+                    # partitions. The saved copy goes back at once, at its old size.
+                    if rollback is not None and not isinstance(error, KeyboardInterrupt):
+                        restored = False
+                        with contextlib.suppress(OSError, ValueError, fs.FilesystemError, lp.MetadataError):
+                            if found.size_of(found.partition(name)) != current:
+                                found.resize(name, current)
+                            pin, copy = copy_reader(context, rollback)
+                            try:
+                                def saved():
+                                    done = 0
+                                    while done < current:
+                                        data = os.pread(copy, min(install.CHUNK, current - done), done)
+                                        if not data:
+                                            raise ValueError('The saved copy is shorter than the partition')
+                                        done += len(data)
+                                        yield data
+                                found.write_chunks(name, saved())
+                            finally:
+                                os.close(copy)
+                                pin.close()
+                            restored = found.read_partition(name) == rollback['sha256']
+                        if isinstance(error, fs.FilesystemError):
+                            error.details['rollback_restored'] = restored
+                    raise
             finally:
                 os.close(sfd)
-        return {'target': {'label': args.target, 'size_bytes': total, 'logical': True, 'resized_from': current},
-                'sha256': image_sha, 'partition_sha256': observed, 'verified': True, 'rollback': rollback, 'recorded': False}
+        return result
+
+
+def write_logical_content(context, args, progress, name, fd, compression, found, sfd, current, rollback):
+    """The image written into logical partition NAME of super and read back (write_logical puts the saved copy back when this fails)."""
+    if args.image_bytes > current:
+        found.resize(name, args.image_bytes)  # The metadata, every copy, read back.
+    total = found.size_of(found.partition(name))
+    image_format = layout(fd, compression, total)
+    reader = open_reader(fd, compression, total)
+    shown = {'label': args.target, 'size_bytes': total}
+    image, length = hashlib.sha256(), 0
+
+    def stream():
+        nonlocal length
+        for data in install.decode_image(reader, image_format, total):
+            if reader.payload_bytes is None:  # The image itself; then the zeros to the end.
+                image.update(data)
+                length += len(data)
+            yield data
+    try:
+        _, _, whole_sha = found.write_chunks(name, stream(), lambda done, all_: progress('Writing', shown, done))
+    finally:
+        close_reader(reader)
+    image_sha = image.hexdigest()
+    if context.mode == 'device':
+        fcntl.ioctl(sfd, BLKFLSBUF)
+    if length != args.image_bytes or image_sha != args.expected_sha256:
+        fs.fail('IMAGE_CHANGED', 'The file changed during the write. Flash the partition again from a good image',
+                rollback=rollback)
+    observed = found.read_partition(name)
+    if observed != whole_sha:
+        fs.fail('READBACK_MISMATCH', 'The partition does not match the image after writing', rollback=rollback)
+    return {'target': {'label': args.target, 'size_bytes': total, 'logical': True, 'resized_from': current},
+            'sha256': image_sha, 'partition_sha256': observed, 'verified': True, 'rollback': rollback, 'recorded': False}
 
 
 def judge(label, data):
@@ -1236,9 +1269,13 @@ def main(argv=None):
     def progress(phase, target, done):
         now = time.monotonic()
         if phase != last[0] or now - last[1] >= 0.2 or done == target['size_bytes']:
-            print(json.dumps({'event': 'progress', 'operation': args.command, 'phase': phase, 'partition': target['label'],
-                              'bytes_done': done, 'bytes_total': target['size_bytes']}, separators=(',', ':')),
-                  file=sys.stderr, flush=True)
+            # 2026-11-12 review: a reader that went away (the interface restarted) made the next line
+            # raise BrokenPipeError inside the write loop and stopped a write halfway. Reporting is
+            # best effort; a write never depends on it.
+            with contextlib.suppress(OSError, ValueError):
+                print(json.dumps({'event': 'progress', 'operation': args.command, 'phase': phase, 'partition': target['label'],
+                                  'bytes_done': done, 'bytes_total': target['size_bytes']}, separators=(',', ':')),
+                      file=sys.stderr, flush=True)
             last[:] = [phase, now]
 
     try:

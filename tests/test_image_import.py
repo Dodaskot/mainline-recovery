@@ -535,6 +535,34 @@ class TestImageInstall(unittest.TestCase):
             m.extract_tar(target, None, root)
         self.assertFalse((outside / 'owned').exists())
 
+    def test_absolute_parent_and_last_link_members_stay_inside(self):
+        """2026-11-12 review: "/x", "../../x" and a file written over a symlink an earlier member made
+        all got out of ROOT."""
+        outside = Path(self.tmp.name) / 'outside'
+        outside.mkdir()
+        (outside / 'victim').write_text('safe')
+        target = Path(self.tmp.name) / 'evil2.tar'
+        with tarfile.open(target, 'w') as out:
+            for name in (str(outside / 'absolute'), '../../' + str(outside.name) + '/parent'):
+                item = tarfile.TarInfo(name)
+                item.size = 1
+                out.addfile(item, io.BytesIO(b'x'))
+            link = tarfile.TarInfo('last')
+            link.type, link.linkname = tarfile.SYMTYPE, str(outside / 'victim')
+            out.addfile(link)
+            data = tarfile.TarInfo('last')
+            data.size = 5
+            out.addfile(data, io.BytesIO(b'owned'))
+        root = Path(self.tmp.name) / 'root2'
+        root.mkdir()
+        m.extract_tar(target, None, root)
+        self.assertEqual((outside / 'victim').read_text(), 'safe')
+        self.assertFalse((outside / 'absolute').exists() or (outside / 'parent').exists())
+        # An absolute name lands inside the root; the file replaced the link instead of writing through it.
+        self.assertTrue((root / str(outside / 'absolute').lstrip('/')).exists())
+        self.assertFalse((root / 'last').is_symlink())
+        self.assertEqual((root / 'last').read_text(), 'owned')
+
 
 class TestCleanInstall(unittest.TestCase):
     """2026-11-08: after userdata is formatted, one system is installed with the account, Wi-Fi,

@@ -809,6 +809,31 @@ class FlashLogical(unittest.TestCase):
             code, result, _ = self.check('super/system', self.image(bytes(self.MIB), 'small.img'))
         self.assertEqual(result['warnings'][:1], ['This partition is too large to save first'])
 
+    def test_a_failed_write_inside_super_puts_the_saved_copy_back(self):
+        """2026-11-12 review: a write into odm that failed after it began left odm half written."""
+        import test_lp_metadata as tl
+        import lp_metadata as lp
+        odm = 4349952
+        tl.make_super(self.root / 'targets/super', parts=(('system', 8 * self.MIB), ('odm', odm), ('vendor', 4 * self.MIB)))
+        s, _ = self.partition('odm')
+        current = b''.join(s.chunks('odm'))
+        changed = bytearray(current)
+        changed[100:200] = bytes(range(100))
+        path = self.image(bytes(changed), 'odm-changed.img')
+        code, result, _ = self.check('super/odm', path)
+        self.assertEqual(code, 0, result)
+        real = lp.Super.read_partition
+        calls = []
+
+        def wrong_once(self_, name):
+            calls.append(name)
+            return '0' * 64 if len(calls) == 1 else real(self_, name)
+        with mock.patch.object(lp.Super, 'read_partition', wrong_once):
+            code, done, _ = self.write('super/odm', path, result, result['image']['payload_bytes'])
+        self.assertEqual((code, done['error']['code'], done['error']['details']['rollback_restored']), (2, 'READBACK_MISMATCH', True))
+        s, _ = self.partition('odm')
+        self.assertEqual(b''.join(s.chunks('odm')), current)
+
     def test_too_large_or_unchecked_is_refused(self):
         path = self.image(bytes(30 * self.MIB), 'huge.img')
         code, result, _ = self.check('super/system', path)  # 8 + 26 of room = 34 MiB would fit

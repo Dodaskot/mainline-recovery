@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import struct
 import subprocess
@@ -1615,6 +1616,35 @@ def checkpoint_platform(context, source, original, journal, progress=None, hook=
                           state='ready' if journal['state'] == 'preparing' else journal['state'])
 
 
+KEPT_JOURNALS = 64
+
+
+def prune_journals(context, source, store):
+    """2026-11-12 review: every installation leaves its journal on the card, nothing removed them,
+    and from the 256th on every status, plan and normal-start check failed. Before a new one is
+    made, only the newest KEPT_JOURNALS completed journals stay. A journal not completed, the one the
+    guard names, and a folder without a journal (never guessed at) are never removed."""
+    with source.pin.directory(JOURNAL_BASE) as directory:
+        names = [name for name in os.listdir(directory) if re.fullmatch(r'[0-9a-f]{32}', name)]
+    guard = fs.regular_json(context.guard_path, MAX_JSON) if context.guard_path.exists() else {}
+    done = []
+    for name in names:
+        path = JOURNAL_BASE + '/' + name + '/journal.json'
+        if not store.exists(path) or guard.get('transaction_id') == name:
+            continue
+        try:
+            journal, _ = load_journal(context, source, path)
+        except (OSError, ValueError, fs.FilesystemError):
+            continue
+        if journal['state'] == 'completed' and journal['id'] == name:
+            with source.pin.directory(JOURNAL_BASE) as directory:
+                done.append((os.stat(name + '/journal.json', dir_fd=directory).st_mtime_ns, name))
+    for _, name in sorted(done)[:-KEPT_JOURNALS] if len(done) > KEPT_JOURNALS else ():
+        with source.pin.directory(JOURNAL_BASE) as directory:
+            shutil.rmtree(name, dir_fd=directory)
+            os.fsync(directory)
+
+
 def pending_transactions(context, *, completed=None):
     pending, incomplete, present = [], [], False
     volumes = context.fs.volumes()
@@ -1727,6 +1757,7 @@ def execute(context, plan, confirmation, progress=None, hook=None):
                     with source.pin.directory(JOURNAL_BASE) as directory:
                         require(not os.listdir(directory), 'UNOWNED_JOURNAL_DIRECTORY', 'A nonempty installer directory lacks its ownership record')
                     store.write(JOURNAL_BASE + '/owner.json', owner, create=True)
+                prune_journals(context, source, store)
                 base = plan['journal_path'].rsplit('/', 1)[0]
                 store.mkdir(base)
                 original_sha = store.write(base + '/plan.json', plan, create=True)
@@ -1987,7 +2018,8 @@ def main(argv=None):
         key = (value.get('phase'), value.get('partition'))
         now = time.monotonic()
         if key != last[0] or now - last[1] >= 0.2 or value.get('bytes_done') == value.get('bytes_total'):
-            print(json.dumps(value, separators=(',', ':')), file=sys.stderr, flush=True)
+            with contextlib.suppress(OSError, ValueError):  # best effort: a write never depends on it (2026-11-12 review)
+                print(json.dumps(value, separators=(',', ':')), file=sys.stderr, flush=True)
             last[:] = [key, now]
     try:
         args = parser().parse_args(argv)
