@@ -4,6 +4,17 @@ What changed in each version of A22x Mainline Recovery, newest first. Every item
 was checked on the phone unless it says otherwise. Before 0.6.124: [docs/CHANGELOG.md](docs/CHANGELOG.md);
 day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md).
 
+## Not released yet (1.0.1)
+
+- **The boot splash and the interface use the same lettering** (recovery kernel `#139`): the
+  kernel drew the splash generated on 2026-11-10, whose title has changed since, so the text
+  changed when the interface took the screen over. The splash was generated again from the
+  interface (`ui/tools/generate_boot_splash.py`) and the kernel rebuilt with it alone changed
+  (source: linux-a22x, branch `a22x-recovery`, `cf097a32`). Checked on the phone: no change of
+  lettering at the handover; Wi-Fi and modules as before.
+- **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
+  BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
+
 ## 1.0.0 (2026-11-13)
 
 The first release for every SM-A226B, after 0.6.206. In short:

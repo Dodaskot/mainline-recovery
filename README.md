@@ -188,6 +188,8 @@ partition → recovery.
 - Plasma keeps its language in the shared `/home`, so Plasma systems share it.
 - The setup of an installed system cannot be run again; reinstall it to get newer
   fixes.
+- An update downloaded in Settings needs 40 MiB on cache: when cache is full of saved BOOT
+  copies it stops with CACHE_FULL; delete a copy you no longer need first.
 - A power loss while the recovery partition itself is being written leaves no
   recovery to start: flash one from a computer in Download Mode.
 

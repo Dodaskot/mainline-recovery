@@ -43,6 +43,7 @@ Done by touch on the phone unless said otherwise.
 | The sound profile entry in the image's platform files | 237 | a link to the phone's UCM folder |
 | A screenshot while nothing holds the operation lock | 237 | saved on the card |
 | The public image 1.0.0: version, Linux snapshots without a capsule, the update check | 1.0.0 | shows 1.0.0; no SSH key, no capsule; snapshots: backup, restore and wipe offered; v0.6.206 on GitHub is not offered as an update |
+| Update from the published 0.6.206 to the published 1.0.0 in Settings > Updates | 0.6.206 → 1.0.0 | 1.0.0 found and downloaded, SHA-256 as GitHub states it, written and read back; after a restart 1.0.0 runs and offers nothing older. With cache full of five saved BOOTs the download first stopped with CACHE_FULL (0.6.206 calls it "no room to keep this BOOT"); one saved BOOT removed, then it went through |
 | Stock firmware A226BXXSBDZC3 installed from its ZIP on the card | 218 | unpacked, MD5-checked, written and read back; stock Android started |
 | LineageOS 20 for A226B installed by its own `update-binary` | 221 | installed; started after the offered reset of Android's data |
 | An AnyKernel3 kernel ZIP (BakaSU + SUSFS) | 220 | installed; Android started after the data reset |
@@ -55,6 +56,7 @@ Done by touch on the phone unless said otherwise.
 
 - A **128 GB** SM-A226B: the sizes follow Samsung's PIT and are tested on the computer only.
 - Check and repair on a real F2FS or FAT volume (done on scratch filesystems on the phone only).
+- The installer app 1.0.0 on a phone (its build checks passed: signatures v2/v3, the update order, the scripts).
 - Android opening its data after a restore from a copy.
 - The Android app on a phone (its scripts were run in the recovery against test devices).
 
