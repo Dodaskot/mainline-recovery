@@ -120,6 +120,70 @@ class FileArchive(unittest.TestCase):
             fa.unpack(self.ctx, 'sdcard-p1', None, '/damaged.tar.zst', True, self.progress)
         self.assertEqual(caught.exception.code, 'ARCHIVE_DAMAGED')
 
+    def test_links_and_devices_that_would_reach_outside_are_refused(self):
+        # 2026-11-13 review: a hard link to a file outside, then a file of the same name, wrote
+        # through the link; a device node was made as it came.
+        victim = self.sd / 'victim.txt'
+        victim.write_text('keep')
+        for name, members in (('link.tar', [('x', tarfile.LNKTYPE, '../victim.txt', b''), ('x', tarfile.REGTYPE, '', b'OVERWRITTEN')]),
+                              ('dev.tar', [('disk', tarfile.BLKTYPE, '', b'')])):
+            raw = io.BytesIO()
+            with tarfile.open(fileobj=raw, mode='w') as tar:
+                for member, kind, link, data in members:
+                    info = tarfile.TarInfo(member)
+                    info.type, info.linkname, info.size = kind, link, len(data)
+                    info.devmajor, info.devminor = 179, 0
+                    tar.addfile(info, io.BytesIO(data) if data else None)
+            (self.sd / name).write_bytes(raw.getvalue())
+            with self.assertRaises(fs.FilesystemError) as caught:
+                fa.unpack(self.ctx, 'sdcard-p1', None, '/' + name, True, self.progress)
+            self.assertEqual(caught.exception.code, 'ARCHIVE_UNSAFE')
+        self.assertEqual(victim.read_text(), 'keep')
+        # A hard link inside the archive's own folder is kept.
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode='w') as tar:
+            info = tarfile.TarInfo('a.txt')
+            info.size = 2
+            tar.addfile(info, io.BytesIO(b'hi'))
+            link = tarfile.TarInfo('b.txt')
+            link.type, link.linkname = tarfile.LNKTYPE, 'a.txt'
+            tar.addfile(link)
+        (self.sd / 'pair.tar').write_bytes(raw.getvalue())
+        fa.unpack(self.ctx, 'sdcard-p1', None, '/pair.tar', True, self.progress)
+        self.assertEqual((self.sd / 'pair/b.txt').read_text(), 'hi')
+
+    def test_a_part_of_linux_data_stays_in_its_own_folder(self):
+        # 2026-11-13 review: a "home" entry such as home/../etc/x landed in the system around it.
+        root = self.root / 'system'
+        (root / 'home').mkdir(parents=True)
+        (root / 'etc').mkdir()
+        (root / 'etc/shadow').write_text('root:x')
+        check = fa.safe_filter(root / 'home')
+        for name, kind, link in (('home/../etc/x', tarfile.REGTYPE, ''), ('home/u/s', tarfile.LNKTYPE, 'etc/shadow')):
+            info = tarfile.TarInfo(name)
+            info.type, info.linkname = kind, link
+            with self.assertRaises(tarfile.FilterError):
+                check(info, str(root))
+        fine = tarfile.TarInfo('home/u/notes.txt')
+        self.assertEqual(check(fine, str(root)).name, 'home/u/notes.txt')
+
+    def test_many_folders_need_few_descriptors(self):
+        # 2026-11-13 review: every folder walked stayed open; 1100 folders under a limit of 1024 failed.
+        import resource
+        deep = self.home / 'many'
+        for i in range(1100):
+            (deep / ('d%04d' % i)).mkdir(parents=True)
+        (deep / 'd0007' / 'f.txt').write_text('seven')
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        resource.setrlimit(resource.RLIMIT_NOFILE, (256, hard))
+        self.addCleanup(resource.setrlimit, resource.RLIMIT_NOFILE, (soft, hard))
+        before = len(os.listdir('/proc/self/fd'))
+        done = self.pack(False, ['many'], '/many.tar.zst')
+        self.assertEqual(done['entries'], 1102)
+        self.assertEqual(len(os.listdir('/proc/self/fd')), before)
+        fa.unpack(self.ctx, 'sdcard-p1', None, '/many.tar.zst', True, self.progress)
+        self.assertEqual((self.sd / 'many/many/d0007/f.txt').read_text(), 'seven')
+
     def test_an_archive_protected_with_a_password(self):
         import archive_crypt as ac
         self.addCleanup(lambda: (setattr(pa, 'PASSWORD', None), setattr(pa, 'ENCRYPT', False)))

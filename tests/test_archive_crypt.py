@@ -56,6 +56,7 @@ class Crypt(unittest.TestCase):
                 got += data
         self.assertEqual(got, self.plain)
         key = ac.open_key(fd, 'пароль 1')
+        self.addCleanup(key.close)
         self.assertEqual(ac.read_tail(fd, key, 1001), self.plain[-1001:])
         self.assertEqual(ac.read_tail(fd, key, 1 << 30), self.plain)
         ac.verify(fd, key)
@@ -76,6 +77,29 @@ class Crypt(unittest.TestCase):
         # Cut short: not taken for an encrypted archive's end.
         os.ftruncate(fd, os.fstat(fd).st_size - 100)
         self.assertFalse(ac.is_encrypted(fd))
+
+    def test_a_full_card_stops_the_writer_at_once(self):
+        # 2026-11-13 review: after a failed write the rest was still read and compressed.
+        import resource
+        import signal
+        old_handler = signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+        soft, hard = resource.getrlimit(resource.RLIMIT_FSIZE)
+        path = Path(tempfile.mkdtemp(dir=os.environ.get('TMPDIR'))) / 'full.enc'
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT, 0o600)
+        written = 0
+        try:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, hard))
+            with self.assertRaises(OSError):
+                with ac.sink(fd, 'pw') as writer:
+                    block = bytes(1 << 16)
+                    while written < 64 << 20:
+                        written += os.write(writer, block)
+        finally:
+            resource.setrlimit(resource.RLIMIT_FSIZE, (soft, hard))
+            signal.signal(signal.SIGXFSZ, old_handler)
+            os.close(fd)
+            shutil.rmtree(path.parent)
+        self.assertLess(written, 8 << 20)
 
     def test_without_a_password_nothing_changes(self):
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_TRUNC, 0o600)

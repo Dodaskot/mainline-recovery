@@ -210,6 +210,12 @@ msgstr "Тестовий носій — це файл або loop-пристрі
 msgid "A flashable ZIP"
 msgstr "ZIP для прошивки"
 
+msgid "A folder changed while it was archived"
+msgstr "Тека змінилася під час архівування"
+
+msgid "A folder changed while it was read"
+msgstr "Тека змінилася під час читання"
+
 msgid "A folder copy is restored whole."
 msgstr "Копія-тека відновлюється цілком."
 
@@ -3084,6 +3090,9 @@ msgstr "не запускався"
 msgid "NOT WRITTEN"
 msgstr "НЕ ЗАПИСУЄТЬСЯ"
 
+msgid "Not written by the recovery, as the script of the ZIP would have:"
+msgstr "Recovery не записав того, що записав би скрипт ZIP:"
+
 msgid "Not written: unknown to this recovery"
 msgstr "Не записується: невідомий для Recovery"
 
@@ -5112,6 +5121,9 @@ msgstr "Інсталятор цього ZIP не завершився вчасн
 msgid "The installer of this ZIP ended with an error"
 msgstr "Інсталятор цього ZIP завершився з помилкою"
 
+msgid "The installer of this ZIP stopped; the recovery writes the images of this ROM itself"
+msgstr "Інсталятор цього ZIP зупинився; recovery записує образи цього ROM сам"
+
 msgid "The installer result did not match the requested environment or operation."
 msgstr "Результат інсталятора не збігся із запитаним середовищем або операцією."
 
@@ -5358,6 +5370,9 @@ msgstr "Пароль задовгий"
 msgid "The password is wrong."
 msgstr "Неправильний пароль."
 
+msgid "The password protects copies of Android, Linux data and archives made in Files. Linux snapshots, the recovery image and EFS and IMEI are saved without it."
+msgstr "Пароль захищає копії Android, «Дані Linux» і архіви з «Файлів». Знімки Linux, образ recovery та EFS і IMEI зберігаються без нього."
+
 msgid "The password the copy was made with."
 msgstr "Пароль, з яким зроблено копію."
 
@@ -5448,8 +5463,8 @@ msgstr "Налаштування recovery пошкоджені. Пароль н�
 msgid "The recovery settings could not be read. The password cannot be checked, so the recovery stays locked."
 msgstr "Не вдалося прочитати налаштування recovery. Пароль не можна перевірити, тому recovery лишається заблокованим."
 
-msgid "The recovery writes the images of this ROM itself and reads them back; the script of the ZIP is not run"
-msgstr "Recovery сам записує образи цього ROM і перечитує їх; скрипт із ZIP не запускається"
+msgid "The recovery wrote the images of this ROM itself and read them back"
+msgstr "Recovery сам записав образи цього ROM і перечитав їх"
 
 msgid "The recovery's own folder stays"
 msgstr "Власна тека Recovery лишається"
@@ -5777,6 +5792,9 @@ msgstr "Цієї копії вже немає в списку. Поверніт�
 
 msgid "This copy is protected with a password."
 msgstr "Цю копію захищено паролем."
+
+msgid "This copy is saved without the password: a folder of partition images that Download Mode tools can write back. Keep the card somewhere safe."
+msgstr "Ця копія зберігається без пароля: тека з образами розділів, які інструменти режиму Download можуть записати назад. Зберігайте картку в надійному місці."
 
 msgid "This copy needs about %s, and %s has %s free. Free some room there, leave partitions out, or choose another card."
 msgstr "Цій копії потрібно близько %s, а на %s вільно %s. Звільніть там місце, пропустіть частину розділів або виберіть іншу картку."

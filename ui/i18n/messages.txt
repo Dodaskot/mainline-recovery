@@ -67,6 +67,8 @@ A firmware file beside the AP could not be read
 A fixture medium has no usable id
 A fixture medium is a file or a loop device
 A flashable ZIP
+A folder changed while it was archived
+A folder changed while it was read
 A folder copy is restored whole.
 A folder copy saves the replaced partitions beside itself first: mount this card with write access in Files.
 A folder named as the archive is already here
@@ -1025,6 +1027,7 @@ Not read yet
 not reported
 not run
 NOT WRITTEN
+Not written by the recovery, as the script of the ZIP would have:
 Not written: unknown to this recovery
 Nothing
 Nothing has been changed yet.
@@ -1701,6 +1704,7 @@ The installer in this ZIP is neither a script nor a program
 The installer of this ZIP changed a partition it may not write: 
 The installer of this ZIP did not end in time and was stopped
 The installer of this ZIP ended with an error
+The installer of this ZIP stopped; the recovery writes the images of this ROM itself
 The installer result did not match the requested environment or operation.
 The installers finished
 The interrupted transaction changed. Review the refreshed Systems screen.
@@ -1783,6 +1787,7 @@ The password does not open this backup
 The password does not open this copy. Try again.
 The password is too long
 The password is wrong.
+The password protects copies of Android, Linux data and archives made in Files. Linux snapshots, the recovery image and EFS and IMEI are saved without it.
 The password the copy was made with.
 The password was set in the Android app.
 The passwords do not match
@@ -1813,7 +1818,7 @@ The ramdisk does not unpack to its end: the image is damaged or incomplete
 The ramdisk does not unpack: the image is damaged or incomplete
 The recovery settings are damaged. The password cannot be checked, so the recovery stays locked.
 The recovery settings could not be read. The password cannot be checked, so the recovery stays locked.
-The recovery writes the images of this ROM itself and reads them back; the script of the ZIP is not run
+The recovery wrote the images of this ROM itself and read them back
 The recovery's own folder stays
 The regional file is of another version than the AP
 The releases could not be read. Join Wi-Fi, then check again.
@@ -1923,6 +1928,7 @@ This card is no longer attached
 This compression is not supported
 This copy is no longer listed. Go back and read the cards again.
 This copy is protected with a password.
+This copy is saved without the password: a folder of partition images that Download Mode tools can write back. Keep the card somewhere safe.
 This copy needs about %s, and %s has %s free. Free some room there, leave partitions out, or choose another card.
 This copy was made on another phone and is not written back here.
 This copy's Android data belongs to another phone: restore it without its data

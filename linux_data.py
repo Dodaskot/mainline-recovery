@@ -293,8 +293,21 @@ def linux_root(context, write=False):
 
 
 def collect(pin, parts, accounts):
-    """(entries for file_archive.write_archive, fds to close, bytes of each part)."""
-    entries, sizes = [], {}
+    """(entries for file_archive.write_archive, fds to close, bytes of each part). The folders it
+    opened are closed again when it fails (2026-11-13 review)."""
+    entries = []
+    try:
+        return collect_into(pin, parts, accounts, entries)
+    except BaseException:
+        for e in entries:
+            if e[1] is None:
+                with contextlib.suppress(OSError):
+                    os.close(e[0])
+        raise
+
+
+def collect_into(pin, parts, accounts, entries):
+    sizes = {}
     device = pin.stat.st_dev
 
     def add(parent_fd, name, arcname):
@@ -405,13 +418,23 @@ def archives_on(context, volumes):
 
 
 def inspect(context):
-    result = {'linux': False, 'reason': '', 'archives': archives(context, mount=True), 'destinations': []}
-    for volume in externals(context):
-        if volume.get('write_supported'):
-            with contextlib.suppress(OSError):
-                room = os.statvfs(volume['mountpoint'])
-                result['destinations'].append({'volume': volume['id'], 'label': volume.get('label') or volume['id'],
-                                               'free_bytes': room.f_bavail * room.f_frsize})
+    result = {'linux': False, 'reason': '', 'archives': [], 'destinations': []}
+    # A card that is only inserted is looked at for archives and for room alike, then let go
+    # (2026-11-13 review: it showed its archives but was missing as a place to save to).
+    opened = []
+    try:
+        volumes = externals(context, True, opened)
+        result['archives'] = archives_on(context, volumes)
+        for volume in volumes:
+            if volume.get('write_supported'):
+                with contextlib.suppress(OSError):
+                    room = os.statvfs(volume['mountpoint'])
+                    result['destinations'].append({'volume': volume['id'], 'label': volume.get('label') or volume['id'],
+                                                   'free_bytes': room.f_bavail * room.f_frsize})
+    finally:
+        for ident in opened:
+            with contextlib.suppress(fs.FilesystemError, OSError):
+                context.unmount(ident, context.volume(ident)['volume_token'])
     try:
         with linux_root(context) as (pin, _, release):
             accounts = accounts_of(pin.fd)
@@ -512,8 +535,26 @@ def backup(context, parts, dest_volume, dest_token, confirmed, progress):
             'packages': len(names) if names is not None else 0}
 
 
+def root_link(member):
+    """A hard link inside root-home points into /root, where that folder is unpacked."""
+    if member.islnk() and (member.linkname == 'root-home' or member.linkname.startswith('root-home/')):
+        return 'root' + member.linkname[9:]
+    return member.linkname
+
+
 def unpack_into(archive_fd, root, parts, progress):
-    """Home folders straight to their place in ROOT, the rest into the staging folder there."""
+    """Home folders straight to their place in ROOT, the rest into the staging folder there. When it
+    fails, the staging folder goes at once: it holds password hashes and keys (2026-11-13 review)."""
+    staging = Path(root) / STAGING
+    try:
+        return unpack_staged(archive_fd, root, parts, progress)
+    except BaseException:
+        if not staging.is_symlink():
+            shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
+def unpack_staged(archive_fd, root, parts, progress):
     staging = Path(root) / STAGING
     if staging.is_symlink() or staging.exists():
         require(not staging.is_symlink(), 'ARCHIVE_UNSAFE', 'The staging folder of the system is a link')
@@ -529,14 +570,17 @@ def unpack_into(archive_fd, root, parts, progress):
         with tarfile.open(fileobj=proc.stdout, mode='r|', bufsize=fa.CHUNK) as tar:
             for member in tar:
                 name = member.name
+                # Each where it belongs and nowhere else (2026-11-13 review: 'home/../etc/x' or a hard
+                # link to a file of the system would have reached outside /home).
                 if name == 'home' or name.startswith('home/'):
                     if 'home' in parts:
-                        tar.extract(member, root, numeric_owner=True, filter='tar')
+                        tar.extract(member, root, numeric_owner=True, filter=fa.safe_filter(Path(root) / 'home'))
                 elif name == 'root-home' or name.startswith('root-home/'):
                     if 'home' in parts:
-                        tar.extract(member.replace(name='root' + name[9:], deep=False), root, numeric_owner=True, filter='tar')
+                        tar.extract(member.replace(name='root' + name[9:], linkname=root_link(member), deep=False), root,
+                                    numeric_owner=True, filter=fa.safe_filter(Path(root) / 'root'))
                 else:
-                    tar.extract(member, staging, numeric_owner=True, filter='tar')
+                    tar.extract(member, staging, numeric_owner=True, filter=fa.safe_filter(staging))
                 count += 1
                 if count % 64 == 0:
                     progress('Unpacking', os.lseek(archive_fd, 0, os.SEEK_CUR), total, name)

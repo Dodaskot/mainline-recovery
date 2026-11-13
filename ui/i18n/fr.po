@@ -210,6 +210,12 @@ msgstr "Un support de test est un fichier ou un périphérique loop"
 msgid "A flashable ZIP"
 msgstr "Un ZIP flashable"
 
+msgid "A folder changed while it was archived"
+msgstr "Un dossier a changé pendant l'archivage"
+
+msgid "A folder changed while it was read"
+msgstr "Un dossier a changé pendant la lecture"
+
 msgid "A folder copy is restored whole."
 msgstr "Une copie en dossier est restaurée en entier."
 
@@ -3084,6 +3090,9 @@ msgstr "non lancé"
 msgid "NOT WRITTEN"
 msgstr "NON ÉCRIT"
 
+msgid "Not written by the recovery, as the script of the ZIP would have:"
+msgstr "Non écrit par le recovery, alors que le script du ZIP l'aurait fait :"
+
 msgid "Not written: unknown to this recovery"
 msgstr "Non écrit : inconnu du recovery"
 
@@ -5112,6 +5121,9 @@ msgstr "L’installateur de ce ZIP ne s’est pas terminé à temps et a été a
 msgid "The installer of this ZIP ended with an error"
 msgstr "L’installateur de ce ZIP s’est terminé avec une erreur"
 
+msgid "The installer of this ZIP stopped; the recovery writes the images of this ROM itself"
+msgstr "L'installateur de ce ZIP s'est arrêté ; le recovery écrit lui-même les images de cette ROM"
+
 msgid "The installer result did not match the requested environment or operation."
 msgstr "Le résultat de l'installateur ne correspondait pas à l'environnement ou à l'opération demandés."
 
@@ -5358,6 +5370,9 @@ msgstr "Le mot de passe est trop long"
 msgid "The password is wrong."
 msgstr "Le mot de passe est incorrect."
 
+msgid "The password protects copies of Android, Linux data and archives made in Files. Linux snapshots, the recovery image and EFS and IMEI are saved without it."
+msgstr "Le mot de passe protège les copies d'Android, les données Linux et les archives créées dans Fichiers. Les instantanés Linux, l'image du recovery ainsi que l'EFS et l'IMEI sont enregistrés sans lui."
+
 msgid "The password the copy was made with."
 msgstr "Le mot de passe avec lequel la copie a été faite."
 
@@ -5448,8 +5463,8 @@ msgstr "Les réglages de recovery sont endommagés. Le mot de passe ne peut pas 
 msgid "The recovery settings could not be read. The password cannot be checked, so the recovery stays locked."
 msgstr "Impossible de lire les réglages de recovery. Le mot de passe ne peut pas être vérifié : recovery reste verrouillé."
 
-msgid "The recovery writes the images of this ROM itself and reads them back; the script of the ZIP is not run"
-msgstr "Le recovery écrit lui-même les images de cette ROM et les relit ; le script du ZIP n'est pas exécuté"
+msgid "The recovery wrote the images of this ROM itself and read them back"
+msgstr "Le recovery a écrit lui-même les images de cette ROM et les a relues"
 
 msgid "The recovery's own folder stays"
 msgstr "Le dossier propre du recovery reste"
@@ -5777,6 +5792,9 @@ msgstr "Cette copie n’est plus dans la liste. Revenez et relisez les cartes."
 
 msgid "This copy is protected with a password."
 msgstr "Cette copie est protégée par un mot de passe."
+
+msgid "This copy is saved without the password: a folder of partition images that Download Mode tools can write back. Keep the card somewhere safe."
+msgstr "Cette copie est enregistrée sans le mot de passe : un dossier d’images de partitions que les outils du mode Download peuvent réécrire. Gardez la carte en lieu sûr."
 
 msgid "This copy needs about %s, and %s has %s free. Free some room there, leave partitions out, or choose another card."
 msgstr "Cette copie demande environ %s, et %s a %s de libre. Libérez-y de la place, omettez des partitions ou choisissez une autre carte."

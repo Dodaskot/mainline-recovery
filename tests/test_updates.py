@@ -60,6 +60,10 @@ class Updates(unittest.TestCase):
         self.assertEqual(updates.version_key('0.6.206-public'), (0, 6, 206))
         self.assertGreater(updates.version_key('0.6.207'), updates.version_key('0.6.206-public'))
         self.assertGreater(updates.version_key('0.6.206-r2'), updates.version_key('0.6.206'))
+        # 1.0.0 (2026-11-13): after every 0.6, public or not, and never the other way round.
+        self.assertGreater(updates.version_key('v1.0.0'), updates.version_key('0.6.235-public'))
+        self.assertGreater(updates.version_key('v1.0.0'), updates.version_key('0.6.206'))
+        self.assertLess(updates.version_key('v0.6.206'), updates.version_key('1.0.0-public'))
 
     def test_a_newer_recovery_is_offered_and_an_older_one_is_not(self):
         code, found = self.call('check')

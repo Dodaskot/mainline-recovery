@@ -97,7 +97,9 @@ class LinuxData(unittest.TestCase):
         config['volumes'][1]['mounted'] = False
         (self.root / 'filesystem-fixture.json').write_text(json.dumps(config))
         (self.root / '.filesystem-state.json').unlink(missing_ok=True)  # the backup had mounted it for writing
-        self.assertEqual(len(ld.inspect(fs.FixtureContext(self.root))['archives']), 1)
+        looked = ld.inspect(fs.FixtureContext(self.root))
+        self.assertEqual(len(looked['archives']), 1)
+        self.assertEqual([d['volume'] for d in looked['destinations']], ['sdcard-p1'])
         self.assertFalse(fs.FixtureContext(self.root).volume('sdcard-p1')['mounted'])
         config['volumes'][1]['mounted'] = True
         (self.root / 'filesystem-fixture.json').write_text(json.dumps(config))

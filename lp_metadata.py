@@ -211,9 +211,10 @@ class Super:
             for offset in metadata_offsets(self.geometry, slot):
                 require(read_at(self.fd, offset, len(blob)) == blob, 'READBACK_MISMATCH', 'The metadata of super did not read back')
 
-    def resize(self, name, size):
+    def resize(self, name, size, commit=True):
         """Make partition NAME exactly SIZE bytes (rounded up to the alignment of super), taking
-        free space after its own extents first; the group's maximum size is kept."""
+        free space after its own extents first; the group's maximum size is kept. Without COMMIT
+        only the metadata in memory changes, for several changes written at once by commit()."""
         p = self.partition(name)
         device = self.metadata['devices'][0]
         align = max(device['alignment'], SECTOR) // SECTOR
@@ -248,8 +249,12 @@ class Super:
                     break
             require(not need, 'NO_SPACE', 'super has not enough free space for this size')
         self._replace_extents(p, own)
-        self._commit()
+        if commit:
+            self._commit()
         return self.size_of(self.partition(name))
+
+    def commit(self):
+        self._commit()
 
     def remove(self, name):
         """Remove partition NAME from the metadata; its space becomes free."""

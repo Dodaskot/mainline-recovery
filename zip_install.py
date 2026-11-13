@@ -46,6 +46,7 @@ super's layout changed (2026-11-11).
 """
 import argparse
 import contextlib
+import copy
 import ctypes
 import errno
 import fcntl
@@ -390,7 +391,9 @@ def package_sizes(fd):
     return sizes
 
 
-NATIVE_NOTE = 'The recovery writes the images of this ROM itself and reads them back; the script of the ZIP is not run'
+NATIVE_NOTE = 'The recovery wrote the images of this ROM itself and read them back'
+NATIVE_STOPPED = 'The installer of this ZIP stopped; the recovery writes the images of this ROM itself'
+NATIVE_LEFT_OUT = 'Not written by the recovery, as the script of the ZIP would have:'
 
 
 def native_possible(fd, sizes):
@@ -456,6 +459,11 @@ def native_install(context, room, fd, sizes, found, progress):
                     require(install.target_hash(context, target) == hashlib.sha256(image).hexdigest(), 'READBACK_MISMATCH',
                             'BOOT does not match the image after writing')
                     shown.append('boot: written and read back')
+            # What the script would also have written is named, not passed over in silence.
+            left = sorted(n for n in names if n.endswith('.img') and n[:-4] in WRITABLE and n != 'boot.img')
+            if left:
+                shown.append(NATIVE_LEFT_OUT)
+                shown.append(', '.join(left))
     except android_rom.RomError as error:
         fail(error.code, error.message, **error.details)
     shown.append(NATIVE_NOTE)
@@ -486,21 +494,33 @@ def fit_plan(opened, sizes):
         require(used <= group['maximum_size'], 'ZIP_SUPER_TOO_SMALL',
                 'super cannot hold the partitions of this ROM: its group %s would need %d MiB of %d' %
                 (group['name'], used >> 20, group['maximum_size'] >> 20), group=group['name'])
-    free = sum(end - start for start, end in opened.free_regions()) * lp.SECTOR
-    grow = sum(max(0, then[n] - now[n]) for n in sizes)
-    shrink = sum(max(0, now[n] - then[n]) for n in sizes)
-    require(free + shrink >= grow, 'ZIP_SUPER_TOO_SMALL', 'super has not enough free space for the partitions of this ROM')
-    return {name: [now[name], then[name]] for name in sizes if now[name] != then[name]}
+    plan = {name: [now[name], then[name]] for name in sizes if now[name] != then[name]}
+    # Tried first on a copy of the metadata, exactly as it will be written: a sum of free space
+    # missed what the alignment of each new extent costs (2026-11-13 review).
+    trial = copy.copy(opened)
+    trial.metadata = copy.deepcopy(opened.metadata)
+    try:
+        resize_all(trial, plan)
+    except lp.MetadataError as error:
+        fail('ZIP_SUPER_TOO_SMALL', 'super has not enough free space for the partitions of this ROM', reason=error.code)
+    return plan
+
+
+def resize_all(opened, plan):
+    """The partitions that shrink first, then those that grow; in memory only."""
+    for name, (now, then) in sorted(plan.items(), key=lambda item: item[1][1] - item[1][0]):
+        opened.resize(name, then, commit=False)
 
 
 def apply_fit(context, plan):
-    """The layout of FIT_PLAN written: the partitions that shrink first, then those that grow."""
+    """The layout of FIT_PLAN written in one step: every change made in memory, then the metadata
+    written once, so a failure leaves super as it was (2026-11-13 review: each resize was written
+    by itself, and one that failed left the others done)."""
     _, fd, opened = flash.open_super(context, write=True)
     try:
-        for name, (now, then) in sorted(plan.items(), key=lambda item: item[1][1] - item[1][0]):
-            opened.resize(name, then)
+        resize_all(opened, plan)
+        opened.commit()
     finally:
-        os.fsync(fd)
         os.close(fd)
 
 
@@ -903,6 +923,9 @@ def run(context, args, progress):
             fitted, sizes = {}, {}
             if 'super' in found and context.mode == 'device':
                 sizes = package_sizes(fd)
+            if sizes:
+                # Only for a ROM that writes logical partitions whole (2026-11-13 review: every ZIP,
+                # a Magisk one too, failed on a super without readable metadata).
                 _, sfd, opened = flash.open_super(context)
                 try:
                     fitted = fit_plan(opened, sizes)
@@ -914,14 +937,13 @@ def run(context, args, progress):
             room = Room(context, found) if context.mode == 'device' else None
             if room:
                 room.attach_logical()
+            # 2026-11-13 review: the recovery used to write a full block-based ROM itself in place of
+            # its script, and so left out what else the script does (dtbo, vbmeta, ...). The script
+            # runs first; the recovery writes the images itself only when it failed.
             native = room is not None and native_possible(fd, sizes)
             try:
-                pid = -1 if native else os.fork()
-                if native:
-                    os.close(write_fd)
-                    os.close(read_fd)
-                    shown, code = native_install(context, room, fd, sizes, found, progress)
-                elif pid == 0:
+                pid = os.fork()
+                if pid == 0:
                     try:
                         os.close(read_fd)
                         null = os.open(os.devnull, os.O_RDWR)
@@ -934,13 +956,15 @@ def run(context, args, progress):
                             fixture_child(context, found, fd, write_fd, about['installer'])
                     finally:
                         os._exit(127)
-                if not native:
-                    os.close(write_fd)
-                    try:
-                        shown, code = follow(read_fd, pid, lambda text, part: progress(text, {'label': 'zip', 'size_bytes': 1000}, int(part * 1000)),
-                                             time.monotonic() + RUN_SECONDS)
-                    finally:
-                        os.close(read_fd)
+                os.close(write_fd)
+                try:
+                    shown, code = follow(read_fd, pid, lambda text, part: progress(text, {'label': 'zip', 'size_bytes': 1000}, int(part * 1000)),
+                                         time.monotonic() + RUN_SECONDS)
+                finally:
+                    os.close(read_fd)
+                if code != 0 and native:
+                    written_natively, code = native_install(context, room, fd, sizes, found, progress)
+                    shown = list(shown)[-8:] + [NATIVE_STOPPED] + written_natively
             finally:
                 os.sync()
                 written, left = unmap_after(room.mapped_before) if room else ([], [])

@@ -20,10 +20,11 @@ ROM's own recovery would replace this one.
     android_rom.py extract PACKAGE --partition NAME --out FILE
 """
 import bz2
+import contextlib
+import fcntl
 import hashlib
 import json
 import lzma
-import contextlib
 import os
 from pathlib import Path
 import re
@@ -390,6 +391,17 @@ def block_stream(archive, name):
     return process.stdout.read, finish
 
 
+def drop_cached(fd):
+    """What was written is read back from the storage, not from the page cache (2026-11-13 review):
+    the block device's buffers are dropped, and a regular file's pages are let go."""
+    try:
+        fcntl.ioctl(fd, 0x1261)  # BLKFLSBUF
+    except OSError:
+        pass
+    with contextlib.suppress(OSError, AttributeError):
+        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+
+
 def write_block_image(archive, part, fd, size, progress=None):
     """Partition PART of a full block-based OTA written to the block device FD of SIZE bytes (2026-11-13,
     a One UI port whose own updater wrote nothing in the installer's room): the new blocks from
@@ -432,6 +444,7 @@ def write_block_image(archive, part, fd, size, progress=None):
     finally:
         finish()
     os.fsync(fd)
+    drop_cached(fd)
     check = hashlib.sha256()
     for command, pairs in commands:
         if command != 'new':

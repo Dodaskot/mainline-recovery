@@ -243,6 +243,15 @@ class FilesystemFixtureTest(FilesystemFixtureSupport):
         self.assertEqual((done['deleted'], done['failed']), (3, [{'name': 'gone.txt', 'code': 'NOT_FOUND'}]))
         self.assertEqual(sorted(p.name for p in work.iterdir()), ['b.txt', 'c.txt', 'keep.txt'])
         self.assertEqual((outside / 'precious').read_text(), 'stays')
+        # 2026-11-13 review: a folder that is itself a mount point stays, with what is in it.
+        with mock.patch.object(self.ctx, 'is_mountpoint', side_effect=lambda volume, path: path == '/many/c.txt' or path.endswith('/bound')):
+            (work / 'bound').mkdir()
+            (work / 'bound' / 'mounted').write_text('m')
+            done = fs.delete_many(self.ctx, 'userdata', '/many', False, ['bound'], True)
+            self.assertEqual(done['failed'], [{'name': 'bound', 'code': 'NESTED_MOUNT'}])
+            self.assertTrue((work / 'bound' / 'mounted').exists())
+        (work / 'bound' / 'mounted').unlink()
+        (work / 'bound').rmdir()
         done = fs.delete_many(self.ctx, 'userdata', '/many', True, ['keep.txt'], True)
         self.assertEqual(done['deleted'], 2)
         self.assertEqual([p.name for p in work.iterdir()], ['keep.txt'])

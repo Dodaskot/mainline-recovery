@@ -48,7 +48,8 @@ if [ -z "$STAGED" ]; then
             if [ -z "${A22X_PASSWORD:-}" ]; then
                 printf 'Password of the backup: '
                 stty -echo 2>/dev/null
-                read -r A22X_PASSWORD
+                # IFS= keeps spaces at either end: they are part of the password (2026-11-13 review).
+                IFS= read -r A22X_PASSWORD
                 stty echo 2>/dev/null
                 echo
             fi
@@ -173,7 +174,9 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
     case $target in
         arch)
             have() { pacman -Si "$1" >/dev/null 2>&1; }
-            add() { pacman -S --noconfirm --needed "$@"; }
+            # With the fresh lists the system is brought up to date in the same step: Arch does not
+            # support a partial upgrade (2026-11-13 review: new programs on old libraries).
+            add() { pacman -Syu --noconfirm --needed "$@"; }
             has() { pacman -Qq "$1" >/dev/null 2>&1; }
             pacman -Sy --noconfirm >/dev/null 2>&1 ;;
         debian)

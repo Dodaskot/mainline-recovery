@@ -667,6 +667,9 @@ class FixtureContext(BaseContext):
     def nested_mounts(self, volume, relative):
         return []
 
+    def is_mountpoint(self, volume, relative):
+        return False
+
     def sync_usb(self):
         return {'mounted': [], 'dropped': [], 'volumes': self.usb_volumes()}
 
@@ -1243,6 +1246,11 @@ class DeviceContext(BaseContext):
     def nested_mounts(self, volume, relative):
         base = volume['mountpoint'].rstrip('/') + clean_path(relative).rstrip('/')
         return [m for m in read_mounts() if m['mountpoint'].startswith(base + '/')]
+
+    def is_mountpoint(self, volume, relative):
+        """Whether the folder itself has something mounted on it, a bind of the same filesystem too."""
+        base = volume['mountpoint'].rstrip('/') + clean_path(relative).rstrip('/')
+        return any(m['mountpoint'] == base for m in read_mounts())
 
 
 class PinnedVolume:
@@ -2282,7 +2290,10 @@ def delete_many(context, ident, path, everything, names, confirmed=False, expect
                 info = os.stat(name, dir_fd=directory, follow_symlinks=False)
                 if stat.S_ISDIR(info.st_mode):
                     inner = folder.rstrip('/') + '/' + name
-                    if context.nested_mounts(pin.volume, inner):
+                    # 2026-11-13 review: a folder that is itself a mount point (a bind of /home, proc
+                    # in a system being set up) had everything on that filesystem removed.
+                    if (info.st_dev != pin.stat.st_dev or context.is_mountpoint(pin.volume, inner)
+                            or context.nested_mounts(pin.volume, inner)):
                         fail('NESTED_MOUNT', 'A folder holding another mount is not deleted')
                     shutil.rmtree(name, dir_fd=directory)
                 else:

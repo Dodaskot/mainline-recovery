@@ -65,7 +65,7 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->ld_dest_count<LD_DESTS;i=json_next(j,i)){
             LdDest*d=&a->ld_dest[a->ld_dest_count++];jstring(j,i,"volume",d->id,sizeof(d->id));jstring(j,i,"label",d->label,sizeof(d->label));d->free=json_uint(j,json_get(j,i,"free_bytes"),0);}
         if(a->ld_dest_index>=(int)a->ld_dest_count)a->ld_dest_index=0;
-        a->ld_archive_count=0;list=json_get(j,0,"archives");
+        a->ld_archive_count=0;a->ld_page=0;list=json_get(j,0,"archives");
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->ld_archive_count<LD_ARCHIVES;i=json_next(j,i)){
             LdArchive*x=&a->ld_archives[a->ld_archive_count++];memset(x,0,sizeof(*x));
             jstring(j,i,"volume",x->volume,sizeof(x->volume));jstring(j,i,"volume_token",x->token,sizeof(x->token));jstring(j,i,"path",x->path,sizeof(x->path));
@@ -131,14 +131,20 @@ static void render_linux_data(App*a){
     button(a,(Rect){28,806,664,92},"Hold 2 seconds: back up",A_LD_BACKUP,ui_free(a)&&a->ld_linux&&a->ld_parts&&a->ld_dest_count>0,true,2000);
     text(a,34,918,0,ORANGE,"BACKUPS ON CARDS AND STICKS");
     if(!a->ld_archive_count)text(a,34,962,0,MUTED,"None found");
-    for(unsigned int n=0;n<a->ld_archive_count&&n<3;n++){
-        LdArchive*x=&a->ld_archives[n];Rect r={28,954+(int)n*112,664,100};rounded(a,r,20,PANEL);
+    /* 2026-11-13 review: only the first three were drawn; the rest are on further pages. */
+    unsigned int pages=(a->ld_archive_count+LD_ROWS-1)/LD_ROWS;if(pages&&a->ld_page>=pages)a->ld_page=pages-1;
+    for(unsigned int n=0;n<LD_ROWS&&a->ld_page*LD_ROWS+n<a->ld_archive_count;n++){
+        LdArchive*x=&a->ld_archives[a->ld_page*LD_ROWS+n];Rect r={28,954+(int)n*112,664,100};rounded(a,r,20,PANEL);
         char when[48]="",size[48],line[200];time_t t=(time_t)x->created;struct tm local;if(x->created&&localtime_r(&t,&local))strftime(when,sizeof(when),"%Y-%m-%d %H:%M",&local);
         human_bytes(x->bytes,size,sizeof(size));snprintf(line,sizeof(line),"%s  /  %s  /  %.60s",when,size,x->locked?tr(x->wrong?"another password":"protected: tap to open"):x->label);
         raw_text(true);ellipsis(a,52,r.y+14,580,1,TEXT,x->os[0]?x->os:x->name);ellipsis(a,52,r.y+58,580,0,x->locked?ORANGE:MUTED,line);raw_text(false);
         icon(a,x->encrypted?ICON_LOCK:ICON_CHEVRON,640,r.y+34,32,MUTED);register_button(a,r,A_LD_ARCHIVE+(int)n,ui_free(a),0);
     }
-    button(a,(Rect){28,1340,664,84},"Refresh",A_LD_REFRESH,ui_free(a),false,0);
+    if(pages>1){
+        raw_text(true);button(a,(Rect){28,1340,120,84},"‹",A_LD_PREV,a->ld_page>0,false,0);
+        button(a,(Rect){572,1340,120,84},"›",A_LD_NEXT,a->ld_page+1<pages,false,0);raw_text(false);
+        button(a,(Rect){164,1340,392,84},"Refresh",A_LD_REFRESH,ui_free(a),false,0);
+    }else button(a,(Rect){28,1340,664,84},"Refresh",A_LD_REFRESH,ui_free(a),false,0);
 }
 static void render_linux_data_restore(App*a){
     heading(a,"Restore Linux data","Nothing has been changed yet.",true);
@@ -167,12 +173,18 @@ static bool ld_action(App*a,int id){
         if(id>=A_LD_PART&&id<A_LD_PART+(int)LD_PARTS){if(ui_free(a)){a->ld_parts^=1u<<(id-A_LD_PART);a->dirty=true;}return true;}
         if(id==A_LD_DEST){if(ui_free(a)&&a->ld_dest_count){a->ld_dest_index=(a->ld_dest_index+1)%(int)a->ld_dest_count;a->dirty=true;}return true;}
         if(id==A_LD_BACKUP){if(ui_free(a)&&!start_ld_job(a,J_LD_BACKUP))files_problem(a,"LINUX_DATA_UNAVAILABLE","Wait for the current operation to finish.",LINUX_DATA);return true;}
-        if(id>=A_LD_ARCHIVE&&id<A_LD_ARCHIVE+(int)a->ld_archive_count&&a->ld_archives[id-A_LD_ARCHIVE].locked){
+        if(id==A_LD_PREV||id==A_LD_NEXT){
+            if(id==A_LD_PREV&&a->ld_page>0)a->ld_page--;
+            else if(id==A_LD_NEXT&&(a->ld_page+1)*LD_ROWS<a->ld_archive_count)a->ld_page++;
+            a->dirty=true;return true;
+        }
+        unsigned int at=a->ld_page*LD_ROWS+(unsigned int)(id-A_LD_ARCHIVE);
+        if(id>=A_LD_ARCHIVE&&id<A_LD_ARCHIVE+(int)LD_ROWS&&at<a->ld_archive_count&&a->ld_archives[at].locked){
             /* Protected: the password is asked, and the list is read again with it. */
-            if(ui_free(a))backup_password_ask(a,J_LD_INSPECT,a->ld_archives[id-A_LD_ARCHIVE].wrong,LINUX_DATA);
+            if(ui_free(a))backup_password_ask(a,J_LD_INSPECT,a->ld_archives[at].wrong,LINUX_DATA);
             return true;
         }
-        if(id>=A_LD_ARCHIVE&&id<A_LD_ARCHIVE+(int)a->ld_archive_count){if(ui_free(a)){a->ld_selected=id-A_LD_ARCHIVE;a->ld_restore_parts=a->ld_archives[a->ld_selected].parts;screen(a,LINUX_DATA_RESTORE);}return true;}
+        if(id>=A_LD_ARCHIVE&&id<A_LD_ARCHIVE+(int)LD_ROWS&&at<a->ld_archive_count){if(ui_free(a)){a->ld_selected=(int)at;a->ld_restore_parts=a->ld_archives[at].parts;screen(a,LINUX_DATA_RESTORE);}return true;}
     }
     if(a->screen==LINUX_DATA_RESTORE){
         if(id==A_BACK){screen(a,LINUX_DATA);return true;}

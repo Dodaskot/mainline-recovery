@@ -22,7 +22,14 @@ int main(void) {
         BrotliDecoderResult r = BrotliDecoderDecompressStream(s, &avail_in, &next_in, &avail_out, &next_out, NULL);
         size_t have = sizeof out - avail_out, done = 0;
         while (done < have) { ssize_t w = write(1, out + done, have - done); if (w <= 0) return 2; done += (size_t)w; }
-        if (r == BROTLI_DECODER_RESULT_SUCCESS) return avail_in || !eof ? (read(0, in, 1) > 0 ? 1 : 0) : 0;
+        /* The stream's end must be the input's end: bytes still buffered, or more to read, are
+         * not part of it (2026-11-13 review: buffered trailing bytes were accepted). */
+        if (r == BROTLI_DECODER_RESULT_SUCCESS) {
+            if (avail_in) return 1;
+            if (eof) return 0;
+            ssize_t n = read(0, in, 1);
+            return n < 0 ? 2 : n > 0 ? 1 : 0;
+        }
         if (r == BROTLI_DECODER_RESULT_ERROR) return 1;
         if (r == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT && eof) return 1;
     }

@@ -343,9 +343,19 @@ class SuperFit(unittest.TestCase):
         self.assertEqual(plan, {'system': [12 * self.MIB, 8 * self.MIB], 'product': [6 * self.MIB, 3 * self.MIB],
                                 'odm': [1 * self.MIB, 9 * self.MIB]})
         opened = self.opened(write=True)
-        for name, (now, then) in sorted(plan.items(), key=lambda item: item[1][1] - item[1][0]):
-            opened.resize(name, then)
-        self.assertEqual({n: opened.size_of(opened.partition(n)) for n in sizes}, sizes)
+        zi.resize_all(opened, plan)
+        opened.commit()
+        again = self.opened()
+        self.assertEqual({n: again.size_of(again.partition(n)) for n in sizes}, sizes)
+
+    def test_a_layout_that_fails_halfway_leaves_super_as_it_was(self):
+        # 2026-11-13 review: each resize was written by itself; one that failed left the others done.
+        import lp_metadata as lp
+        before = self.super.read_bytes()
+        opened = self.opened(write=True)
+        with self.assertRaises(lp.MetadataError):
+            zi.resize_all(opened, {'system': [12 * self.MIB, 4 * self.MIB], 'odm': [self.MIB, 60 * self.MIB]})
+        self.assertEqual(self.super.read_bytes(), before)
 
     def test_nothing_changes_when_everything_fits(self):
         sizes = zi.package_sizes(self.package({'system': 8 * self.MIB, 'odm': self.MIB}))

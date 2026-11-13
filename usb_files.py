@@ -357,7 +357,7 @@ def child_start(context, session, pin, lease, access, runtime, gadget):
               'umask 022\ndefault_uid 0\ndefault_gid 0\nsync_when_close 1\n'
               # How a computer names the phone; umtprd's defaults read "Viveris Technologies" (2026-11-09).
               # The serial is fixed and not the phone's own.
-              'manufacturer "Samsung"\nproduct "Galaxy A22 5G recovery"\nserial "a22x-recovery"\nfirmware_version "0.6"\n'
+              'manufacturer "Samsung"\nproduct "Galaxy A22 5G recovery"\nserial "a22x-recovery"\nfirmware_version "1.0"\n'
               f'storage "/files" "{pin.volume["id"]}" "{access}"\n')
     config_path = root / 'umtprd.conf'
     fd = os.open(config_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o444)

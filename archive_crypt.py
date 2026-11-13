@@ -200,10 +200,9 @@ def sink(fd, password):
                     break
                 encryptor.write(data)
         except BaseException as error:  # noqa: BLE001 - handed to the thread that waits
+            # The pipe is closed at once, so the writer stops at its next write instead of reading
+            # and compressing tens of gigabytes for nothing (2026-11-13 review: a full card).
             failure.append(error)
-            with contextlib.suppress(OSError):
-                while os.read(reader, 1 << 20):
-                    pass
         finally:
             os.close(reader)
 

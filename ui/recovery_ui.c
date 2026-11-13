@@ -63,7 +63,8 @@
 #define SECRET_POP_MS 420u
 #define LD_PARTS 4u
 #define LD_DESTS 4u
-#define LD_ARCHIVES 6u
+#define LD_ARCHIVES 16u
+#define LD_ROWS 3u /* archives on one page of Linux data */
 #define FS_LONG_MS 450u
 #define FILE_WINDOW_STEP 32
 #define FILE_ROW_HEIGHT 116
@@ -142,7 +143,7 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
     A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_RESET,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
-    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE,A_FS_SEL_ARCHIVE,A_FS_EXTRACT,A_LD=7680,A_LD_DEST,A_LD_BACKUP,A_LD_REFRESH,A_LD_RESTORE,A_LD_PART=7690 /* ..7693 */,A_LD_RPART=7695 /* ..7698 */,A_LD_ARCHIVE=7700 /* ..7705 */,A_BACKUP_ENCRYPT=7710,A_BACKUP_PASSWORD_FIELD,A_SECRET_SHOW };
+    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE,A_FS_SEL_ARCHIVE,A_FS_EXTRACT,A_LD=7680,A_LD_DEST,A_LD_BACKUP,A_LD_REFRESH,A_LD_RESTORE,A_LD_PART=7690 /* ..7693 */,A_LD_RPART=7695 /* ..7698 */,A_LD_ARCHIVE=7700 /* ..7705 */,A_BACKUP_ENCRYPT=7710,A_BACKUP_PASSWORD_FIELD,A_SECRET_SHOW,A_LD_PREV=7720,A_LD_NEXT };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
     J_FS_STAT,J_FS_CHMOD,J_FS_CHOWN,J_FS_RESOLVE,J_FS_COPY_TREE,J_FS_FORMAT,J_FS_CHECK,J_FS_RESIZE,J_TOOLS_STATUS,J_TOOLS_EXPORT,J_DISPLAY_STATUS,J_DISPLAY_SET,J_WIPE_PLAN,J_WIPE,J_USB_STATUS,J_USB_START,J_USB_STOP,
@@ -406,7 +407,7 @@ typedef struct {
     /* A password as dots: when the last character was typed, and how many there were then. */
     uint64_t secret_typed_at;unsigned int secret_count;bool secret_show;
     bool backup_encrypt,pw_wrong;char backup_password[260],backup_password_file[PATH_LEN];int pw_retry_kind;enum Screen pw_return;
-    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
+    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
     bool fs_select,fs_select_all;unsigned int fs_sel_count;char fs_sel[FS_SEL_MAX][256];
     int fs_prompt_kind,fs_destination_index;
     unsigned int fs_confirm_page;
@@ -1129,7 +1130,10 @@ static void render_backup(App*a){
     {Rect r={28,786,664,120};rounded(a,r,24,PANEL);icon_tile(a,ICON_LINUX,46,r.y+20,56,ICON_FILL);text(a,120,r.y+18,1,TEXT,"Linux data");
      ellipsis(a,120,r.y+64,500,0,MUTED,"Home, accounts, settings, packages: for another system or device");icon(a,ICON_CHEVRON,640,r.y+44,32,MUTED);register_button(a,r,A_LD,ui_free(a),0);}
     destination(a,930);
-    text_tile(a,1106,0,MUTED,!strcmp(a->profile,"linux")&&!a->linux_backup_available&&a->inventory_ok?"Compact Linux backup tools are unavailable in this recovery. Refresh system status to check availability.":"Planning measures the compressed size and checks free space on the destination. Userdata stays offline afterward.",5);
+    /* 2026-11-13 review: the switch sat above Review backup and said nothing of what it leaves out. */
+    text_tile(a,1106,0,a->backup_encrypt?ORANGE:MUTED,!strcmp(a->profile,"linux")&&!a->linux_backup_available&&a->inventory_ok?"Compact Linux backup tools are unavailable in this recovery. Refresh system status to check availability.":
+              a->backup_encrypt?"The password protects copies of Android, Linux data and archives made in Files. Linux snapshots, the recovery image and EFS and IMEI are saved without it.":
+              "Planning measures the compressed size and checks free space on the destination. Userdata stays offline afterward.",5);
     {Rect r={28,1232,664,74};rounded(a,r,20,a->backup_encrypt?PANEL2:PANEL);int cx=66,cy=r.y+37;
      if(a->backup_encrypt){vector_circle(a,cx,cy,16,16,ORANGE);vector_line(a,cx-7,cy,cx-2,cy+6,3,ON_ORANGE);vector_line(a,cx-2,cy+6,cx+8,cy-6,3,ON_ORANGE);}else vector_circle(a,cx,cy,16,3,LINE);
      ellipsis(a,104,r.y+20,560,1,TEXT,"Protect copies with a password");register_button(a,r,A_BACKUP_ENCRYPT,ui_free(a),0);}
@@ -5227,7 +5231,7 @@ static void sample_document(App*a,unsigned int lines){
 }
 static void sample_system(App*a);
 static bool preview(App*a,const char*name){
-    copy(a->sys_model,sizeof(a->sys_model),"SM-A226B");copy(a->sys_version,sizeof(a->sys_version),"0.6");
+    copy(a->sys_model,sizeof(a->sys_model),"SM-A226B");copy(a->sys_version,sizeof(a->sys_version),"1.0.0");
     a->preview=true;a->inventory_ok=true;a->successful=true;a->battery_percent=92;copy(a->battery,sizeof(a->battery),"92%");copy(a->status,sizeof(a->status),"Illustrative UI preview - not a phone capture");copy(a->kernel,sizeof(a->kernel),"Kernel and device status appear here");copy(a->repositories[0],PATH_LEN,"/mnt/backup/A22xBackups");a->repository_count=1;copy(a->battery,sizeof(a->battery),"--");
     if(!strcmp(name,"home"))a->screen=HOME;else if(!strcmp(name,"backup")||!strcmp(name,"backup-android")){a->screen=BACKUP;a->linux_backup_available=true;a->systems_foreign=!strcmp(name,"backup-android");}else if(!strcmp(name,"plan")){a->screen=PLAN;a->plan_can_execute=true;a->plan_bytes=53427044352ULL;copy(a->plan_parts,sizeof(a->plan_parts),"boot  +  userdata");copy(a->plan_backup,sizeof(a->plan_backup),"/mnt/backup/A22xBackups/linux-example");copy(a->plan_id,sizeof(a->plan_id),"example-plan-preview");}
     else if(!strcmp(name,"linux-plan")||!strcmp(name,"linux-wipe")||!strcmp(name,"linux-restore")||!strcmp(name,"linux-space-blocked")){
@@ -6227,6 +6231,12 @@ static int test_linux_data(void){
     assert(a->ld_archive_count==1&&a->ld_archives[0].locked&&a->ld_archives[0].wrong);render(a);
     assert(test_press(a,A_LD_ARCHIVE+0,50)&&a->screen==FILE_PROMPT&&a->pw_retry_kind==J_LD_INSPECT&&a->pw_wrong);
     assert(test_press(a,A_BACK,50)&&a->screen==LINUX_DATA&&a->pw_retry_kind==J_NONE&&!strcmp(a->backup_password,"secret 77"));
+    /* 2026-11-13 review: a fourth and fifth backup are reached on the next page. */
+    a->ld_archives[0].locked=a->ld_archives[0].wrong=false;screen(a,LINUX_DATA);a->ld_archive_count=5;a->ld_page=0;for(unsigned int k=1;k<5;k++){a->ld_archives[k]=a->ld_archives[0];a->ld_archives[k].locked=a->ld_archives[k].wrong=false;a->ld_archives[k].parts=1u<<(k%4);}
+    render(a);assert(test_button(a,A_LD_NEXT));
+    assert(test_press(a,A_LD_NEXT,50)&&a->ld_page==1);render(a);assert(test_button(a,A_LD_ARCHIVE+1)&&!test_button(a,A_LD_ARCHIVE+2));
+    assert(test_press(a,A_LD_ARCHIVE+1,50)&&a->screen==LINUX_DATA_RESTORE&&a->ld_selected==4&&a->ld_restore_parts==1u);
+    screen(a,LINUX_DATA);assert(test_press(a,A_LD_PREV,50)&&a->ld_page==0);a->ld_archive_count=1;
     unlink(a->backup_password_file);rmdir(a->workdir);
     free(a->pixels);free(a);return 1;
 }

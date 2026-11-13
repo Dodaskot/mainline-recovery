@@ -67,19 +67,101 @@ def chosen_names(directory, everything, names):
     return list(dict.fromkeys(names))
 
 
-def walk(directory, name, device, arcname, out):
-    """(dir fd, name, lstat, archive name) for NAME and, for a folder, everything under it on the same
-    filesystem. A folder is opened by descriptor; a link inside it is never followed."""
+class Dir:
+    """Where an entry lies: BASE (a folder descriptor the caller keeps open) and the names of the
+    folders under it, with the identity the last one had when it was walked. 2026-11-13 review: every
+    folder walked was kept open until the archive was written, and a home with more than about a
+    thousand folders ran out of descriptors; now one chain of folders is open at a time."""
+    __slots__ = ('base', 'parts', 'ident')
+
+    def __init__(self, base, parts=(), ident=None):
+        self.base, self.parts, self.ident = base, parts, ident
+
+
+def walk(directory, name, device, arcname, out, parent=None):
+    """(Dir, name, lstat, archive name) for NAME and, for a folder, everything under it on the same
+    filesystem. A folder is opened by descriptor while it is listed; a link inside it is never followed."""
+    parent = parent or Dir(directory)
     info = os.stat(name, dir_fd=directory, follow_symlinks=False)
     if stat.S_ISSOCK(info.st_mode):
         return
-    out.append((directory, name, info, arcname))
+    out.append((parent, name, info, arcname))
     require(len(out) <= MAX_ENTRIES, 'SELECTION_TOO_LARGE', 'Too many files are selected at once')
     if stat.S_ISDIR(info.st_mode) and info.st_dev == device:
         inner = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
-        out.append((inner, None, None, None))  # closed after the archive is written
-        for child in sorted(os.listdir(inner)):
-            walk(inner, child, device, arcname + '/' + child, out)
+        try:
+            now = os.fstat(inner)
+            require((now.st_dev, now.st_ino) == (info.st_dev, info.st_ino), 'FILE_CHANGED',
+                    'A folder changed while it was read', file=arcname)
+            here = Dir(parent.base, parent.parts + (name,), (info.st_dev, info.st_ino))
+            for child in sorted(os.listdir(inner)):
+                walk(inner, child, device, arcname + '/' + child, out, here)
+        finally:
+            os.close(inner)
+
+
+class Opener:
+    """The folder of each entry, opened again as the archive is written: the chain of folders the
+    previous entry needed is kept as far as it is shared, the rest closed."""
+
+    def __init__(self):
+        self.base, self.parts, self.fds = None, (), []
+
+    def fd(self, where):
+        if not isinstance(where, Dir):
+            return where
+        if where.base != self.base:
+            self.close()
+            self.base = where.base
+        common = 0
+        while common < min(len(self.parts), len(where.parts)) and self.parts[common] == where.parts[common]:
+            common += 1
+        for fd in self.fds[common:]:
+            os.close(fd)
+        del self.fds[common:]
+        self.parts = self.parts[:common]
+        for part in where.parts[common:]:
+            self.fds.append(os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                    dir_fd=self.fds[-1] if self.fds else where.base))
+            self.parts += (part,)
+        if not self.fds:
+            return where.base
+        now = os.fstat(self.fds[-1])
+        require((now.st_dev, now.st_ino) == where.ident, 'FILE_CHANGED', 'A folder changed while it was archived',
+                file='/'.join(where.parts))
+        return self.fds[-1]
+
+    def close(self):
+        for fd in self.fds:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        self.base, self.parts, self.fds = None, (), []
+
+
+def within(path, folder):
+    return path == folder or path.startswith(folder.rstrip('/') + '/')
+
+
+def safe_filter(inside):
+    """A tarfile filter: 'tar' (no absolute name, nothing outside the folder, no set-user-id bits) and
+    more (2026-11-13 review): no device node, nothing that lands outside INSIDE (a folder within the
+    destination), and no hard link to a file outside it, which a later entry of the same name would
+    have written through."""
+    inside = os.path.realpath(inside)
+
+    def check(member, path):
+        member = tarfile.tar_filter(member, path)
+        if member.ischr() or member.isblk():
+            raise tarfile.SpecialFileError(member)
+        target = os.path.realpath(os.path.join(path, member.name))
+        if not within(target, inside):
+            raise tarfile.OutsideDestinationError(member, target)
+        if member.islnk():
+            linked = os.path.realpath(os.path.join(path, member.linkname))
+            if not within(linked, inside):
+                raise tarfile.LinkOutsideDestinationError(member, linked)
+        return member
+    return check
 
 
 def tar_info(directory, name, info, arcname):
@@ -195,13 +277,15 @@ def write_archive(out, files, total, progress, extra=()):
     proc = subprocess.Popen([pa.zstd_path(), '-q', '-%d' % pa.LEVEL, '-T0', '-c'], stdin=subprocess.PIPE, stdout=out,
                             stderr=subprocess.PIPE, bufsize=0)
     done = 0
+    folders = Opener()
     try:
         with tarfile.open(fileobj=Pipe(proc.stdin.fileno()), mode='w|', format=tarfile.PAX_FORMAT, bufsize=CHUNK) as tar:
             for name, data, mode in extra:
                 item = tarfile.TarInfo(name)
                 item.size, item.mode, item.mtime = len(data), mode, int(time.time())
                 tar.addfile(item, io.BytesIO(data))
-            for directory, name, info, arcname in files:
+            for where, name, info, arcname in files:
+                directory = folders.fd(where)
                 item = tar_info(directory, name, info, arcname)
                 if item is None:
                     continue
@@ -237,6 +321,7 @@ def write_archive(out, files, total, progress, extra=()):
         proc.wait()
         raise
     finally:
+        folders.close()
         with contextlib.suppress(OSError, ValueError):
             proc.stdin.close()
         proc.stderr.close()
@@ -330,9 +415,8 @@ def extract(source, total, name, destination, progress):
     try:
         with tarfile.open(fileobj=stream, mode='r|', bufsize=CHUNK) as tar:
             for member in tar:
-                # 'tar': no absolute name, nothing outside the folder, no set-user-id bits.
                 # Owners as numbers: the names of another system mean nothing in this recovery.
-                tar.extract(member, destination, numeric_owner=True, filter='tar')
+                tar.extract(member, destination, numeric_owner=True, filter=safe_filter(destination))
                 count += 1
                 if count % 64 == 0:
                     progress(os.lseek(source, 0, os.SEEK_CUR), total, member.name)

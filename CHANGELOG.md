@@ -39,6 +39,26 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **Fixes from the review of 0.6.207–0.6.235** (0.6.236), 15 findings, all confirmed and fixed:
+  - archives extracted in Files and Linux data no longer follow a hard link out of their folder or
+    make device nodes, and a part of Linux data stays in its own folder (checked on the phone: an
+    archive that wrote through a hard link is refused, the file outside unchanged);
+  - packing keeps one chain of folders open at a time (1100 folders packed on the phone under a
+    limit of 256 descriptors; before, about 1000 folders ran out);
+  - a ROM's own installer runs first; the recovery writes a block-based ROM's images itself only
+    when that installer fails, and names what it did not write (dtbo, vbmeta);
+  - super is laid out for a ROM in one write, tried first on a copy of its metadata, so a failure
+    leaves it as it was; a ZIP without logical partitions no longer reads super at all;
+  - a partition image is read back from the storage, not from the page cache;
+  - an encrypted copy on a full card stops at once instead of compressing the rest;
+  - Linux data: a card that is only inserted is offered as a destination; more than three backups
+    are reached on further pages; a failed restore removes its staging folder (password hashes,
+    keys) at once; `restore.sh` keeps spaces in a typed password and upgrades Arch whole
+    (`pacman -Syu`), never partially;
+  - Delete in Files leaves a folder that is itself a mount point;
+  - the Brotli decoder refuses bytes after the end of its stream (checked on the phone);
+  - the Backup page says which copies the password protects; EFS and IMEI copies say they are
+    saved without it.
 - **Linux snapshots on every SM-A226B** (0.6.234): restoring and wiping no longer need a
   qualification capsule made for one phone's eMMC. That rule dates from when the recovery could
   hardly do anything; the build now admits these itself by the model, the partitions (number,
