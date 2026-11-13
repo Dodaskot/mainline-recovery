@@ -25,6 +25,7 @@
 %u partitions written and checked. userdata is ready for Android, and this recovery stays. The first start of Android takes several minutes.
 %u partitions, %s
 %u partitions, %s. Every checksum matches.
+%u selected
 1 min
 10 min
 2 min
@@ -436,6 +437,7 @@ Copying the system files
 Cores
 Could not launch the terminal client. No input will be retried automatically.
 Could not prepare the complete edited text in RAM.
+Could not prepare the selection in RAM.
 Could not start display control.
 Create empty ext4 filesystem
 Create this text file. An existing file will not be overwritten.
@@ -458,9 +460,14 @@ Debian
 December
 Delete
 Delete a saved system that is not running.
+Delete selected
+Delete selected (%u)
 Delete the saved image
 Delete this image?
 Deleted
+Deleted %u
+Deleted %u; %u could not be deleted
+Deletes the selected files, and the selected folders with everything in them. There is no undo.
 Deleting a copy must be confirmed
 Deny
 Design capacity
@@ -547,6 +554,8 @@ Estimating the size
 Europe
 Every partition already holds what the copy holds: nothing was written.
 Everything else on cache is deleted: update packages, logs and temporary files.
+Everything in this folder
+Everything in this folder except the entries left out
 Everything is checked as it is read and read back after writing. It takes a few minutes; then restart into Android.
 Everything is checked as it is read and read back after writing. The BOOT there now is kept on cache first. It takes about ten minutes; then restart into Android.
 Everything on this card is erased: its partitions, systems and files.
@@ -1338,8 +1347,11 @@ Searching the repositories...
 Security patch
 Select a completed snapshot.
 Select a raw A22x BOOT v2 image. A header check does not prove that its kernel boots.
+Select all
 Select an external backup location
+Select none
 Select writable ext4 microSD. The source remains unchanged.
+SELECTED
 SELECTED ENTRY
 SELECTED VOLUME
 September

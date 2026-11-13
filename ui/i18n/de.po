@@ -84,6 +84,9 @@ msgstr "Partitionen: %u, %s"
 msgid "%u partitions, %s. Every checksum matches."
 msgstr "Partitionen: %u, %s. Alle Prüfsummen stimmen."
 
+msgid "%u selected"
+msgstr "%u ausgewählt"
+
 msgid "1 min"
 msgstr "1 Min."
 
@@ -1317,6 +1320,9 @@ msgstr "Der Terminal-Client konnte nicht gestartet werden. Eingaben werden nicht
 msgid "Could not prepare the complete edited text in RAM."
 msgstr "Der vollständige bearbeitete Text konnte nicht im RAM vorbereitet werden."
 
+msgid "Could not prepare the selection in RAM."
+msgstr "Die Auswahl konnte im RAM nicht vorbereitet werden."
+
 msgid "Could not start display control."
 msgstr "Anzeigesteuerung nicht startbar."
 
@@ -1383,6 +1389,12 @@ msgstr "Löschen"
 msgid "Delete a saved system that is not running."
 msgstr "Ein gespeichertes System löschen, das gerade nicht läuft."
 
+msgid "Delete selected"
+msgstr "Auswahl löschen"
+
+msgid "Delete selected (%u)"
+msgstr "Auswahl löschen (%u)"
+
 msgid "Delete the saved image"
 msgstr "Gespeichertes Image löschen"
 
@@ -1391,6 +1403,15 @@ msgstr "Dieses Abbild löschen?"
 
 msgid "Deleted"
 msgstr "Gelöscht"
+
+msgid "Deleted %u"
+msgstr "%u gelöscht"
+
+msgid "Deleted %u; %u could not be deleted"
+msgstr "%u gelöscht; %u konnten nicht gelöscht werden"
+
+msgid "Deletes the selected files, and the selected folders with everything in them. There is no undo."
+msgstr "Löscht die ausgewählten Dateien und die ausgewählten Ordner mit allem, was darin ist. Das lässt sich nicht rückgängig machen."
 
 msgid "Deleting a copy must be confirmed"
 msgstr "Das Löschen einer Kopie muss bestätigt werden"
@@ -1649,6 +1670,12 @@ msgstr "Jede Partition enthält bereits, was die Kopie enthält: Es wurde nichts
 
 msgid "Everything else on cache is deleted: update packages, logs and temporary files."
 msgstr "Alles andere im Cache wird gelöscht: Update-Pakete, Protokolle und temporäre Dateien."
+
+msgid "Everything in this folder"
+msgstr "Alles in diesem Ordner"
+
+msgid "Everything in this folder except the entries left out"
+msgstr "Alles in diesem Ordner außer den abgewählten Einträgen"
 
 msgid "Everything is checked as it is read and read back after writing. It takes a few minutes; then restart into Android."
 msgstr "Alles wird beim Lesen geprüft und nach dem Schreiben zurückgelesen. Es dauert einige Minuten; danach in Android neu starten."
@@ -4023,11 +4050,20 @@ msgstr "Wähle eine fertige Sicherung."
 msgid "Select a raw A22x BOOT v2 image. A header check does not prove that its kernel boots."
 msgstr "Wählen Sie ein rohes A22x-BOOT-v2-Image. Eine Kopfprüfung beweist nicht, dass sein Kernel startet."
 
+msgid "Select all"
+msgstr "Alle auswählen"
+
 msgid "Select an external backup location"
 msgstr "Externes Sicherungsziel wählen"
 
+msgid "Select none"
+msgstr "Keine auswählen"
+
 msgid "Select writable ext4 microSD. The source remains unchanged."
 msgstr "Wählen Sie eine beschreibbare ext4-microSD. Die Quelle bleibt unverändert."
+
+msgid "SELECTED"
+msgstr "AUSGEWÄHLT"
 
 msgid "SELECTED ENTRY"
 msgstr "AUSGEWÄHLTER EINTRAG"

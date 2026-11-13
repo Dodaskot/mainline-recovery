@@ -226,6 +226,37 @@ class FilesystemFixtureTest(FilesystemFixtureSupport):
             fs.delete_entry(self.ctx, 'userdata', '/folder', True)
         self.assertTrue((folder / 'file').exists())
 
+    def test_delete_many_chosen_and_all_but_some(self):
+        """2026-11-13: several entries of one folder at once; folders go with what is in them, a
+        symlink is removed and never followed, a missing name is reported and the rest still goes."""
+        work = self.data / 'many'
+        work.mkdir()
+        for name in ('a.txt', 'b.txt', 'c.txt', 'keep.txt'):
+            (work / name).write_text(name)
+        (work / 'folder' / 'deep').mkdir(parents=True)
+        (work / 'folder' / 'deep' / 'file').write_text('x')
+        outside = self.data / 'outside'
+        outside.mkdir()
+        (outside / 'precious').write_text('stays')
+        (work / 'link').symlink_to(outside)
+        done = fs.delete_many(self.ctx, 'userdata', '/many', False, ['a.txt', 'folder', 'link', 'gone.txt'], True)
+        self.assertEqual((done['deleted'], done['failed']), (3, [{'name': 'gone.txt', 'code': 'NOT_FOUND'}]))
+        self.assertEqual(sorted(p.name for p in work.iterdir()), ['b.txt', 'c.txt', 'keep.txt'])
+        self.assertEqual((outside / 'precious').read_text(), 'stays')
+        done = fs.delete_many(self.ctx, 'userdata', '/many', True, ['keep.txt'], True)
+        self.assertEqual(done['deleted'], 2)
+        self.assertEqual([p.name for p in work.iterdir()], ['keep.txt'])
+        self.assert_error('CONFIRMATION_REQUIRED', fs.delete_many, self.ctx, 'userdata', '/many', True, [], False)
+        selection = self.root / 'selection.json'
+        selection.write_text(json.dumps({'all': False, 'names': ['../outside']}))
+        self.assert_error('INVALID_SELECTION', fs.selection_file, selection)
+        selection.write_text(json.dumps({'all': True, 'names': []}))
+        result = self.cli('delete-many', '--volume', 'userdata', '--path', '/many', '--selection-file', str(selection), '--confirm')
+        self.assertEqual(result['deleted'], 1)
+        self.assertEqual(list(work.iterdir()), [])
+        self.ctx.mount('userdata', 'ro')
+        self.assert_error('VOLUME_READ_ONLY', fs.delete_many, self.ctx, 'userdata', '/many', True, [], True)
+
     def test_rename_into_self_rejected(self):
         (self.data / 'folder').mkdir()
         self.assert_error('INVALID_DESTINATION', fs.rename_entry, self.ctx, 'userdata', '/folder', '/folder/child', True)

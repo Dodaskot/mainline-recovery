@@ -84,6 +84,9 @@ msgstr "Розділів: %u, %s"
 msgid "%u partitions, %s. Every checksum matches."
 msgstr "Розділів: %u, %s. Усі контрольні суми збігаються."
 
+msgid "%u selected"
+msgstr "Вибрано: %u"
+
 msgid "1 min"
 msgstr "1 хв"
 
@@ -1317,6 +1320,9 @@ msgstr "Не вдалося запустити клієнт термінала. 
 msgid "Could not prepare the complete edited text in RAM."
 msgstr "Не вдалося підготувати весь змінений текст у RAM."
 
+msgid "Could not prepare the selection in RAM."
+msgstr "Не вдалося підготувати вибране в RAM."
+
 msgid "Could not start display control."
 msgstr "Не вдалося запустити керування дисплеєм."
 
@@ -1383,6 +1389,12 @@ msgstr "Видалити"
 msgid "Delete a saved system that is not running."
 msgstr "Видалити збережену систему, яка зараз не працює."
 
+msgid "Delete selected"
+msgstr "Видалити вибране"
+
+msgid "Delete selected (%u)"
+msgstr "Видалити вибране (%u)"
+
 msgid "Delete the saved image"
 msgstr "Видалити збережений образ"
 
@@ -1391,6 +1403,15 @@ msgstr "Видалити цей образ?"
 
 msgid "Deleted"
 msgstr "Видалено"
+
+msgid "Deleted %u"
+msgstr "Видалено: %u"
+
+msgid "Deleted %u; %u could not be deleted"
+msgstr "Видалено: %u; не вдалося видалити: %u"
+
+msgid "Deletes the selected files, and the selected folders with everything in them. There is no undo."
+msgstr "Видаляє вибрані файли й вибрані теки разом з усім, що в них. Скасувати не можна."
 
 msgid "Deleting a copy must be confirmed"
 msgstr "Видалення копії треба підтвердити"
@@ -1649,6 +1670,12 @@ msgstr "Усі розділи вже містять те саме, що й ко�
 
 msgid "Everything else on cache is deleted: update packages, logs and temporary files."
 msgstr "Усе інше в кеші видаляється: пакети оновлень, журнали й тимчасові файли."
+
+msgid "Everything in this folder"
+msgstr "Усе в цій теці"
+
+msgid "Everything in this folder except the entries left out"
+msgstr "Усе в цій теці, крім невибраного"
 
 msgid "Everything is checked as it is read and read back after writing. It takes a few minutes; then restart into Android."
 msgstr "Усе перевіряється під час читання і зчитується назад після запису. Це триває кілька хвилин; потім перезапустіть телефон в Android."
@@ -4023,11 +4050,20 @@ msgstr "Виберіть завершений знімок."
 msgid "Select a raw A22x BOOT v2 image. A header check does not prove that its kernel boots."
 msgstr "Виберіть сирий образ A22x BOOT v2. Перевірка заголовка не доводить, що ядро запуститься."
 
+msgid "Select all"
+msgstr "Вибрати все"
+
 msgid "Select an external backup location"
 msgstr "Виберіть зовнішнє місце для копій"
 
+msgid "Select none"
+msgstr "Зняти вибір"
+
 msgid "Select writable ext4 microSD. The source remains unchanged."
 msgstr "Виберіть ext4 microSD із записом. Джерело не змінюється."
+
+msgid "SELECTED"
+msgstr "ВИБРАНО"
 
 msgid "SELECTED ENTRY"
 msgstr "ВИБРАНИЙ ЗАПИС"

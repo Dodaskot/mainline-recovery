@@ -58,6 +58,8 @@
 #define PATH_LEN 1024
 #define MAX_VOLUMES 80
 #define FILE_BATCH 64
+#define FS_SEL_MAX 512
+#define FS_LONG_MS 450u
 #define FILE_WINDOW_STEP 32
 #define FILE_ROW_HEIGHT 116
 #define FILE_LIST_TOP 424
@@ -135,14 +137,14 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
     A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_RESET,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
-    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 };
+    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
     J_FS_STAT,J_FS_CHMOD,J_FS_CHOWN,J_FS_RESOLVE,J_FS_COPY_TREE,J_FS_FORMAT,J_FS_CHECK,J_FS_RESIZE,J_TOOLS_STATUS,J_TOOLS_EXPORT,J_DISPLAY_STATUS,J_DISPLAY_SET,J_WIPE_PLAN,J_WIPE,J_USB_STATUS,J_USB_START,J_USB_STOP,
     J_TERM_STATUS,J_TERM_START,J_TERM_READ,J_TERM_WRITE,J_TERM_RESIZE,J_TERM_STOP,J_SYS_STATUS,J_SYS_IMPORT_PLAN,J_SYS_SWITCH_PLAN,J_SYS_IMPORT,J_SYS_SWITCH,J_SYS_RECOVER,J_SYS_REMOVE,
     J_INSTALL_STATUS,J_INSTALL_BOOT_PLAN,J_INSTALL_STOCK_PLAN,J_INSTALL_RESUME_PLAN,J_INSTALL_EXECUTE,J_FLASH_TARGETS,J_FLASH_CHECK,J_FLASH_WRITE,J_FLASH_MEMBERS,J_USB_SYNC,J_USB_BACKUP,J_USB_EJECT,J_SYS_ACCOUNT_USER,J_SYS_ACCOUNT_PASS,J_SYS_WIFI_SSID,J_SYS_WIFI_PASS,J_LOCK_ENTER,J_LOCK_SET,J_LOCK_OLD,J_LOCK_CONFIRM,J_LOCK_ACCESS,J_SYSINFO,J_THEME_IMPORT,J_THEME_REMOVE,J_THEME_RESTORE,
     J_WIFI_STATUS,J_WIFI_SCAN,J_WIFI_CONNECT,J_WIFI_DISCONNECT,J_WIFI_FORGET,J_WIFI_SSID,J_WIFI_PASS,J_CATALOG,J_CATALOG_CHECK,J_PKG_SEARCH,J_PKG_QUERY,J_ID_LIST,J_ID_BACKUP,J_ID_BACKUPS,J_ID_RESTORE,J_ID_DELETE,J_CHARGER,J_IMAGES,J_IMAGES_DOWNLOAD,J_IMAGES_DELETE,J_APLAN_SHOW,J_APLAN_PREPARE,J_APLAN_FORGET,J_WIPE_CACHE,J_SAMSUNG_INSPECT,J_SAMSUNG_INSTALL,J_ANDROID_RESET,J_STOCK_BOOT,J_SAMSUNG_UNPACK,J_ROOT_LIST,J_ROOT_INSTALL,J_ROOT_PREPARE,J_ZIP_INSPECT,J_ZIP_RUN,J_BACKUP_RENAME,J_BACKUP_DELETE,J_CARD_LIST,J_CARD_APPLY,
-    J_COPY_LIST,J_COPY_VERIFY,J_COPY_RESTORE,J_COPY_DELETE,J_ROM_KIND,J_UPDATES_CHECK,J_UPDATES_FETCH,
+    J_COPY_LIST,J_COPY_VERIFY,J_COPY_RESTORE,J_COPY_DELETE,J_ROM_KIND,J_UPDATES_CHECK,J_UPDATES_FETCH,J_FS_DELETE_MANY,
     J_ROOT_SUPERKEY /* a prompt, not a job: APatch's SuperKey */,J_BACKUP_NAME /* a prompt: the new name of a backup */ };
 enum ScrollSurface { SCROLL_NONE,SCROLL_FOLDER,SCROLL_VOLUMES,SCROLL_TEXT,SCROLL_PROMPT,SCROLL_TERMINAL,SCROLL_SYSTEMS,SCROLL_TOOLS,SCROLL_INSTALL_REVIEW,SCROLL_INSTALL_PENDING,SCROLL_PAGE };
 enum DisplayCommand { DC_NONE,DC_STATUS,DC_BRIGHTNESS,DC_BLANK,DC_WAKE,DC_TOGGLE };
@@ -389,6 +391,9 @@ typedef struct {
     uint64_t text_cache_hash;size_t text_cache_length;int text_cache_width;
     bool text_cache_prompt,fs_caret_follow,prompt_caret_follow;
     bool fs_truncated,fs_dirty,fs_new_file,kb_shift,kb_uk,kb_symbols;
+    /* Several entries of one folder chosen by a long press (2026-11-13): with fs_select_all the names
+       are the ones left out, else the ones chosen. */
+    bool fs_select,fs_select_all;unsigned int fs_sel_count;char fs_sel[FS_SEL_MAX][256];
     int fs_prompt_kind,fs_destination_index;
     unsigned int fs_confirm_page;
     uint32_t keyboard_keys[56]; int keyboard_count;
@@ -1794,11 +1799,11 @@ static void file_icon(App*a,const FileEntry*e,int x,int y){
 static Rect browser_viewport(void){return(Rect){28,FILE_LIST_TOP,664,FILE_LIST_BOTTOM-FILE_LIST_TOP};}
 static int64_t browser_max_scroll(const App*a){int64_t extent=(int64_t)a->file_total*FILE_ROW_HEIGHT-14-(FILE_LIST_BOTTOM-FILE_LIST_TOP);return extent>0?extent:0;}
 static void browser_clamp(App*a){int64_t maximum=browser_max_scroll(a);if(a->browser_scroll<0)a->browser_scroll=0;if(a->browser_scroll>maximum)a->browser_scroll=maximum;}
-static void reset_browser(App*a){stop_inertia(a,"folder-change");a->file_offset=a->file_total=0;a->file_count=0;a->files_more=false;a->browser_scroll=0;}
+static void reset_browser(App*a){a->fs_select=a->fs_select_all=false;a->fs_sel_count=0;stop_inertia(a,"folder-change");a->file_offset=a->file_total=0;a->file_count=0;a->files_more=false;a->browser_scroll=0;}
 static const char*files_operation_title(int kind){
     switch(kind){case J_FS_MOUNT:return "Enable writes";case J_FS_WRITE:return "Save text";case J_FS_MKDIR:return "New folder";
     case J_FS_RENAME:return "Rename";case J_FS_COPY:return "Copy file";case J_FS_COPY_TREE:return "Copy folder";
-    case J_FS_CHMOD:return "Permissions";case J_FS_CHOWN:return "Owner and group";case J_FS_DELETE:return "Delete";case J_FS_CHECK:return "Check and repair";case J_FS_RESIZE:return "Grow to fill";default:return "File operation";}
+    case J_FS_CHMOD:return "Permissions";case J_FS_CHOWN:return "Owner and group";case J_FS_DELETE:return "Delete";case J_FS_DELETE_MANY:return "Delete selected";case J_FS_CHECK:return "Check and repair";case J_FS_RESIZE:return "Grow to fill";default:return "File operation";}
 }
 static void files_note(App*a,int y){if(a->fs_status[0])ellipsis(a,36,y,648,0,MUTED,a->fs_status);}
 static Rect volume_viewport(void){return(Rect){28,VOLUME_LIST_TOP,664,VOLUME_LIST_BOTTOM-VOLUME_LIST_TOP};}
@@ -1899,17 +1904,49 @@ static void render_file_volume(App*a){
     text_tile(a,1270,0,MUTED,"Encrypted Android data needs a working decryption service. Raw boot images and firmware partitions cannot be browsed as folders.",5);
     files_note(a,1444);
 }
+
+/* Several entries chosen (2026-11-13, the owner: a long press selects, then delete the selected or
+   select all). Only in Files itself, not while a file is being picked for something else. */
+static bool files_picking(const App*a){return a->flash_pick||a->install.pick_source||a->theme_pick||a->systems_pick_manifest;}
+static int sel_index(const App*a,const char*name){for(unsigned int n=0;n<a->fs_sel_count;n++)if(!strcmp(a->fs_sel[n],name))return (int)n;return -1;}
+static bool entry_selected(const App*a,const FileEntry*e){bool listed=sel_index(a,e->name)>=0;return a->fs_select_all?!listed:listed;}
+static unsigned int sel_total(const App*a){
+    if(!a->fs_select_all)return a->fs_sel_count;
+    return a->file_total>a->fs_sel_count?a->file_total-a->fs_sel_count:0;
+}
+static void sel_toggle(App*a,const char*name){
+    int at=sel_index(a,name);
+    if(at>=0){for(unsigned int n=(unsigned int)at;n+1<a->fs_sel_count;n++)memcpy(a->fs_sel[n],a->fs_sel[n+1],sizeof(a->fs_sel[n]));a->fs_sel_count--;}
+    else if(a->fs_sel_count<FS_SEL_MAX&&strlen(name)<sizeof(a->fs_sel[0]))copy(a->fs_sel[a->fs_sel_count++],sizeof(a->fs_sel[0]),name);
+    if(!sel_total(a)){a->fs_select=a->fs_select_all=false;a->fs_sel_count=0;}
+    a->dirty=true;
+}
+static void files_long_press(App*a,int n){
+    if(n<0||n>=a->file_count||files_picking(a))return;
+    if(!a->fs_select){a->fs_select=true;a->fs_select_all=false;a->fs_sel_count=0;}
+    sel_toggle(a,a->files[n].name);
+}
 static void render_file_browser(App*a){
     FileVolume*v=current_volume(a);char sub[256];snprintf(sub,sizeof(sub),"%.150s  /  %s",v?(v->label[0]?v->label:v->id):tr("Volume"),tr(files_writable(a)?"Writable":"Read-only"));
-    heading(a,a->theme_pick?"Choose a theme file":a->install.pick_source?(a->install.stock_selected?"Stock manifest":"BOOT image"):(a->flash_pick?(a->rom_pick?"Choose the ROM":(a->zip_pick?"Choose the ZIP":(a->samsung_pick?"Choose the AP file":"Choose image"))):(a->systems_pick_manifest?(a->systems_pick_script?"Choose a setup script":"Choose system image"):"Files")),sub,true);rounded(a,(Rect){28,230,664,94},14,PANEL);wrapped(a,46,246,628,0,TEXT,a->fs_path,2);
+    if(a->fs_select&&!files_picking(a)){char count[64];snprintf(count,sizeof(count),T("%u selected"),sel_total(a));raw_text(true);heading(a,count,sub,true);raw_text(false);}
+    else heading(a,a->theme_pick?"Choose a theme file":a->install.pick_source?(a->install.stock_selected?"Stock manifest":"BOOT image"):(a->flash_pick?(a->rom_pick?"Choose the ROM":(a->zip_pick?"Choose the ZIP":(a->samsung_pick?"Choose the AP file":"Choose image"))):(a->systems_pick_manifest?(a->systems_pick_script?"Choose a setup script":"Choose system image"):"Files")),sub,true);
+    rounded(a,(Rect){28,230,664,94},14,PANEL);wrapped(a,46,246,628,0,TEXT,a->fs_path,2);
+    bool selecting=a->fs_select&&!files_picking(a);
+    if(selecting){
+        bool everything=a->fs_select_all&&!a->fs_sel_count;
+        button(a,(Rect){28,340,322,64},everything?"Select none":"Select all",A_FS_SEL_ALL,ui_free(a),false,0);
+        button(a,(Rect){370,340,322,64},"Cancel",A_FS_SEL_CANCEL,ui_free(a),false,0);
+    }else{
     button(a,(Rect){28,340,208,64},"Up",A_FS_UP,ui_free(a)&&strcmp(a->fs_path,"/"),false,0);
     button(a,(Rect){256,340,208,64},"Volume",A_FS_VOLUME,ui_free(a),false,0);
-    button(a,(Rect){484,340,208,64},"Refresh",A_FS_REFRESH,ui_free(a),false,0);
+    button(a,(Rect){484,340,208,64},"Refresh",A_FS_REFRESH,ui_free(a),false,0);}
     browser_clamp(a);unsigned int first=(unsigned int)(a->browser_scroll/FILE_ROW_HEIGHT);
     a->clip_active=true;a->clip=browser_viewport();
     for(unsigned int index=first;index<a->file_total;index++){
         int y=FILE_LIST_TOP+(int)((int64_t)index*FILE_ROW_HEIGHT-a->browser_scroll);if(y>=FILE_LIST_BOTTOM)break;
-        Rect r={28,y,664,102};rounded(a,r,14,PANEL);
+        Rect r={28,y,664,102};
+        bool chosen=selecting&&index>=a->file_offset&&index-a->file_offset<(unsigned int)a->file_count&&entry_selected(a,&a->files[index-a->file_offset]);
+        rounded(a,r,14,chosen?PANEL2:PANEL);
         if(index<a->file_offset||index-a->file_offset>=(unsigned int)a->file_count){text(a,48,r.y+32,0,MUTED,"Loading...");continue;}
         int n=(int)(index-a->file_offset);FileEntry*e=&a->files[n];
         bool usable=file_is_directory(e)||file_is_regular(e);
@@ -1918,8 +1955,14 @@ static void render_file_browser(App*a){
         raw_text(true);ellipsis(a,96,r.y+13,476,1,file_color(e),e->name);raw_text(false);
         char desc[128],bytes[64];human_bytes(e->size,bytes,sizeof(bytes));snprintf(desc,sizeof(desc),"%s%s%s",tr(file_type_label(e)),file_is_regular(e)?"  /  ":"",file_is_regular(e)?bytes:"");
         ellipsis(a,96,r.y+62,476,0,MUTED,desc);
+        if(selecting){
+            int cx=632,cy=r.y+51;
+            if(chosen){vector_circle(a,cx,cy,18,18,ORANGE);vector_line(a,cx-8,cy,cx-2,cy+7,3,ON_ORANGE);vector_line(a,cx-2,cy+7,cx+9,cy-7,3,ON_ORANGE);}
+            else vector_circle(a,cx,cy,18,3,LINE);
+            register_button(a,(Rect){r.x,r.y,r.w,r.h},A_FS_ENTRY+n,ui_free(a),0);
+        }else{
         register_button(a,(Rect){r.x,r.y,548,r.h},A_FS_ENTRY+n,ui_free(a)&&usable,0);
-        button(a,(Rect){594,r.y+17,78,68},"...",A_FS_ENTRY_MENU+n,ui_free(a),false,0);
+        button(a,(Rect){594,r.y+17,78,68},"...",A_FS_ENTRY_MENU+n,ui_free(a),false,0);}
     }
     a->clip_active=false;
     if(!a->file_total)wrapped(a,48,490,624,1,MUTED,a->job.pid?"Reading folder...":"This folder is empty.",4);
@@ -1936,6 +1979,8 @@ static void render_file_browser(App*a){
     else if(a->systems_pick_manifest)button(a,(Rect){28,1358,664,82},"Cancel selection",A_SYS_CANCEL_PICK,ui_free(a),false,0);
     else if(a->flash_pick)button(a,(Rect){28,1358,664,82},"Cancel selection",A_FLASH_CANCEL_PICK,ui_free(a),false,0);
     else if(a->theme_pick)button(a,(Rect){28,1358,664,82},"Cancel selection",A_THEME_CANCEL_PICK,ui_free(a),false,0);
+    else if(selecting){char label[96];snprintf(label,sizeof(label),T("Delete selected (%u)"),sel_total(a));raw_text(true);
+        button(a,(Rect){28,1358,664,82},label,A_FS_SEL_DELETE,ui_free(a)&&files_writable(a)&&sel_total(a)>0,true,0);raw_text(false);}
     else{button(a,(Rect){28,1358,320,82},"New text file",A_FS_NEW_FILE,ui_free(a)&&files_writable(a),true,0);
     button(a,(Rect){372,1358,320,82},"New folder",A_FS_MKDIR,ui_free(a)&&files_writable(a),false,0);}
     files_note(a,1460);
@@ -2292,14 +2337,22 @@ static void render_file_confirmation(App*a){
     if(q->kind==J_FS_RENAME||q->kind==J_FS_COPY||q->kind==J_FS_COPY_TREE){text(a,40,712,0,ORANGE,"DESTINATION");confirmation_path(a,40,754,640,q->destination,a->fs_confirm_page,6);if(q->kind==J_FS_COPY||q->kind==J_FS_COPY_TREE)ellipsis(a,40,936,640,0,MUTED,q->destination_volume);}
     if(q->kind==J_FS_CHMOD){text(a,40,712,0,ORANGE,"NEW MODE / OCTAL");text(a,40,766,2,TEXT,q->mode);}
     if(q->kind==J_FS_CHOWN){char owner[96];snprintf(owner,sizeof(owner),T("UID %s  /  GID %s"),q->uid,q->gid);text(a,40,712,0,ORANGE,"NEW OWNER");text(a,40,766,1,TEXT,owner);}
-    const char*note=q->kind==J_FS_DELETE?"This deletes the selected file or empty folder. There is no undo.":
+    if(q->kind==J_FS_DELETE_MANY){
+        char count[96];snprintf(count,sizeof(count),T("%u selected"),sel_total(a));text(a,40,712,0,ORANGE,"SELECTED");raw_text(true);text(a,40,756,1,TEXT,count);raw_text(false);
+        unsigned int shown=0;int y=812;
+        if(!a->fs_select_all)for(unsigned int n=0;n<a->fs_sel_count&&shown<5;n++,shown++,y+=34){raw_text(true);ellipsis(a,40,y,640,0,MUTED,a->fs_sel[n]);raw_text(false);}
+        else wrapped(a,40,y,640,0,MUTED,a->fs_sel_count?"Everything in this folder except the entries left out":"Everything in this folder",2);
+    }
+    const char*note=q->kind==J_FS_DELETE_MANY?"Deletes the selected files, and the selected folders with everything in them. There is no undo.":
+        q->kind==J_FS_DELETE?"This deletes the selected file or empty folder. There is no undo.":
         (q->kind==J_FS_WRITE?(q->create?"Create this text file. An existing file will not be overwritten.":"Replace this file only if its contents still match the version you opened."):
         (q->kind==J_FS_MOUNT?"Write access allows changes on this volume. Nothing is formatted.":
         (q->kind==J_FS_CHMOD||q->kind==J_FS_CHOWN?"Change only this exact entry if it still matches the version you inspected. This action is not recursive.":"The destination must be a new name. Existing files will not be replaced.")));
-    wrapped(a,40,1050,640,1,q->kind==J_FS_DELETE?RED:MUTED,note,4);
+    wrapped(a,40,1050,640,1,q->kind==J_FS_DELETE||q->kind==J_FS_DELETE_MANY?RED:MUTED,note,4);
     unsigned int pages=confirmation_pages(q);
     if(pages>1){char label[48];snprintf(label,sizeof(label),T("Path %u / %u"),a->fs_confirm_page+1,pages);button(a,(Rect){28,1224,180,64},"Previous",A_FS_CONFIRM_PREV,a->fs_confirm_page>0,false,0);centered(a,(Rect){224,1224,272,64},0,MUTED,label);button(a,(Rect){512,1224,180,64},"Next",A_FS_CONFIRM_NEXT,a->fs_confirm_page+1<pages,false,0);}
-    button(a,(Rect){28,1330,664,108},q->kind==J_FS_DELETE?"Hold 3 seconds to delete":"Hold 2 seconds to confirm",A_FS_CONFIRM,ui_free(a)&&a->fs_confirm_page+1>=pages,true,q->kind==J_FS_DELETE?3000:2000);
+    bool erase=q->kind==J_FS_DELETE||q->kind==J_FS_DELETE_MANY;
+    button(a,(Rect){28,1330,664,108},erase?"Hold 3 seconds to delete":"Hold 2 seconds to confirm",A_FS_CONFIRM,ui_free(a)&&a->fs_confirm_page+1>=pages,true,erase?3000:2000);
 }
 /* Long work shows one banner. Only work that can stop without damage offers Cancel. */
 static bool job_long(int kind){return !terminal_job(kind)&&!job_quiet(kind)&&kind!=J_NONE&&kind!=J_INVENTORY&&kind!=J_DISPLAY_SET&&kind!=J_USB_BACKUP&&kind!=J_USB_EJECT;}
@@ -2524,6 +2577,7 @@ static void problem(App*a,const char*code,const char*message){
     copy(a->status,sizeof(a->status),code);copy(a->message,sizeof(a->message),message);a->successful=false;a->result_return=HOME;screen(a,RESULT);}
 
 static const char*job_name(int kind){
+    if(kind==J_FS_DELETE_MANY)return "files-delete-many";
     if(kind==J_APLAN_SHOW)return "android-plan-show";
     if(kind==J_APLAN_PREPARE)return "android-plan-prepare";
     if(kind==J_APLAN_FORGET)return "android-plan-forget";
@@ -2570,7 +2624,7 @@ static const char*job_name(int kind){
         "install-status","install-boot-plan","install-stock-plan","install-resume-plan","install-execute","flash-targets","flash-check","flash-write","flash-members","usb-sync","usb-backup","usb-eject"};
     return kind>=0&&kind<=J_USB_EJECT?n[kind]:"";
 }
-static bool file_job(int kind){return kind>=J_FS_INVENTORY&&kind<=J_FS_RESIZE;}
+static bool file_job(int kind){return (kind>=J_FS_INVENTORY&&kind<=J_FS_RESIZE)||kind==J_FS_DELETE_MANY;}
 static bool private_workdir(const char*path){
     struct stat s;if(!path[0]||path[0]!='/')return false;
     if(lstat(path,&s)<0){if(errno!=ENOENT||mkdir(path,0700)<0)return false;if(lstat(path,&s)<0)return false;}
@@ -2699,6 +2753,7 @@ static FileRequest file_request(App*a,int kind){
 }
 static const char*filesystem_verb(int kind){
     const char*verbs[]={"inventory","mount","unmount","list","read","write","mkdir","rename","copy","delete","stat","chmod","chown","resolve","copy-tree","format","check","resize"};
+    if(kind==J_FS_DELETE_MANY)return "delete-many";
     return file_job(kind)?verbs[kind-J_FS_INVENTORY]:"";
 }
 static bool write_edit_source(App*a,FileRequest*q){
@@ -2714,6 +2769,27 @@ static bool write_edit_source(App*a,FileRequest*q){
     if(!ok){unlink(q->text_file);q->text_file[0]=0;files_problem(a,"TEXT_STAGE_FAILED","Could not prepare the complete edited text in RAM.",FILE_EDIT);}
     return ok;
 }
+/* The selection for filesystem.py delete-many, as JSON in the private RAM folder. */
+static bool json_string_out(FILE*f,const char*s){
+    static const char hex[]="0123456789abcdef";
+    fputc(0x22,f);for(const unsigned char*c=(const unsigned char*)s;*c;c++){
+        if(*c==0x22||*c==0x5c){fputc(0x5c,f);fputc(*c,f);}
+        else if(*c<0x20){fputc(0x5c,f);fputc('u',f);fputc('0',f);fputc('0',f);fputc(hex[*c>>4],f);fputc(hex[*c&15],f);}
+        else fputc(*c,f);}
+    fputc(0x22,f);return !ferror(f);
+}
+static bool write_selection(App*a,FileRequest*q){
+    if(!private_workdir(a->workdir)){files_problem(a,"WORKDIR_UNAVAILABLE","The private RAM work directory is unavailable.",FILE_BROWSER);return false;}
+    if(snprintf(q->text_file,sizeof(q->text_file),"%s/selection-%ld-%u.json",a->workdir,(long)getpid(),++a->plan_sequence)>=(int)sizeof(q->text_file))return false;
+    int fd=open(q->text_file,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);FILE*f=fd>=0?fdopen(fd,"w"):NULL;
+    if(!f){if(fd>=0)close(fd);files_problem(a,"SELECTION_STAGE_FAILED",strerror(errno),FILE_BROWSER);q->text_file[0]=0;return false;}
+    bool ok=fprintf(f,"{\"all\":%s,\"names\":[",a->fs_select_all?"true":"false")>0;
+    for(unsigned int n=0;ok&&n<a->fs_sel_count;n++){if(n)fputc(',',f);ok=json_string_out(f,a->fs_sel[n]);}
+    ok=ok&&fprintf(f,"]}")>0&&fflush(f)==0&&fsync(fileno(f))==0;
+    if(fclose(f)!=0)ok=false;
+    if(!ok){unlink(q->text_file);q->text_file[0]=0;files_problem(a,"SELECTION_STAGE_FAILED","Could not prepare the selection in RAM.",FILE_BROWSER);}
+    return ok;
+}
 static bool start_files_request(App*a,const FileRequest*request){
     if(a->job.pid||a->preview)return false;
     if(!a->filesystem_helper[0]){files_problem(a,"FILES_UNAVAILABLE","The filesystem helper is not configured.",FILE_VOLUMES);return false;}
@@ -2722,6 +2798,7 @@ static bool start_files_request(App*a,const FileRequest*request){
     if(q.kind!=J_FS_INVENTORY&&(!q.volume[0]||!q.volume_token[0])){files_problem(a,"VOLUME_IDENTITY_MISSING","Refresh the volume list before continuing.",FILE_VOLUMES);return false;}
     if((q.kind==J_FS_CHMOD||q.kind==J_FS_CHOWN||q.kind==J_FS_RESOLVE||q.kind==J_FS_COPY_TREE)&&!q.entry_token[0]){files_problem(a,"ENTRY_IDENTITY_MISSING","Inspect the selected entry again before continuing.",FILE_INFO);return false;}
     if(q.kind==J_FS_WRITE&&!write_edit_source(a,&q))return false;
+    if(q.kind==J_FS_DELETE_MANY&&!write_selection(a,&q))return false;
     a->fs_request=q;
     char offset[32],limit[16];snprintf(offset,sizeof(offset),"%u",q.offset);snprintf(limit,sizeof(limit),"%d",FILE_BATCH);char*args[40];int n=0;
     args[n++]=a->python;args[n++]=a->filesystem_helper;
@@ -2731,6 +2808,7 @@ static bool start_files_request(App*a,const FileRequest*request){
     if(q.kind==J_FS_MOUNT){args[n++]="--mode";args[n++]=q.mode;if(!strcmp(q.mode,"rw"))args[n++]="--confirm";}
     else if(q.kind==J_FS_FORMAT){args[n++]="--fs";args[n++]=q.mode;args[n++]="--confirm";}
     else if(q.kind==J_FS_CHECK||q.kind==J_FS_RESIZE)args[n++]="--confirm";
+    else if(q.kind==J_FS_DELETE_MANY){args[n++]="--path";args[n++]=q.path;args[n++]="--selection-file";args[n++]=q.text_file;args[n++]="--confirm";}
     else if(q.kind>=J_FS_LIST){
         args[n++]="--path";args[n++]=q.path;
         if(q.kind==J_FS_LIST){args[n++]="--offset";args[n++]=offset;args[n++]="--limit";args[n++]=limit;}
@@ -3086,6 +3164,10 @@ static int complete_files_job(App*a,const Json*j,int kind){
         a->fs_inventory_destination=a->usb_mounting?USB_FILES:(kind==J_FS_UNMOUNT&&a->prepare_unmounting?PREPARE_FILESYSTEM:(kind==J_FS_UNMOUNT?FILE_VOLUME:FILE_BROWSER));
         if(a->usb_mounting){a->usb_mounting=false;a->usb_refresh_after=true;}
         reset_browser(a);return J_FS_INVENTORY;
+    }else if(kind==J_FS_DELETE_MANY){
+        unsigned int done=(unsigned int)json_uint(j,json_get(j,0,"deleted"),0),left=(unsigned int)json_uint(j,json_get(j,0,"failed_count"),0);
+        if(left)snprintf(a->fs_status,sizeof(a->fs_status),T("Deleted %u; %u could not be deleted"),done,left);else snprintf(a->fs_status,sizeof(a->fs_status),T("Deleted %u"),done);
+        reset_browser(a);screen(a,FILE_BROWSER);return J_FS_LIST;
     }else if(kind==J_FS_WRITE){
         copy(a->fs_status,sizeof(a->fs_status),"Text saved. Reading the stored file.");a->fs_dirty=false;a->fs_new_file=false;return J_FS_READ;
     }else{
@@ -3477,7 +3559,7 @@ static void complete_job(App*a){
         copy(a->message,sizeof(a->message),kind==J_BACKUP?(a->plan_linux_v2?"Backup completed and verified. Userdata remains offline.":"Backup completed and verified."):(kind==J_VERIFY?"The backup passed integrity verification.":(kind==J_WIPE?"Userdata is now an empty ext4 filesystem. Boot and the SD snapshot were preserved.":"The reviewed restore completed and was verified. Userdata remains offline.")));a->plan_can_execute=a->plan_linux_admitted=false;a->token[0]=0;screen(a,RESULT);}
     free(tok);job_reply_done(a,ended);a->dirty=true;
     if(a->backup_relist){a->backup_relist=false;a->list_for_verify=false;if(!start_job(a,J_LIST))screen(a,LIST);return;}
-    if(kind==J_FS_WRITE&&a->fs_request.text_file[0]){unlink(a->fs_request.text_file);a->fs_request.text_file[0]=0;}
+    if((kind==J_FS_WRITE||kind==J_FS_DELETE_MANY)&&a->fs_request.text_file[0]){unlink(a->fs_request.text_file);a->fs_request.text_file[0]=0;}
     if(next_files_job!=J_NONE)start_files_job(a,next_files_job);
     else if(kind==J_FS_INVENTORY&&a->id_list_after){a->id_list_after=false;start_identity_job(a,J_ID_LIST);}
     else if(a->systems_refresh_after){a->systems_refresh_after=false;start_systems_job(a,J_SYS_STATUS);}
@@ -3657,6 +3739,15 @@ static void tap_text_cursor(App*a){
 static void leave_editor(App*a){if(a->fs_dirty||a->fs_new_file)screen(a,FILE_DISCARD);else screen(a,FILE_TEXT);}
 static bool files_action(App*a,int id){
     if(id>=A_FS_VOLUME_ITEM&&id<A_FS_VOLUME_ITEM+a->volume_count){select_volume(a,id-A_FS_VOLUME_ITEM);return true;}
+    if(a->screen==FILE_BROWSER&&a->fs_select&&!files_picking(a)){
+        if(id>=A_FS_ENTRY&&id<A_FS_ENTRY+a->file_count){if(ui_free(a))sel_toggle(a,a->files[id-A_FS_ENTRY].name);return true;}
+        if(id==A_FS_SEL_ALL){if(ui_free(a)){bool everything=a->fs_select_all&&!a->fs_sel_count;a->fs_select_all=!everything;a->fs_sel_count=0;a->dirty=true;}return true;}
+        if(id==A_FS_SEL_CANCEL||id==A_BACK){a->fs_select=a->fs_select_all=false;a->fs_sel_count=0;a->dirty=true;return true;}
+        if(id==A_FS_SEL_DELETE){
+            if(ui_free(a)&&files_writable(a)&&sel_total(a)){FileRequest q=file_request(a,J_FS_DELETE_MANY);copy(q.path,sizeof(q.path),a->fs_path);confirm_file_request(a,q,FILE_BROWSER);}
+            return true;
+        }
+    }
     if(id>=A_FS_ENTRY&&id<A_FS_ENTRY+a->file_count){
         a->fs_selected=a->files[id-A_FS_ENTRY];
         /* A theme file is mostly picture data, so its page of actions is more use than its text. */
@@ -4452,6 +4543,18 @@ static void nav_home(App*a){
     a->flash_after_targets=a->catalog_saving=a->wifi_from_catalog=false;a->catalog_return=HOME;a->catalog_only=0;
     memset(a->root_superkey,0,sizeof(a->root_superkey));a->root_key_tool=-1;
     int before=(int)a->screen;const Theme*theme=ui_theme;screen(a,HOME);transition_after(a,A_BACK,before,theme);
+}
+/* 2026-11-13, the owner: a hold that is full acts at once, with the finger still down, and a long
+   press on a file row selects it. The lift after it does nothing more. */
+static void hold_tick(App*a){
+    if(!a->pointer_down||!a->pressed_action||a->scroll_moved||a->scroll_stop_tap||a->hold_felt_at==a->pressed_at)return;
+    int id=a->pressed_action;
+    if(a->screen==FILE_BROWSER&&id>=A_FS_ENTRY&&id<A_FS_ENTRY+a->file_count&&!files_picking(a)&&!a->fs_select&&ui_free(a)&&a->now>=a->pressed_at+FS_LONG_MS){
+        a->hold_felt_at=a->pressed_at;a->pressed_action=0;haptic(a,2);files_long_press(a,id-A_FS_ENTRY);return;
+    }
+    for(int n=0;n<a->button_count;n++)if(a->buttons[n].action==id&&a->buttons[n].enabled&&a->buttons[n].hold_ms&&a->now>=a->pressed_at+(uint64_t)a->buttons[n].hold_ms){
+        a->hold_felt_at=a->pressed_at;a->pressed_action=0;a->dirty=true;haptic(a,2);tap_action(a,id);return;
+    }
 }
 static void tap_action(App*a,int id){
     if(id==A_NAV_BACK){id=nav_back_action(a);if(!id)return;}
@@ -5440,7 +5543,7 @@ static bool preview(App*a,const char*name){
         if(!strcmp(name,"display")){a->display_supported=a->display_service=a->display_60=a->display_90=true;a->display_hz=90;a->display_actual_hz=89.9999;copy(a->display_note,sizeof(a->display_note),"90 Hz display mode is active.");a->display_light_known=a->display_brightness_supported=a->display_blank_supported=a->display_blank_known=true;a->display_percent=a->display_last_percent=64;a->display_raw=a->display_requested_raw=163;a->display_max=255;}
         else copy(a->display_reason,sizeof(a->display_reason),"The display helper did not report an available mode. Refresh status after the display service starts.");
     }
-    else if(!strcmp(name,"files")||!strcmp(name,"file-volume")||!strcmp(name,"volume-scroll")||!strcmp(name,"file-browser")||!strcmp(name,"file-scroll")||!strcmp(name,"file-editor")||!strcmp(name,"editor-scroll")||!strcmp(name,"text-scroll")||!strcmp(name,"file-confirm")||!strcmp(name,"file-locked")||!strcmp(name,"file-info")||!strcmp(name,"file-symlink")||!strcmp(name,"file-permissions")||!strcmp(name,"tools-export")){
+    else if(!strcmp(name,"files")||!strcmp(name,"file-volume")||!strcmp(name,"volume-scroll")||!strcmp(name,"file-browser")||!strcmp(name,"file-select")||!strcmp(name,"file-scroll")||!strcmp(name,"file-editor")||!strcmp(name,"editor-scroll")||!strcmp(name,"text-scroll")||!strcmp(name,"file-confirm")||!strcmp(name,"file-locked")||!strcmp(name,"file-info")||!strcmp(name,"file-symlink")||!strcmp(name,"file-permissions")||!strcmp(name,"tools-export")){
         a->volume_count=5;a->volume_index=0;copy(a->volume_id,sizeof(a->volume_id),"userdata");
         const char*ids[]={"userdata","sdcard-p1","cache","android-data","system"};
         const char*labels[]={"Linux / userdata","microSD","Cache","Android data","System"};
@@ -5466,12 +5569,13 @@ static bool preview(App*a,const char*name){
             }
         }
         else if(!strcmp(name,"file-locked")){a->screen=FILE_VOLUME;a->volume_index=3;copy(a->volume_id,sizeof(a->volume_id),"android-data");}
-        else if(!strcmp(name,"file-browser")||!strcmp(name,"file-scroll")){
+        else if(!strcmp(name,"file-browser")||!strcmp(name,"file-select")||!strcmp(name,"file-scroll")){
             a->screen=FILE_BROWSER;copy(a->fs_path,sizeof(a->fs_path),"/home/user");a->file_count=7;a->file_total=11;a->files_more=true;
             const char*names[]={"Документи","Зображення","config.ini","запустити-linux.sh","system-link","службовий-сокет","Дуже довга українська назва — резервна копія налаштувань системи 2026.txt"};
             const char*types[]={"directory","directory","file","file","symlink","other","file"};
             for(int n=0;n<7;n++){FileEntry*e=&a->files[n];copy(e->name,sizeof(e->name),names[n]);child_path(a->fs_path,names[n],e->path,sizeof(e->path));copy(e->type,sizeof(e->type),types[n]);copy(e->mode,sizeof(e->mode),n==3?"0755":"0644");e->metadata_supported=true;e->size=n<2?0:1536;}
             if(!strcmp(name,"file-scroll")){a->file_count=FILE_BATCH;a->file_total=180;a->browser_scroll=57;for(int n=7;n<FILE_BATCH;n++){FileEntry*e=&a->files[n];snprintf(e->name,sizeof(e->name),"Налаштування-%03d.conf",n);child_path(a->fs_path,e->name,e->path,sizeof(e->path));copy(e->type,sizeof(e->type),"file");copy(e->mode,sizeof(e->mode),"0644");e->size=2048;}}
+            if(!strcmp(name,"file-select")&&a->file_count>=3){a->fs_select=true;a->fs_sel_count=0;sel_toggle(a,a->files[0].name);sel_toggle(a,a->files[2].name);}
         }else if(!strcmp(name,"file-editor")||!strcmp(name,"editor-scroll")||!strcmp(name,"text-scroll")){
             a->screen=FILE_EDIT;copy(a->fs_file,sizeof(a->fs_file),"/home/user/налаштування.conf");copy(a->fs_text,sizeof(a->fs_text),"# Налаштування Linux\n# Зміни зберігаються після підтвердження.\n\n[display]\nbrightness=80\n\n[notes]\nmessage=Привіт, Україно!\n");a->fs_length=a->fs_cursor=strlen(a->fs_text);a->fs_dirty=true;a->kb_uk=true;
             if(strcmp(name,"file-editor")){sample_document(a,240);a->fs_scroll=!strcmp(name,"editor-scroll")?519:1079;a->screen=!strcmp(name,"editor-scroll")?FILE_EDIT:FILE_TEXT;const char*at=strstr(a->fs_text,"line-021");a->fs_cursor=at?(size_t)(at-a->fs_text)+10:0;}
@@ -5852,6 +5956,47 @@ static int test_torch(void){
 }
 /* 2026-11-11, as TWRP's Restore defaults: a hold on the last button of Settings puts the ways the
    recovery behaves back; the language and the time zone are the user's and stay. */
+/* 2026-11-13: a long press selects, taps add and remove, select all, delete the selected; a full hold acts with the finger still down. */
+static int test_files_select(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->preview=true;a->inventory_ok=true;
+    a->volume_count=1;a->volume_index=0;copy(a->volumes[0].id,sizeof(a->volumes[0].id),"sdcard-p1");copy(a->volume_id,sizeof(a->volume_id),"sdcard-p1");
+    copy(a->volumes[0].token,sizeof(a->volumes[0].token),"token");a->volumes[0].mounted=a->volumes[0].write_supported=true;a->volumes[0].read_only=false;
+    copy(a->fs_path,sizeof(a->fs_path),"/x");a->file_total=3;a->file_count=3;a->file_offset=0;
+    const char*names[]={"a.txt","b folder","c \"q\".txt"};
+    for(int n=0;n<3;n++){copy(a->files[n].name,sizeof(a->files[n].name),names[n]);copy(a->files[n].type,sizeof(a->files[n].type),n==1?"directory":"file");snprintf(a->files[n].path,sizeof(a->files[n].path),"/x/%s",names[n]);}
+    a->screen=FILE_BROWSER;render(a);
+    /* A long press on the second row: selected while the finger is down; the lift opens nothing. */
+    Button*row=test_button(a,A_FS_ENTRY+1);assert(row&&test_button(a,A_FS_ENTRY_MENU+1));
+    int x=row->r.x+row->r.w/2,y=row->r.y+row->r.h/2;uint64_t t=milliseconds();
+    pointer(a,true,x,y,t);a->now=t+FS_LONG_MS-50;hold_tick(a);assert(!a->fs_select);
+    a->now=t+FS_LONG_MS+10;hold_tick(a);assert(a->fs_select&&a->fs_sel_count==1&&!strcmp(a->fs_sel[0],"b folder")&&a->pointer_down);
+    pointer(a,false,x,y,t+900);assert(a->screen==FILE_BROWSER&&a->fs_select&&sel_total(a)==1);
+    render(a);assert(!test_button(a,A_FS_ENTRY_MENU+1)&&test_button(a,A_FS_SEL_ALL)&&test_button(a,A_FS_SEL_DELETE)->enabled&&!test_button(a,A_FS_UP));
+    assert(test_press(a,A_FS_ENTRY+0,50)&&sel_total(a)==2&&a->screen==FILE_BROWSER);
+    assert(test_press(a,A_FS_ENTRY+0,50)&&sel_total(a)==1);
+    assert(test_press(a,A_FS_SEL_ALL,50)&&a->fs_select_all&&sel_total(a)==3);
+    assert(test_press(a,A_FS_ENTRY+2,50)&&sel_total(a)==2&&a->fs_sel_count==1);   /* left out */
+    /* The selection as JSON for delete-many: the name left out, escaped. */
+    assert(private_workdir("/tmp")||1);copy(a->workdir,sizeof(a->workdir),"/tmp/a22x-ui-test-select");mkdir(a->workdir,0700);
+    {FileRequest q=file_request(a,J_FS_DELETE_MANY);assert(write_selection(a,&q));char body[256]={0};FILE*f=fopen(q.text_file,"r");assert(f);size_t got=fread(body,1,sizeof(body)-1,f);fclose(f);unlink(q.text_file);
+     body[got]=0;assert(!strcmp(body,"{\"all\":true,\"names\":[\"c \\\"q\\\".txt\"]}"));}
+    rmdir(a->workdir);
+    assert(test_press(a,A_FS_SEL_DELETE,50)&&a->screen==FILE_CONFIRM&&a->fs_pending.kind==J_FS_DELETE_MANY&&!strcmp(a->fs_pending.path,"/x"));
+    render(a);Button*hold=test_button(a,A_FS_CONFIRM);assert(hold&&hold->hold_ms==3000);
+    /* Back to the folder: Back ends the selection instead of leaving it. */
+    a->screen=FILE_BROWSER;render(a);assert(test_press(a,A_FS_SEL_CANCEL,50)&&!a->fs_select&&!sel_total(a));
+    /* Taking away the last one ends the selection. */
+    files_long_press(a,0);assert(a->fs_select&&sel_total(a)==1);assert(test_press(a,A_FS_ENTRY+0,50)&&!a->fs_select);
+    /* No selection while a file is picked for something else. */
+    a->flash_pick=true;render(a);row=test_button(a,A_FS_ENTRY+0);t=milliseconds();pointer(a,true,row->r.x+10,row->r.y+10,t);a->now=t+2000;hold_tick(a);assert(!a->fs_select);pointer(a,false,row->r.x+10,row->r.y+10,t+2000);a->flash_pick=false;
+    /* A hold that is full acts at once: the settings are reset before the finger lifts. */
+    a->screen=TOOLS;a->animation=3;render(a);a->tools_scroll=tools_max_scroll(a);render(a);Button*reset=test_button(a,A_SETTINGS_RESET);assert(reset&&reset->hold_ms==3000);
+    x=reset->r.x+reset->r.w/2;y=reset->r.y+reset->r.h/2;t=milliseconds();pointer(a,true,x,y,t);
+    a->now=t+2900;hold_tick(a);assert(a->animation==3);
+    a->now=t+3000;hold_tick(a);assert(a->animation==0&&a->pointer_down&&!a->pressed_action);
+    a->animation=3;pointer(a,false,x,y,t+3600);assert(a->animation==3);   /* the lift does it no second time */
+    free(a->pixels);free(a);return 1;
+}
 static int test_settings_reset(void){
     App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->preview=true;a->inventory_ok=true;
     unsigned int language=ui_language;const Theme*theme=ui_theme;const TerminalScheme*scheme=ui_terminal;
@@ -5966,7 +6111,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;
@@ -6133,6 +6278,17 @@ static bool workflow_files(App*a,const char*what){
     FS_CHECK(workflow_type(a,"/UI-файли/перейменовано.txt",true)&&test_press(a,A_FS_PROMPT_NEXT,50)&&test_press(a,A_FS_CONFIRM,2000)&&await_job(a)&&a->successful);
     entry=workflow_find_entry(a,"перейменовано.txt");FS_CHECK(entry>=0&&test_press(a,A_FS_ENTRY_MENU+entry,50)&&await_job(a)&&a->successful&&test_press(a,A_FS_DELETE,50));
     FS_CHECK(test_press(a,A_FS_CONFIRM,2999)&&!a->job.pid&&a->screen==FILE_CONFIRM);FS_CHECK(test_press(a,A_FS_CONFIRM,3000)&&await_job(a)&&a->successful&&!a->file_count);
+    /* Several at once (2026-11-13): two folders, one with a file in it; a long press, select all, delete. */
+    FS_CHECK(test_press(a,A_FS_MKDIR,50)&&workflow_type(a,"/UI-файли/один",true)&&test_press(a,A_FS_PROMPT_NEXT,50)&&test_press(a,A_FS_CONFIRM,2000)&&await_job(a)&&a->successful);
+    FS_CHECK(test_press(a,A_FS_MKDIR,50)&&workflow_type(a,"/UI-файли/два",true)&&test_press(a,A_FS_PROMPT_NEXT,50)&&test_press(a,A_FS_CONFIRM,2000)&&await_job(a)&&a->successful);
+    FS_CHECK(test_press(a,A_FS_NEW_FILE,50)&&workflow_type(a,"/UI-файли/один/всередині.txt",true)&&test_press(a,A_FS_PROMPT_NEXT,50)&&workflow_type(a,"x\n",true));
+    FS_CHECK(test_press(a,A_FS_SAVE,50)&&test_press(a,A_FS_CONFIRM,2000)&&await_job(a)&&a->successful&&test_press(a,A_BACK,50)&&await_job(a));
+    FS_CHECK(a->screen==FILE_BROWSER&&!strcmp(a->fs_path,"/UI-файли")&&a->file_count==2);
+    {render(a);Button*row=test_button(a,A_FS_ENTRY+0);FS_CHECK(row);int x=row->r.x+20,y=row->r.y+20;uint64_t t=milliseconds();
+     pointer(a,true,x,y,t);a->now=t+FS_LONG_MS+1;hold_tick(a);pointer(a,false,x,y,t+FS_LONG_MS+50);}
+    FS_CHECK(a->fs_select&&sel_total(a)==1&&test_press(a,A_FS_SEL_ALL,50)&&sel_total(a)==2);
+    FS_CHECK(test_press(a,A_FS_SEL_DELETE,50)&&a->screen==FILE_CONFIRM&&test_press(a,A_FS_CONFIRM,3000)&&await_job(a)&&a->successful);
+    FS_CHECK(a->screen==FILE_BROWSER&&!a->file_count&&!a->fs_select&&strstr(a->fs_status,"2"));
     FS_CHECK(test_press(a,A_FS_UP,50)&&await_job(a));entry=workflow_find_entry(a,"UI-файли");FS_CHECK(entry>=0&&test_press(a,A_FS_ENTRY_MENU+entry,50)&&await_job(a)&&a->successful&&test_press(a,A_FS_DELETE,50)&&test_press(a,A_FS_CONFIRM,3000)&&await_job(a)&&a->successful);
     FS_CHECK(test_press(a,A_FS_VOLUME,50)&&test_press(a,A_FS_MOUNT_RO,50)&&await_job(a)&&a->successful&&!files_writable(a));
     FS_CHECK(test_press(a,A_FS_VOLUME,50)&&test_press(a,A_FS_UNMOUNT,50)&&await_job(a)&&a->successful&&current_volume(a)&&!current_volume(a)->mounted);
@@ -6361,7 +6517,7 @@ int main(int argc,char**argv){
         held_tick(a,dark);
         {int minute=(int)(time(NULL)/60);if(minute!=a->clock_minute){a->clock_minute=minute;a->dirty=true;}}
         /* A finished hold gets a pulse, so the finger knows it can lift. */
-        if(a->pointer_down&&a->pressed_action&&a->hold_felt_at!=a->pressed_at)for(int n=0;n<a->button_count;n++)if(a->buttons[n].action==a->pressed_action&&a->buttons[n].enabled&&a->buttons[n].hold_ms&&a->now-a->pressed_at>=(uint64_t)a->buttons[n].hold_ms){a->hold_felt_at=a->pressed_at;haptic(a,2);break;}
+        hold_tick(a);
         frame_ms=a->pointer_down||a->kinetic.active||a->tr.active||a->tr.armed||(a->job.pid&&job_long(a->job.kind))?(display.drm>0?1u:(a->display_hz==90?11u:16u)):70u;
         if(a->dirty&&!(a->display_blank_known&&a->display_blanked)&&a->now-last_frame>=frame_ms){
             uint64_t before=milliseconds();if(a->tr.armed)transition_start(a);if(!a->tr.active||!transition_frame(a,milliseconds()))render(a);if(!present(a,&display)){fprintf(stderr,"[recovery-ui] native frame allocation or projection failed\n");a->exit_code=1;break;}

@@ -2207,6 +2207,67 @@ def delete_entry(context, ident, path, confirmed=False, expected=None, expected_
         return {'volume': ident, 'path': clean_path(path), 'deleted_type': entry_type(before)}
 
 
+MANY_LIMIT = 4096
+
+
+def selection_file(path):
+    """The selection the interface wrote into its private RAM folder: {"all": bool, "names": [...]}.
+    With all, the names are the ones left out; else the ones chosen."""
+    try:
+        with open(path, 'rb') as f:
+            data = json.loads(f.read((1 << 20) + 1).decode('utf-8'))
+    except (OSError, ValueError) as error:
+        fail('INVALID_SELECTION', 'The selection could not be read', reason=str(error)[:200])
+    names = data.get('names') if isinstance(data, dict) else None
+    if not isinstance(names, list) or len(names) > MANY_LIMIT or not isinstance(data.get('all', False), bool):
+        fail('INVALID_SELECTION', 'The selection is not a list of names')
+    for name in names:
+        if not isinstance(name, str) or name in ('', '.', '..') or '/' in name or '\0' in name or len(os.fsencode(name)) > 255:
+            fail('INVALID_SELECTION', 'A selected name is not a name in this folder')
+    return bool(data.get('all', False)), names
+
+
+def delete_many(context, ident, path, everything, names, confirmed=False, expected=None, progress=None):
+    """Several entries of one folder deleted at once (2026-11-13, the owner: select with a long press,
+    delete the selected, select all). Folders go with everything in them, removed by descriptor so a
+    symlink is removed and never followed; a folder holding another mount stays. With EVERYTHING,
+    NAMES are the entries left out. What could not be deleted is named, the rest still goes."""
+    context.confirm(confirmed)
+    deleted, failed, folder = [], [], clean_path(path)
+    with PinnedVolume(context, ident, expected, writing=True) as pin, pin.directory(folder) as directory:
+        present = sorted(os.listdir(directory))
+        if everything:
+            chosen = [name for name in present if name not in set(names)]
+        else:
+            chosen = list(dict.fromkeys(names))
+        if len(chosen) > MANY_LIMIT:
+            fail('SELECTION_TOO_LARGE', 'Too many entries are selected at once', count=len(chosen))
+        for at, name in enumerate(chosen):
+            if progress:
+                progress(name, at, len(chosen))
+            try:
+                pin.recheck()
+                info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                if stat.S_ISDIR(info.st_mode):
+                    inner = folder.rstrip('/') + '/' + name
+                    if context.nested_mounts(pin.volume, inner):
+                        fail('NESTED_MOUNT', 'A folder holding another mount is not deleted')
+                    shutil.rmtree(name, dir_fd=directory)
+                else:
+                    os.unlink(name, dir_fd=directory)
+                deleted.append(name)
+            except FileNotFoundError:
+                failed.append({'name': name, 'code': 'NOT_FOUND'})
+            except FilesystemError as error:
+                failed.append({'name': name, 'code': error.code})
+            except OSError as error:
+                failed.append({'name': name, 'code': errno.errorcode.get(error.errno, 'IO_ERROR')})
+        os.fsync(directory)
+    if progress:
+        progress('', len(chosen), len(chosen))
+    return {'volume': ident, 'path': folder, 'deleted': len(deleted), 'failed': failed[:64], 'failed_count': len(failed)}
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message):
         fail('INVALID_ARGUMENT', message)
@@ -2235,6 +2296,12 @@ def parser():
         repair.add_argument('--volume', required=True)
         repair.add_argument('--expected-volume-token')
         repair.add_argument('--confirm', action='store_true')
+    many = commands.add_parser('delete-many')
+    many.add_argument('--volume', required=True)
+    many.add_argument('--expected-volume-token')
+    many.add_argument('--path', required=True)
+    many.add_argument('--selection-file', required=True)
+    many.add_argument('--confirm', action='store_true')
     for action in ('mount', 'unmount', 'list', 'read', 'stat', 'resolve', 'chmod', 'chown',
                    'write', 'mkdir', 'rename', 'copy', 'copy-tree', 'delete'):
         command = commands.add_parser(action)
@@ -2335,6 +2402,9 @@ def dispatch(context, args):
             return context.format(v, args.fs, args.confirm, expected)
         if action == 'wipe':
             return wipe_contents(context, v, args.confirm, expected)
+        if action == 'delete-many':
+            everything, names = selection_file(args.selection_file)
+            return delete_many(context, v, args.path, everything, names, args.confirm, expected)
         if action == 'check':
             return context.check(v, args.confirm, expected)
         if action == 'resize':
