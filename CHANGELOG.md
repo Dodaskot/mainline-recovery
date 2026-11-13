@@ -39,6 +39,14 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **Several files at once in Files** (0.6.222): a long press on a file or folder selects it;
+  taps add and remove more; "Select all" / "Select none"; "Delete selected" deletes the files and
+  the folders with everything in them (removed by descriptor: a symlink is removed, never
+  followed; a folder holding another mount stays), after a 3-second hold, and names what could not
+  be deleted. Checked on the phone on the SD card.
+- **A hold acts as soon as it is full** (0.6.222): every "hold N seconds" button starts its action
+  with the finger still down, instead of waiting for the lift. Checked on the phone: the delete ran
+  at 4.3 s of a 6-second touch.
 - **A ROM's BOOT changed after it was signed** (0.6.221): LineageOS 20 for A226B ships a boot.img
   whose AVB hash no longer fits its contents. The recovery took it for no BOOT of this phone: no
   keep-recovery mark, no format advice, and the restart into the system was refused ("no bootable
