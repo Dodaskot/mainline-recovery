@@ -257,7 +257,7 @@ class LinuxTests(unittest.TestCase):
         with mock.patch.object(linux, "_open_target") as writer:
             self.error("CONFIRMATION_MISMATCH", engine.restore, self.context, plan, "wrong")
             changed = copy.deepcopy(plan)
-            changed["expires_unix"] = 1
+            changed["expires_boottime"] = 1  # the boot clock times a plan (2026-11-13 review)
             self.error("PLAN_CHANGED", engine.restore, self.context, changed, changed["confirmation_token"])
             changed = {k: v for k, v in changed.items() if k not in {"plan_id", "confirmation_token"}}
             linux._seal(changed)

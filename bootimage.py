@@ -10,7 +10,7 @@ BOOT    An Android boot image with header version 0 to 2 (this phone's bootloade
         vendor_boot) whose sections all lie inside the partition. Its kernel unpacks to the end
         (the gzip CRC and length are checked, a raw arm64 Image is recognised) and names its release
         ("Linux version ..."). Something in it names this phone: the header's board SRPTL28A011, a
-        device tree for samsung,a22x or an SM-A226 model, or the ramdisk's
+        device tree for samsung,a22x or an SM-A226B model, or the ramdisk's
         ro.product.bootimage.device=a22x. A device tree for the MT6833 alone is not enough
         (2026-11-12 audit: an image for another phone with the same chip, xiaomi,... with
         mediatek,mt6833, passed), and a board compatible of any other maker names another

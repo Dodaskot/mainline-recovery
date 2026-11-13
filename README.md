@@ -69,7 +69,7 @@ More, page by page: [docs/screenshots/en](docs/screenshots/en).
 
 ### Backup and restore
 
-- Linux snapshots, and **copies of Android's partitions** as one compressed
+- **Copies of Android's partitions** as one compressed
   archive (`tar.zst`) on a card or USB drive, optionally with Android's encrypted
   data. A restore checks the archive first and writes only what differs.
 - Backups can be verified, renamed and deleted on the phone.
@@ -161,7 +161,9 @@ partition → recovery.
 - Plasma keeps its language in the shared `/home`, so Plasma systems share it.
 - The setup of an installed system cannot be run again; reinstall it to get newer
   fixes.
-- Restoring a Linux snapshot is refused until a new qualification capsule is made.
+- Linux snapshots are not offered yet: they were qualified for the stock userdata size only, and
+  restoring one needs a new qualification capsule. A userdata grown by a Linux installation is
+  not that size.
 - A power loss while the recovery partition itself is being written leaves no
   recovery to start: flash one from a computer in Download Mode.
 

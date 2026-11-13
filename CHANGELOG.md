@@ -33,6 +33,15 @@ BOOT copy also on the phone.
   for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
   the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
   start removes descriptions of saved BOOTs whose image is gone.
+- **From the review of Linux backups, the display and the clock** (0.6.211): the Linux wipe could
+  never format userdata (it held the device exclusively while mke2fs needed it too; reproduced and
+  fixed on the phone); Linux snapshots are offered only on the userdata geometry they were qualified
+  for (a userdata grown by a Linux installation is not, so they are not offered there); bootimage.py
+  is part of what the qualification pins; plans are timed by the boot clock; archives on exFAT are
+  not taken for changed; a mount hidden under another is not taken for the card; the display comes
+  back when its crash guard died while dark; time servers' answers are bound to the request (checked
+  on the phone); only the phone's own misc is read and cleared; a damaged BOOT in a copy gives an
+  answer instead of a traceback.
 - **From the review of access, adb and Android installs** (0.6.210): an installed image's links
   can no longer lead the adapter, which runs as root, to empty or write the recovery's own files
   (every path is resolved inside the image, as the system itself sees it); adb always asks the

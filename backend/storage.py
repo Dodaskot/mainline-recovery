@@ -331,7 +331,11 @@ class DeviceContext:
                       if Path(entry["mountpoint"]) == path or Path(entry["mountpoint"]) in path.parents]
         if not candidates:
             fail("UNKNOWN_REPOSITORY_MOUNT", "Cannot identify the backing mount")
-        return max(candidates, key=lambda entry: len(Path(entry["mountpoint"]).parts))
+        # The deepest mount point; of several on the same point, the last one mounted, which is the
+        # one a path reaches (2026-11-13 review: the first, hidden one was taken, so a tmpfs put over
+        # the card's folder passed for the card).
+        depth = max(len(Path(entry["mountpoint"]).parts) for entry in candidates)
+        return [entry for entry in candidates if len(Path(entry["mountpoint"]).parts) == depth][-1]
 
     def user_path(self, path, *, exists=True):
         path = Path(path)

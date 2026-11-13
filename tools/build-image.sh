@@ -101,6 +101,7 @@ python3 -B "$S/tools/build_v06_image.py" --base "$BASE" --output "build-v06-$NN"
     --replace "$R/backend/linux_workflow.py=$S/backend/linux_workflow.py" \
     --replace "$R/backend/common.py=$S/backend/common.py" --replace "$R/backend/storage.py=$S/backend/storage.py" \
     --replace "$R/backend/engine.py=$S/backend/engine.py" --replace "$R/backend/recoveryctl.py=$S/backend/recoveryctl.py" \
+    --replace "$R/backend/qualification.py=$S/backend/qualification.py" \
     --replace "etc/a22x-recovery/distro-platform.json=$PRIVATE/distro-platform-v2.json" \
     --add "$R/settings.py=$S/settings.py" --add "$R/themes.py=$S/themes.py" --add "$R/sysinfo.py=$S/sysinfo.py" \
     --add "$R/themes/beaver.theme=build-themes/beaver.theme" --add "$R/flash.py=$S/flash.py" \

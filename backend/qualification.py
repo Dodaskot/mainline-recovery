@@ -23,6 +23,9 @@ SOURCE_FILES = (
     "backend/recoveryctl.py", "backend/streaming.py", "backend/restore_support.py",
     "backend/qualification.py", "backend/linux_workflow.py", "backend/partclone_image.py",
     "backend/qualify_linux.py", "operation_lock.py",
+    # 2026-11-13 review: bootimage.py decides whether a BOOT in a copy may be restored
+    # (_linux_boot_in_backup), so a change of it must make the capsule stale as well.
+    "bootimage.py",
 )
 TOOL_NAMES = frozenset({"partclone.ext4", "partclone.chkimg", "partclone.restore",
                         "zstd", "e2fsck", "blkid", "dumpe2fs", "mkfs.ext4"})
