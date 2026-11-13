@@ -27,6 +27,9 @@ msgstr " octets ignorés / %s"
 msgid "%.120s / %.24s / %s free"
 msgstr "%.120s / %.24s / %s libres"
 
+msgid "%s  /  for %s"
+msgstr "%s  /  pour %s"
+
 msgid "%s  /  from the catalog, %s download"
 msgstr "%s  /  du catalogue, %s à télécharger"
 
@@ -1155,6 +1158,9 @@ msgstr "Choisissez le fichier AP du firmware (AP_....tar.md5)"
 msgid "Choose the AP file of the firmware again."
 msgstr "Choisissez à nouveau le fichier AP du firmware."
 
+msgid "Choose the image to flash. Each goes to the partition its name says."
+msgstr "Choisissez l'image à flasher. Chacune va sur la partition que son nom indique."
+
 msgid "Choose the microSD card or USB stick with the image; one that is not mounted opens read-only."
 msgstr "Choisissez la carte microSD ou la clé USB avec l’image ; une non montée s’ouvre en lecture seule."
 
@@ -1884,6 +1890,9 @@ msgstr "vendredi"
 msgid "FROM"
 msgstr "DE"
 
+msgid "from %s"
+msgstr "de %s"
+
 msgid "From a file"
 msgstr "Depuis un fichier"
 
@@ -2138,6 +2147,9 @@ msgstr "Insérez la carte SD ou branchez la clé USB qui contient A22xAndroidBac
 
 msgid "Insert the USB stick again"
 msgstr "Réinsérez la clé USB"
+
+msgid "Inside the archive"
+msgstr "Dans l'archive"
 
 msgid "Inspect a supported entry on a writable volume before continuing."
 msgstr "Examinez une entrée prise en charge sur un volume inscriptible avant de continuer."
@@ -2876,6 +2888,9 @@ msgstr "Démarrage normal de Linux bloqué"
 
 msgid "Not a device tree"
 msgstr "Ce n’est pas un arbre de périphériques"
+
+msgid "not a partition this recovery writes"
+msgstr "pas une partition que ce recovery écrit"
 
 msgid "Not Android's BOOT: install Android first"
 msgstr "Ce n’est pas le BOOT d’Android : installez d’abord Android"
@@ -4449,6 +4464,9 @@ msgstr "L’archive n’a pas de manifeste à la fin : elle est incomplète ou n
 msgid "The archive holds a file its manifest does not list"
 msgstr "L’archive contient un fichier que son manifeste ne liste pas"
 
+msgid "The archive holds no image this recovery can flash."
+msgstr "L'archive ne contient aucune image que ce recovery peut flasher."
+
 msgid "The archive holds something that is not a plain file"
 msgstr "L’archive contient autre chose qu’un fichier ordinaire"
 
@@ -5433,6 +5451,9 @@ msgstr "Il n’y a pas d’en-tête AVB vbmeta"
 msgid "There is no AVB vbmeta in the vbmeta partition"
 msgstr "Il n’y a pas de vbmeta AVB dans la partition vbmeta"
 
+msgid "There is no room to keep the old content first: free space on cache or insert a card"
+msgstr "Pas de place pour garder d'abord l'ancien contenu : libérez de l'espace sur cache ou insérez une carte"
+
 msgid "There is not enough space beside the retained system"
 msgstr "Il n'y a pas assez de place à côté du système conservé"
 
@@ -5499,6 +5520,9 @@ msgstr "Cette copie demande environ %s, et %s a %s de libre. Libérez-y de la pl
 msgid "This copy was made on another phone and is not written back here."
 msgstr "Cette copie a été faite sur un autre téléphone et n’est pas réécrite ici."
 
+msgid "This copy's Android data belongs to another phone: restore it without its data"
+msgstr "Les données Android de cette copie appartiennent à un autre téléphone : restaurez-la sans ses données"
+
 msgid "This creates an empty filesystem, not secure erasure. The saved snapshot remains on SD. Recovery does not reboot automatically."
 msgstr "Cela crée un système de fichiers vide, pas un effacement sécurisé. L'instantané enregistré reste sur la SD. Le recovery ne redémarre pas automatiquement."
 
@@ -5507,6 +5531,9 @@ msgstr "Cela supprime le fichier choisi ou le dossier vide. Impossible d'annuler
 
 msgid "This file has no terminal colors"
 msgstr "Ce fichier n'a pas de couleurs de terminal"
+
+msgid "This file is an image itself, not an archive"
+msgstr "Ce fichier est lui-même une image, pas une archive"
 
 msgid "This file is no ROM this recovery installs. Choose a ZIP with an installer, a system image or Samsung's firmware."
 msgstr "Ce fichier n’est pas une ROM que ce recovery installe. Choisissez un ZIP avec installateur, une image système ou le firmware Samsung."
@@ -5676,6 +5703,9 @@ msgstr "Ce recovery reste installé, vous pouvez donc revenir à Linux depuis un
 msgid "This recovery, from a new image"
 msgstr "Ce recovery, depuis une nouvelle image"
 
+msgid "This ROM writes logical partitions super does not have: "
+msgstr "Cette ROM écrit des partitions logiques que super n'a pas : "
+
 msgid "This root tool is unknown"
 msgstr "Cet outil root est inconnu"
 
@@ -5703,8 +5733,17 @@ msgstr "Ce volume est disponible en lecture seule."
 msgid "This volume is no longer available. Return to Files and refresh the list."
 msgstr "Ce volume n'est plus disponible. Revenez à Fichiers et actualisez la liste."
 
+msgid "This ZIP also has its own installer: open Install, Android, ZIP with an installer to run it."
+msgstr "Ce ZIP a aussi son propre installateur : pour le lancer, ouvrez Installer, Android, ZIP avec installateur."
+
 msgid "This ZIP has no installer of its own. Images and ROM packages go through Android or Flash a partition"
 msgstr "Ce ZIP n’a pas d’installateur. Les images et paquets ROM passent par Android ou Flasher une partition"
+
+msgid "This ZIP holds no image to flash on its own. It installs itself: open Install, Android, ZIP with an installer."
+msgstr "Ce ZIP ne contient aucune image à flasher seule. Il s'installe lui-même : ouvrez Installer, Android, ZIP avec installateur."
+
+msgid "This ZIP is also a whole ROM with its own installer. To install all of it, open Install, Android, ZIP with an installer."
+msgstr "Ce ZIP est aussi une ROM complète avec son propre installateur. Pour tout installer, ouvrez Installer, Android, ZIP avec installateur."
 
 msgid "This ZIP is in the list already"
 msgstr "Ce ZIP est déjà dans la liste"

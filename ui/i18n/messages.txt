@@ -6,6 +6,7 @@
  bytes
  bytes skipped / %s
 %.120s / %.24s / %s free
+%s  /  for %s
 %s  /  from the catalog, %s download
 %s %s is in BOOT. In Android, install the Magisk app that manages root: %s from github.com/topjohnwu/Magisk.
 %s (%s) is in BOOT. In Android, install the APatch app from github.com/bmax121/APatch and enter your SuperKey in it.
@@ -382,6 +383,7 @@ Choose system image
 Choose the AP file
 Choose the AP file of the firmware (AP_....tar.md5)
 Choose the AP file of the firmware again.
+Choose the image to flash. Each goes to the partition its name says.
 Choose the microSD card or USB stick with the image; one that is not mounted opens read-only.
 Choose the next boot mode, then hold to confirm. Completed writes are synchronized and recovery mounts are unmounted by the supervisor.
 Choose the next boot mode.
@@ -625,6 +627,7 @@ Free in super: %s
 Free on userdata: %s
 Friday
 FROM
+from %s
 From a file
 From a theme file
 From the Android app
@@ -710,6 +713,7 @@ Insert an SD card or attach a USB drive: downloaded images are kept there.
 Insert an SD card or attach a USB drive: while Android uses userdata, downloaded images are kept there
 Insert the SD card or attach the USB drive that holds A22xAndroidBackups, then read again.
 Insert the USB stick again
+Inside the archive
 Inspect a supported entry on a writable volume before continuing.
 Inspect before restoring.
 Inspect the pending image installation in Settings before booting.
@@ -956,6 +960,7 @@ None found
 None.
 Normal Linux boot is blocked
 Not a device tree
+not a partition this recovery writes
 Not Android's BOOT: install Android first
 Not Android: flash the Samsung firmware first
 Not available. Tap to choose storage
@@ -1480,6 +1485,7 @@ The APatch app in Android asks for this SuperKey.
 The archive could not be written
 The archive has no manifest at its end: it is incomplete, or no copy made here
 The archive holds a file its manifest does not list
+The archive holds no image this recovery can flash.
 The archive holds something that is not a plain file
 The archive is checked before the snapshot is marked complete. Moving outside the button cancels the hold.
 The archive is damaged
@@ -1808,6 +1814,7 @@ There is no Android DT table
 There is no automatic reboot.
 There is no AVB vbmeta header
 There is no AVB vbmeta in the vbmeta partition
+There is no room to keep the old content first: free space on cache or insert a card
 There is not enough space beside the retained system
 There is not enough space beside the ZIP to unpack the firmware
 There is not enough space on the card for this image
@@ -1830,9 +1837,11 @@ This compression is not supported
 This copy is no longer listed. Go back and read the cards again.
 This copy needs about %s, and %s has %s free. Free some room there, leave partitions out, or choose another card.
 This copy was made on another phone and is not written back here.
+This copy's Android data belongs to another phone: restore it without its data
 This creates an empty filesystem, not secure erasure. The saved snapshot remains on SD. Recovery does not reboot automatically.
 This deletes the selected file or empty folder. There is no undo.
 This file has no terminal colors
+This file is an image itself, not an archive
 This file is no ROM this recovery installs. Choose a ZIP with an installer, a system image or Samsung's firmware.
 This file is not a 7z archive
 This file is not a DTBO image
@@ -1889,6 +1898,7 @@ This recovery is up to date.
 This recovery stays
 This recovery stays installed, so you can return to Linux from a backup.
 This recovery, from a new image
+This ROM writes logical partitions super does not have: 
 This root tool is unknown
 This small checkpoint is separate from the full Linux BOOT and userdata backup.
 This step cannot be stopped safely.
@@ -1898,7 +1908,10 @@ This uses a normal unmount. Busy filesystems are refused. The backup destination
 This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4, or leave super out
 This volume is available for reading only.
 This volume is no longer available. Return to Files and refresh the list.
+This ZIP also has its own installer: open Install, Android, ZIP with an installer to run it.
 This ZIP has no installer of its own. Images and ROM packages go through Android or Flash a partition
+This ZIP holds no image to flash on its own. It installs itself: open Install, Android, ZIP with an installer.
+This ZIP is also a whole ROM with its own installer. To install all of it, open Install, Android, ZIP with an installer.
 This ZIP is in the list already
 Thursday
 Time zone

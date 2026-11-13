@@ -103,7 +103,7 @@
 enum Screen { HOME, SPLASH, FLASH, FLASH_REVIEW, LANGUAGE, THEME, TERMINAL_THEME, ANIMATIONS, LOCKSCREEN, ACCESS_REQUEST, OS_MENU, SYSTEMS_SETUP, BACKUP, LIST, DETAIL, PLAN, PROGRESS, RESULT, STORAGE, SYSTEM, POWER, POWER_CONFIRM, POWER_MENU, TOOLS, TOOLS_EXPORT, DISPLAY_SETTINGS, PREPARE_FILESYSTEM, USB_FILES, TERMINAL, SYSTEMS, SYSTEMS_PLAN, SYSTEMS_RECOVER,
     INSTALL, INSTALL_PLAN, INSTALL_RESULT,
     FILE_VOLUMES, FILE_VOLUME, FILE_BROWSER, FILE_INFO, FILE_TEXT, FILE_EDIT, FILE_PROMPT, FILE_CONFIRM, FILE_DISCARD, SYSTEMS_EXTRAS, SYSTEMS_DONE, WIFI, SYSTEMS_NEW, SYSTEMS_CATALOG,
-    SYSTEMS_APP_LIST, SYSTEMS_SEARCH, IDENTITY, IDENTITY_RESTORE, SYSTEMS_SHELLS, SYSTEMS_LOCALE, SYSTEMS_TIMEZONE, SYSTEMS_REMOVE, SYSTEMS_IMAGES, ADB_REQUEST, APLAN, FLASH_SUPER, ICON_SHEET, WIPE, WIPE_REVIEW, ANDROID_MENU, SAMSUNG_REVIEW, ANDROID_IMAGE, ROOT_PAGE, ZIP_REVIEW, CARD_PAGE, COPY_DETAIL, ANDROID_LOG, UPDATES };
+    SYSTEMS_APP_LIST, SYSTEMS_SEARCH, IDENTITY, IDENTITY_RESTORE, SYSTEMS_SHELLS, SYSTEMS_LOCALE, SYSTEMS_TIMEZONE, SYSTEMS_REMOVE, SYSTEMS_IMAGES, ADB_REQUEST, APLAN, FLASH_SUPER, ICON_SHEET, WIPE, WIPE_REVIEW, ANDROID_MENU, SAMSUNG_REVIEW, ANDROID_IMAGE, ROOT_PAGE, ZIP_REVIEW, CARD_PAGE, COPY_DETAIL, ANDROID_LOG, UPDATES, FLASH_MEMBERS };
 enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_REVIEW_BACKUP,A_REVIEW_RESTORE,A_VERIFY_ONE,A_CONFIRM,A_DONE,A_LIST_PREV,A_LIST_NEXT,A_REBOOT,A_SHUTDOWN,A_POWER_CONFIRM,A_MOUNT,A_UMOUNT,A_REFRESH,
     A_FILES,A_FS_PREV,A_FS_NEXT,A_FS_OPEN,A_FS_MOUNT_RO,A_FS_MOUNT_RW,A_FS_UNMOUNT,A_FS_UP,A_FS_VOLUME,A_FS_REFRESH,
     A_FS_READ,A_FS_EDIT,A_FS_NEW_FILE,A_FS_MKDIR,A_FS_RENAME,A_FS_COPY,A_FS_DELETE,A_FS_PROMPT_NEXT,A_FS_CONFIRM,
@@ -135,12 +135,12 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
     A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
-    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT };
+    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
     J_FS_STAT,J_FS_CHMOD,J_FS_CHOWN,J_FS_RESOLVE,J_FS_COPY_TREE,J_FS_FORMAT,J_FS_CHECK,J_FS_RESIZE,J_TOOLS_STATUS,J_TOOLS_EXPORT,J_DISPLAY_STATUS,J_DISPLAY_SET,J_WIPE_PLAN,J_WIPE,J_USB_STATUS,J_USB_START,J_USB_STOP,
     J_TERM_STATUS,J_TERM_START,J_TERM_READ,J_TERM_WRITE,J_TERM_RESIZE,J_TERM_STOP,J_SYS_STATUS,J_SYS_IMPORT_PLAN,J_SYS_SWITCH_PLAN,J_SYS_IMPORT,J_SYS_SWITCH,J_SYS_RECOVER,J_SYS_REMOVE,
-    J_INSTALL_STATUS,J_INSTALL_BOOT_PLAN,J_INSTALL_STOCK_PLAN,J_INSTALL_RESUME_PLAN,J_INSTALL_EXECUTE,J_FLASH_TARGETS,J_FLASH_CHECK,J_FLASH_WRITE,J_USB_SYNC,J_USB_BACKUP,J_USB_EJECT,J_SYS_ACCOUNT_USER,J_SYS_ACCOUNT_PASS,J_SYS_WIFI_SSID,J_SYS_WIFI_PASS,J_LOCK_ENTER,J_LOCK_SET,J_LOCK_OLD,J_LOCK_CONFIRM,J_LOCK_ACCESS,J_SYSINFO,J_THEME_IMPORT,J_THEME_REMOVE,J_THEME_RESTORE,
+    J_INSTALL_STATUS,J_INSTALL_BOOT_PLAN,J_INSTALL_STOCK_PLAN,J_INSTALL_RESUME_PLAN,J_INSTALL_EXECUTE,J_FLASH_TARGETS,J_FLASH_CHECK,J_FLASH_WRITE,J_FLASH_MEMBERS,J_USB_SYNC,J_USB_BACKUP,J_USB_EJECT,J_SYS_ACCOUNT_USER,J_SYS_ACCOUNT_PASS,J_SYS_WIFI_SSID,J_SYS_WIFI_PASS,J_LOCK_ENTER,J_LOCK_SET,J_LOCK_OLD,J_LOCK_CONFIRM,J_LOCK_ACCESS,J_SYSINFO,J_THEME_IMPORT,J_THEME_REMOVE,J_THEME_RESTORE,
     J_WIFI_STATUS,J_WIFI_SCAN,J_WIFI_CONNECT,J_WIFI_DISCONNECT,J_WIFI_FORGET,J_WIFI_SSID,J_WIFI_PASS,J_CATALOG,J_CATALOG_CHECK,J_PKG_SEARCH,J_PKG_QUERY,J_ID_LIST,J_ID_BACKUP,J_ID_BACKUPS,J_ID_RESTORE,J_ID_DELETE,J_CHARGER,J_IMAGES,J_IMAGES_DOWNLOAD,J_IMAGES_DELETE,J_APLAN_SHOW,J_APLAN_PREPARE,J_APLAN_FORGET,J_WIPE_CACHE,J_SAMSUNG_INSPECT,J_SAMSUNG_INSTALL,J_ANDROID_RESET,J_STOCK_BOOT,J_SAMSUNG_UNPACK,J_ROOT_LIST,J_ROOT_INSTALL,J_ROOT_PREPARE,J_ZIP_INSPECT,J_ZIP_RUN,J_BACKUP_RENAME,J_BACKUP_DELETE,J_CARD_LIST,J_CARD_APPLY,
     J_COPY_LIST,J_COPY_VERIFY,J_COPY_RESTORE,J_COPY_DELETE,J_ROM_KIND,J_UPDATES_CHECK,J_UPDATES_FETCH,
     J_ROOT_SUPERKEY /* a prompt, not a job: APatch's SuperKey */,J_BACKUP_NAME /* a prompt: the new name of a backup */ };
@@ -174,6 +174,9 @@ typedef struct { enum TransitionKind kind;bool armed,active;uint64_t started,wor
 typedef struct { int from,to;Rect origin;int glyph; } TransitionStep;
 #define FLASH_TARGETS 20  /* A_FLASH_TARGET..A_FLASH_CONFIRM-1: the partitions and those inside super. */
 typedef struct { char label[32],title[64];uint64_t bytes,room;bool logical; } FlashTarget;
+/* An image inside a ZIP, a tar or a 7z, with the partition its name is for (2026-11-13). */
+#define FLASH_MEMBERS_MAX 16
+typedef struct { char name[200],target[32];uint64_t bytes; } FlashMember;
 typedef struct { char path[PATH_LEN],name[192],profile[64],created[80],schema[64],workflow[64]; uint64_t bytes; } BackupEntry;
 typedef struct { char label[64],path[PATH_LEN]; uint64_t bytes; bool available,mounted; } PartitionEntry;
 /* A copy of Android's partitions on a card (identity_backup.py --kind android copies): an archive or,
@@ -279,6 +282,7 @@ typedef struct {
     /* The interface's own estimate of the charge: see update_battery. */
     double battery_estimate,battery_ocv,battery_ohm;long battery_counted,battery_uv,battery_ua;uint64_t battery_at;unsigned int battery_samples;bool battery_estimated;int queued_action;enum Screen queued_screen;unsigned int saved_hz,saved_brightness,restore_hz,restore_brightness;bool restore_status_asked,display_restoring,storage_prefers_usb;int toast_icon;uint64_t progress_mark_at,progress_mark_done;char progress_mark_phase[128];char toast[120];uint64_t toast_until,hotplug_at,usb_cable_check,usb_cable_lost_at;bool hotplug_pending,usb_cable_seen;unsigned int hotplug_retries;
     bool job_cancel_asked,job_cancelled,locked,lock_enabled,flash_known,flash_pick,flash_review_valid,flash_identical,flash_restore,flash_offline,settings_dirty;
+    FlashMember flash_members[FLASH_MEMBERS_MAX];unsigned int flash_member_count;bool flash_members_installer,flash_members_rom;char flash_member[200];
     FlashTarget flash_targets[FLASH_TARGETS];unsigned int flash_target_count,vibration,haptic_active;int flash_selected,haptic_fd,haptic_id,utc_offset,clock_minute;uint64_t flash_bytes,settings_changed_at,hold_felt_at;
     char flash_helper[PATH_LEN],flash_volume[96],flash_volume_token[80],flash_path[PATH_LEN],flash_name[256],flash_kind[96],flash_contents[256],flash_sha[80],flash_identity[80],flash_rollback[96],flash_warnings[512],flash_reason[256],flash_label[24],flash_checksum[96];
     unsigned int screen_timeout_index,display_wanted_percent,display_live_percent,brightness_max;int brightness_fd,display_drag_x;uint64_t last_activity,display_live_at;
@@ -513,7 +517,7 @@ static bool wifi_job(int kind){return kind>=J_WIFI_STATUS&&kind<=J_WIFI_FORGET;}
 static bool job_quiet(int kind){return wifi_job(kind)||kind==J_UPDATES_CHECK||kind==J_APLAN_SHOW||kind==J_APLAN_PREPARE||kind==J_APLAN_FORGET||kind==J_IMAGES||kind==J_CATALOG||kind==J_CATALOG_CHECK||kind==J_PKG_SEARCH||kind==J_ID_LIST||kind==J_ID_BACKUPS||kind==J_CHARGER||kind==J_SYSINFO||kind==J_TOOLS_STATUS||kind==J_DISPLAY_STATUS||kind==J_DISPLAY_SET||kind==J_USB_STATUS||kind==J_SYS_STATUS||kind==J_INSTALL_STATUS||kind==J_STORAGE_INVENTORY||kind==J_FS_INVENTORY||kind==J_FS_LIST||kind==J_LIST||kind==J_FLASH_TARGETS||kind==J_USB_SYNC||kind==J_TERM_STATUS||kind==J_TERM_STOP||kind==J_CARD_LIST||kind==J_COPY_LIST||kind==J_ROM_KIND;}
 enum { NAV_GESTURES,NAV_BUTTONS,NAV_OFF };
 enum { GESTURE_NONE,GESTURE_BACK,GESTURE_BOTTOM };
-static bool flash_job(int kind){return kind>=J_FLASH_TARGETS&&kind<=J_FLASH_WRITE;}
+static bool flash_job(int kind){return kind>=J_FLASH_TARGETS&&kind<=J_FLASH_MEMBERS;}
 static bool theme_job(int kind){return kind==J_THEME_IMPORT||kind==J_THEME_REMOVE||kind==J_THEME_RESTORE;}
 static bool install_source_allowed(const FileVolume*v){return v&&v->mounted&&!v->read_only&&v->write_supported&&!strcmp(v->fs_type,"ext4")&&!strncmp(v->id,"sdcard",6)&&v->token[0];}
 static Rect install_review_viewport(void){return(Rect){28,240,664,1016};}
@@ -541,7 +545,7 @@ static void scroll_indicator(App*a,Rect track,int64_t offset,int64_t total,uint3
 static void append(char*dst,size_t n,const char*s);
 static bool flash_source_allowed(const FileVolume*v);
 static void render_flash(App*a);
-static void render_flash_review(App*a);
+static void render_flash_review(App*a);static void render_flash_members(App*a);
 static void render_language(App*a);
 static void render_theme(App*a);
 static void render_terminal_theme(App*a);
@@ -2420,7 +2424,7 @@ static void render(App*a){
     case POWER_CONFIRM:heading(a,"Power action",NULL,true);wrapped(a,40,350,640,2,TEXT,power_confirmation(a->power_intent),4);if(terminal_session_open(a)&&a->terminal_busy)wrapped(a,40,640,640,1,RED,"The command running in the terminal will be stopped.",3);button(a,(Rect){28,1220,664,110},"Hold 2 seconds to confirm",A_POWER_CONFIRM,a->allow_power&&!a->job.pid&&a->power_intent>=200&&a->power_intent<=203&&(a->power_intent!=200||(!a->systems_reboot_blocked&&!a->install.reboot_blocked)),true,2000);break;
     case TOOLS:render_tools(a);break;case TOOLS_EXPORT:render_tools_export(a);break;case DISPLAY_SETTINGS:render_display(a);break;case WIFI:render_wifi(a);break;case SYSTEMS_NEW:render_systems_new(a);break;case SYSTEMS_IMAGES:render_images(a);break;case ADB_REQUEST:render_adb_request(a);break;case SYSTEMS_CATALOG:render_catalog(a);break;
     case TERMINAL:render_terminal(a);break;
-    case SYSTEMS:render_systems(a);break;case SYSTEMS_EXTRAS:render_systems_extras(a);break;case SYSTEMS_SHELLS:render_systems_shells(a);break;case SYSTEMS_LOCALE:render_systems_locale(a);break;case SYSTEMS_TIMEZONE:render_systems_timezone(a);break;case SYSTEMS_APP_LIST:render_systems_apps(a);break;case SYSTEMS_SEARCH:render_package_search(a);break;case IDENTITY:render_identity(a);break;case APLAN:render_aplan(a);break;case FLASH_SUPER:render_flash_super(a);break;case ICON_SHEET:render_icon_sheet(a);break;case WIPE:render_wipe(a);break;case ANDROID_MENU:render_android_menu(a);break;case SAMSUNG_REVIEW:render_samsung_review(a);break;case ANDROID_IMAGE:render_android_image(a);break;case ROOT_PAGE:render_root(a);break;case ZIP_REVIEW:render_zip_review(a);break;case CARD_PAGE:render_card(a);break;case COPY_DETAIL:render_copy_detail(a);break;case WIPE_REVIEW:render_wipe_review(a);break;case ANDROID_LOG:render_android_log(a);break;case UPDATES:render_updates(a);break;case IDENTITY_RESTORE:render_identity_restore(a);break;case SYSTEMS_DONE:render_systems_done(a);break;case SYSTEMS_PLAN:render_systems_plan(a);break;case SYSTEMS_RECOVER:render_systems_recover(a);break;case SYSTEMS_REMOVE:render_systems_remove(a);break;
+    case SYSTEMS:render_systems(a);break;case SYSTEMS_EXTRAS:render_systems_extras(a);break;case SYSTEMS_SHELLS:render_systems_shells(a);break;case SYSTEMS_LOCALE:render_systems_locale(a);break;case SYSTEMS_TIMEZONE:render_systems_timezone(a);break;case SYSTEMS_APP_LIST:render_systems_apps(a);break;case SYSTEMS_SEARCH:render_package_search(a);break;case IDENTITY:render_identity(a);break;case APLAN:render_aplan(a);break;case FLASH_SUPER:render_flash_super(a);break;case ICON_SHEET:render_icon_sheet(a);break;case WIPE:render_wipe(a);break;case ANDROID_MENU:render_android_menu(a);break;case SAMSUNG_REVIEW:render_samsung_review(a);break;case ANDROID_IMAGE:render_android_image(a);break;case ROOT_PAGE:render_root(a);break;case ZIP_REVIEW:render_zip_review(a);break;case CARD_PAGE:render_card(a);break;case COPY_DETAIL:render_copy_detail(a);break;case WIPE_REVIEW:render_wipe_review(a);break;case ANDROID_LOG:render_android_log(a);break;case UPDATES:render_updates(a);break;case FLASH_MEMBERS:render_flash_members(a);break;case IDENTITY_RESTORE:render_identity_restore(a);break;case SYSTEMS_DONE:render_systems_done(a);break;case SYSTEMS_PLAN:render_systems_plan(a);break;case SYSTEMS_RECOVER:render_systems_recover(a);break;case SYSTEMS_REMOVE:render_systems_remove(a);break;
     case INSTALL:render_install(a);break;case INSTALL_PLAN:render_install_review(a,false);break;case INSTALL_RESULT:render_install_review(a,true);break;
     case FILE_VOLUMES:render_file_volumes(a);break;case FILE_VOLUME:render_file_volume(a);break;case FILE_BROWSER:render_file_browser(a);break;
     case FILE_INFO:render_file_info(a);break;case FILE_TEXT:render_file_text(a,false);break;case FILE_EDIT:render_file_text(a,true);break;
@@ -2553,7 +2557,7 @@ static const char*job_name(int kind){
         "files-inventory","files-mount","files-unmount","files-list","files-read","files-write","files-mkdir","files-rename","files-copy","files-delete",
         "files-stat","files-chmod","files-chown","files-resolve","files-copy-tree","files-format","files-check","files-resize","diagnostic-status","diagnostic-export","display-status","display-set","wipe-plan","wipe","usb-status","usb-start","usb-stop",
         "terminal-status","terminal-start","terminal-read","terminal-write","terminal-resize","terminal-stop","systems-status","systems-import-plan","systems-switch-plan","systems-import","systems-switch","systems-recover","systems-remove",
-        "install-status","install-boot-plan","install-stock-plan","install-resume-plan","install-execute","flash-targets","flash-check","flash-write","usb-sync","usb-backup","usb-eject"};
+        "install-status","install-boot-plan","install-stock-plan","install-resume-plan","install-execute","flash-targets","flash-check","flash-write","flash-members","usb-sync","usb-backup","usb-eject"};
     return kind>=0&&kind<=J_USB_EJECT?n[kind]:"";
 }
 static bool file_job(int kind){return kind>=J_FS_INVENTORY&&kind<=J_FS_RESIZE;}
@@ -5244,7 +5248,7 @@ static bool preview(App*a,const char*name){
                 snprintf(s->path,sizeof(s->path),"/.a22x-images/%s",s->file);s->size=a->catalog[0].size;s->checked=true;a->saved_count=1;}
         }
     }
-    else if(!strcmp(name,"flash-super")||!strcmp(name,"flash-list")||!strcmp(name,"flash-gsi")){
+    else if(!strcmp(name,"flash-super")||!strcmp(name,"flash-list")||!strcmp(name,"flash-gsi")||!strcmp(name,"flash-members")){
         /* 2026-11-10: the partitions inside super, as flash.py lists them on this phone. */
         static const struct{const char*label,*title;uint64_t bytes,room;bool logical;}rows[]={
             {"boot","Kernel and ramdisk",32ull<<20,0,false},{"dtbo","Device tree overlays",8ull<<20,0,false},{"vbmeta","Verified boot data",64ull<<10,0,false},
@@ -5259,6 +5263,14 @@ static bool preview(App*a,const char*name){
             copy(a->flash_name,sizeof(a->flash_name),"system-squeak-arm64-ab-vndklite-gapps.img");copy(a->flash_kind,sizeof(a->flash_kind),"ext4 file system image");a->flash_bytes=2100ull<<20;
             copy(a->flash_sha,sizeof(a->flash_sha),"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");copy(a->flash_warnings,sizeof(a->flash_warnings),"This partition is too large to save first");
             a->screen=FLASH_REVIEW;
+        }else if(!strcmp(name,"flash-members")){
+            /* 2026-11-13: a ROM's ZIP opened in Flash a partition, as flash.py members lists it. */
+            static const struct{const char*name,*target;uint64_t bytes;}inside[]={{"boot.img","boot",15099904ull},{"vendor.img","super/vendor",1093541888ull},
+                {"dtbo.img","dtbo",8ull<<20},{"lk.img","",1ull<<20}};
+            a->flash_selected=0;a->flash_member_count=0;a->flash_members_installer=a->flash_members_rom=true;
+            for(size_t i=0;i<sizeof(inside)/sizeof(inside[0]);i++){FlashMember*m=&a->flash_members[a->flash_member_count++];memset(m,0,sizeof(*m));
+                copy(m->name,sizeof(m->name),inside[i].name);copy(m->target,sizeof(m->target),inside[i].target);m->bytes=inside[i].bytes;}
+            a->screen=FLASH_MEMBERS;
         }else a->screen=!strcmp(name,"flash-super")?FLASH_SUPER:FLASH;
     }
     else if(!strcmp(name,"icon-sheet"))a->screen=ICON_SHEET;

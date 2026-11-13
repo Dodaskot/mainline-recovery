@@ -413,7 +413,7 @@ static bool root_action(App*a,int id){
         /* The stock BOOT on cache goes through Flash a partition, as "Flash it to BOOT". */
         a->flash_restore=a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;
         copy(a->flash_volume,sizeof(a->flash_volume),"cache");copy(a->flash_volume_token,sizeof(a->flash_volume_token),a->root_cache_token);
-        copy(a->flash_path,sizeof(a->flash_path),a->root_stock_path);a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;
+        copy(a->flash_path,sizeof(a->flash_path),a->root_stock_path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;
     }
     return false;
 }
@@ -764,7 +764,7 @@ static bool samsung_action(App*a,int id){
         /* The kept copy on cache goes through Flash a partition: checked, reviewed, held. */
         a->flash_restore=a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;
         copy(a->flash_volume,sizeof(a->flash_volume),"cache");copy(a->flash_volume_token,sizeof(a->flash_volume_token),a->stock_boot_token);
-        copy(a->flash_path,sizeof(a->flash_path),a->stock_boot_path);a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;
+        copy(a->flash_path,sizeof(a->flash_path),a->stock_boot_path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;
     }
     if(a->screen==ANDROID_IMAGE){
         const CatalogImage*c=a->android_selected>=0&&(unsigned int)a->android_selected<a->catalog_count?&a->catalog[a->android_selected]:NULL;

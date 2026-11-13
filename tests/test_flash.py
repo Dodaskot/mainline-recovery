@@ -488,6 +488,27 @@ class Flash(unittest.TestCase):
         self.assertEqual((code, done['error']['code']), (2, 'ROLLBACK_UNAVAILABLE'))
         self.assertEqual((self.root / 'targets/boot').read_bytes(), written)
 
+    def test_an_archive_says_which_images_it_holds_and_where_they_go(self):
+        """2026-11-13, the owner: a ROM's ZIP should be opened and its images offered; its BOOT then
+        goes on BOOT straight from the ZIP."""
+        import zipfile
+        path = self.root / 'usb' / 'rom.zip'
+        with zipfile.ZipFile(path, 'w') as z:
+            z.writestr('META-INF/com/google/android/update-binary', '#!/sbin/sh\n')
+            z.writestr('system.transfer.list', '4\n1\n0\n0\nnew 2,0,1\n')
+            z.writestr('boot.img', boot_image())
+            z.writestr('lk.img', b'x' * 4096)
+        code, listed, _ = self.run_helper('members', '--volume', 'usb-p1', '--volume-token', self.token(), '--path', '/rom.zip')
+        self.assertEqual(code, 0, listed)
+        self.assertEqual((listed['archive'], listed['installer'], listed['block_ota']), ('zip', True, True))
+        self.assertEqual({m['name']: m['target'] for m in listed['members']}, {'boot.img': 'boot', 'lk.img': ''})
+        code, checked, _ = self.run_helper('check', '--target', 'boot', '--volume', 'usb-p1', '--volume-token', self.token(),
+                                           '--path', '/rom.zip', '--member', 'boot.img')
+        self.assertEqual(code, 0, checked)
+        code, refused, _ = self.run_helper('members', '--volume', 'usb-p1', '--volume-token', self.token(),
+                                           '--path', self.image(boot_image(), 'plain.img'))
+        self.assertEqual(refused['error']['code'], 'NOT_AN_ARCHIVE')
+
     def test_unusual_boot_header_warns_but_a_user_may_continue(self):
         code, checked, _ = self.check('boot', self.image(boot_image(board=b'OTHERBOARD')))
         self.assertEqual(code, 0, checked)

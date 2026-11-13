@@ -33,6 +33,10 @@ BOOT copy also on the phone.
   for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
   the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
   start removes descriptions of saved BOOTs whose image is gone.
+- **What is inside an archive** (0.6.215): Flash a partition opens a ZIP, a Samsung tar or a 7z and
+  lists its images with the partition each is for (a ROM's boot.img goes to boot, vendor.img to
+  super/vendor), and says when the ZIP installs itself as a whole ROM; the review names the image
+  inside and its own size. Checked on the phone with the KKRT ROM.
 - **Linux backup on a grown userdata, and Samsung-style block ROMs** (0.6.213): a userdata grown
   to the end of the eMMC by a Linux installation is admitted by the Linux backup (on the owner's
   phone it was refused); restore and wipe need a new qualification capsule. A ROM ZIP whose

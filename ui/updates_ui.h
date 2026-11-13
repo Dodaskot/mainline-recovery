@@ -48,7 +48,7 @@ static void complete_updates_job(App*a,const Json*j,int kind,bool ok){
     if(!token[0]||path[0]!='/'){files_problem(a,"UPDATE_FAILED","The helper did not return a result.",UPDATES);return;}
     a->flash_restore=a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;
     copy(a->flash_volume,sizeof(a->flash_volume),"cache");copy(a->flash_volume_token,sizeof(a->flash_volume_token),token);
-    copy(a->flash_path,sizeof(a->flash_path),path);a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);
+    copy(a->flash_path,sizeof(a->flash_path),path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);
 }
 static void render_updates(App*a){
     heading(a,"Updates","This recovery and the Linux BOOT, from the internet.",true);

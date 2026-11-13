@@ -311,6 +311,63 @@ def zip_member(fd, member=None):
     return chosen.filename, start, start + chosen.compress_size, chosen.compress_type, chosen.CRC
 
 
+IMAGE_SUFFIXES = ('.img', '.img.lz4', '.img.ext4.lz4', '.ext4.lz4', '.bin.lz4')
+LOGICAL_NAMES = ('system', 'vendor', 'product', 'odm', 'system_ext', 'vendor_dlkm', 'odm_dlkm')
+
+
+def image_target(name, labels):
+    """The partition an image inside an archive is for, by its file name (boot.img -> boot,
+    vendor.img -> super/vendor, Samsung's boot.img.lz4 -> boot); '' when none this recovery writes."""
+    base = name.rsplit('/', 1)[-1].lower()
+    for suffix in sorted(IMAGE_SUFFIXES, key=len, reverse=True):
+        if base.endswith(suffix):
+            base = base[:-len(suffix)]
+            break
+    else:
+        return ''
+    wanted = 'super/' + base if base in LOGICAL_NAMES else base
+    return wanted if wanted in labels else ''
+
+
+def members(context, args):
+    """2026-11-13, the owner: the recovery should open an archive and say what in it can be flashed
+    (a ROM ZIP carries its BOOT, a firmware tar its images). The images in a ZIP, a tar or a 7z, with
+    the partition each is for, and what else the archive is: a ROM with its own installer, a block
+    OTA, an A/B payload."""
+    labels = {row['label'] for row in targets(context)['targets']}
+    with source_file(context, args.volume, args.volume_token, args.path) as fd:
+        head = os.pread(fd, 6, 0)
+        found, extra = [], {'installer': False, 'block_ota': False, 'payload': False}
+        if head == sevenzip.SIGNATURE:
+            kind = '7z'
+            files, _ = sevenzip.entries(fd)
+            listing = [(f['name'], f.get('size', 0)) for f in files]
+        elif head[:4] == b'PK\x03\x04':
+            kind = 'zip'
+            with shared_offset(fd) as handle, zipfile.ZipFile(handle) as archive:
+                infos = [i for i in archive.infolist() if not i.is_dir()]
+            listing = [(i.filename, i.file_size) for i in infos]
+            names = {name for name, _ in listing}
+            extra['installer'] = 'META-INF/com/google/android/update-binary' in names
+            extra['block_ota'] = any(name.endswith('.transfer.list') for name in names)
+            extra['payload'] = 'payload.bin' in names
+        elif os.pread(fd, 5, 257) == b'ustar':
+            kind = 'tar'
+            with shared_offset(fd) as handle, tarfile.open(fileobj=handle, mode='r:') as archive:
+                listing = [(m.name, m.size) for m in archive.getmembers() if m.isreg()]
+        else:
+            fs.fail('NOT_AN_ARCHIVE', 'This file is an image itself, not an archive')
+        for name, size in listing[:4096]:
+            lower = name.lower()
+            if not any(lower.endswith(suffix) for suffix in IMAGE_SUFFIXES):
+                continue
+            # A ZIP's images are read stored or deflated, as .img; a tar's also through LZ4.
+            if kind != 'tar' and not lower.endswith('.img'):
+                continue
+            found.append({'name': name, 'size': size, 'target': image_target(name, labels)})
+    return {'archive': kind, 'members': found[:64], **extra}
+
+
 def open_reader(fd, compression, size=0):
     if size > install.MAX_SOURCE or os.fstat(fd).st_size > install.MAX_SOURCE or compression in ('zstd', 'xz') or compression[:4] in ('zip', 'zip:', 'tar:') or compression[:2] == '7z':
         return DecodedReader(fd, compression, size or install.MAX_SOURCE)
@@ -1247,6 +1304,10 @@ def parser():
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('targets')
     commands.add_parser('resume')
+    listed = commands.add_parser('members')
+    listed.add_argument('--volume', required=True)
+    listed.add_argument('--volume-token', required=True)
+    listed.add_argument('--path', required=True)
     for name in ('check', 'write'):
         command = commands.add_parser(name)
         command.add_argument('--target', type=target_choice, required=True)
@@ -1287,6 +1348,8 @@ def main(argv=None):
                 result = resume(context, progress)
         elif args.command == 'check':
             result = check(context, args, progress)
+        elif args.command == 'members':
+            result = members(context, args)
         else:
             result = write(context, args, progress)
         print(json.dumps({'ok': True, 'operation': args.command, **result}, separators=(',', ':')), flush=True)
