@@ -5443,9 +5443,9 @@ static bool preview(App*a,const char*name){
     }
     else if(!strcmp(name,"wipe")||!strcmp(name,"wipe-review"))a->screen=!strcmp(name,"wipe")?WIPE:WIPE_REVIEW;
     else if(!strcmp(name,"linux-data")||!strcmp(name,"linux-data-restore")){
-        a->ld_known=a->ld_linux=true;copy(a->ld_os,sizeof(a->ld_os),"Arch Linux ARM");copy(a->ld_accounts,sizeof(a->ld_accounts),"akisha");a->ld_home=1843200000ULL;a->ld_settings=48211;a->ld_account_count=1;a->ld_packages=214;a->ld_parts=15u;
+        a->ld_known=a->ld_linux=true;copy(a->ld_os,sizeof(a->ld_os),"Arch Linux ARM");copy(a->ld_accounts,sizeof(a->ld_accounts),"alex");a->ld_home=1843200000ULL;a->ld_settings=48211;a->ld_account_count=1;a->ld_packages=214;a->ld_parts=15u;
         a->ld_dest_count=1;copy(a->ld_dest[0].id,sizeof(a->ld_dest[0].id),"sdcard-p1");copy(a->ld_dest[0].label,sizeof(a->ld_dest[0].label),"alarm_root");a->ld_dest[0].free=5800000000ULL;
-        a->ld_archive_count=1;LdArchive*x=&a->ld_archives[0];copy(x->os,sizeof(x->os),"Arch Linux ARM");copy(x->label,sizeof(x->label),"alarm_root");copy(x->accounts,sizeof(x->accounts),"akisha");x->parts=15u;x->packages=214;x->bytes=912000000ULL;x->created=1794580000ULL;
+        a->ld_archive_count=1;LdArchive*x=&a->ld_archives[0];copy(x->os,sizeof(x->os),"Arch Linux ARM");copy(x->label,sizeof(x->label),"alarm_root");copy(x->accounts,sizeof(x->accounts),"alex");x->parts=15u;x->packages=214;x->bytes=912000000ULL;x->created=1794580000ULL;
         a->ld_selected=0;a->ld_restore_parts=15u;a->screen=!strcmp(name,"linux-data")?LINUX_DATA:LINUX_DATA_RESTORE;}
     else if(!strncmp(name,"secret-",7)){
         /* The password field at three moments: the character just typed, its dot growing in, all dots. */
@@ -6191,12 +6191,12 @@ static int test_files_select(void){
 /* 2026-11-13: Linux data: what the helper found, the toggles, an archive opened for its restore. */
 static int test_linux_data(void){
     App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->preview=true;a->inventory_ok=true;
-    static const char seen[]="{\"ok\":true,\"operation\":\"inspect\",\"linux\":true,\"reason\":\"\",\"os\":{\"id\":\"archarm\",\"name\":\"Arch Linux ARM\",\"family\":\"arch\"},\"accounts\":[\"akisha\",\"guest\"],"
+    static const char seen[]="{\"ok\":true,\"operation\":\"inspect\",\"linux\":true,\"reason\":\"\",\"os\":{\"id\":\"archarm\",\"name\":\"Arch Linux ARM\",\"family\":\"arch\"},\"accounts\":[\"alex\",\"guest\"],"
         "\"parts\":{\"home\":1048576,\"settings\":2048,\"accounts\":2,\"packages\":-1},\"destinations\":[{\"volume\":\"sdcard-p1\",\"label\":\"card\",\"free_bytes\":5000000000},{\"volume\":\"usb-p1\",\"label\":\"stick\",\"free_bytes\":1000}],"
-        "\"archives\":[{\"volume\":\"sdcard-p1\",\"volume_token\":\"tok\",\"label\":\"card\",\"path\":\"/A22xDataBackups/x.tar.zst\",\"name\":\"x.tar.zst\",\"bytes\":900,\"created\":1794580000,\"os\":{\"name\":\"Debian 13\"},\"parts\":[\"home\",\"packages\"],\"accounts\":[\"akisha\"],\"packages\":12}]}";
+        "\"archives\":[{\"volume\":\"sdcard-p1\",\"volume_token\":\"tok\",\"label\":\"card\",\"path\":\"/A22xDataBackups/x.tar.zst\",\"name\":\"x.tar.zst\",\"bytes\":900,\"created\":1794580000,\"os\":{\"name\":\"Debian 13\"},\"parts\":[\"home\",\"packages\"],\"accounts\":[\"alex\"],\"packages\":12}]}";
     JsonToken tokens[256];Json j;assert(json_parse(&j,seen,tokens,256)>0);
     a->ld_parts=15u;a->screen=PROGRESS;complete_ld_job(a,&j,J_LD_INSPECT,true);
-    assert(a->screen==LINUX_DATA&&a->ld_known&&a->ld_linux&&!strcmp(a->ld_os,"Arch Linux ARM")&&!strcmp(a->ld_accounts,"akisha, guest")&&a->ld_home==1048576&&a->ld_account_count==2);
+    assert(a->screen==LINUX_DATA&&a->ld_known&&a->ld_linux&&!strcmp(a->ld_os,"Arch Linux ARM")&&!strcmp(a->ld_accounts,"alex, guest")&&a->ld_home==1048576&&a->ld_account_count==2);
     assert(a->ld_packages==-1&&a->ld_parts==7u&&a->ld_dest_count==2&&a->ld_archive_count==1&&a->ld_archives[0].parts==9u&&a->ld_archives[0].packages==12);
     render(a);Button*b=test_button(a,A_LD_PART+3);assert(b&&!b->enabled);assert(test_button(a,A_LD_BACKUP)->enabled&&test_button(a,A_LD_BACKUP)->hold_ms==2000);
     assert(test_press(a,A_LD_PART+0,50)&&a->ld_parts==6u&&test_press(a,A_LD_DEST,50)&&a->ld_dest_index==1);
@@ -6205,9 +6205,9 @@ static int test_linux_data(void){
     render(a);assert(test_button(a,A_LD_RPART+0)&&test_button(a,A_LD_RPART+3)&&!test_button(a,A_LD_RPART+1)&&test_button(a,A_LD_RESTORE)->hold_ms==3000);
     assert(test_press(a,A_LD_RPART+0,50)&&test_press(a,A_LD_RPART+3,50)&&!a->ld_restore_parts);render(a);assert(!test_button(a,A_LD_RESTORE)->enabled);
     assert(test_press(a,A_BACK,50)&&a->screen==LINUX_DATA);
-    static const char back[]="{\"ok\":true,\"operation\":\"restore\",\"parts\":[\"home\",\"packages\"],\"into\":{\"id\":\"ubuntu\",\"name\":\"Ubuntu 26.04\"},\"accounts_created\":[\"akisha\"],\"accounts_kept\":[],\"owners_changed\":1,\"packages_installed\":9,\"packages_missing\":3,\"missing\":[\"zsh\"],\"packages_unsupported\":false,\"note\":\"\"}";
+    static const char back[]="{\"ok\":true,\"operation\":\"restore\",\"parts\":[\"home\",\"packages\"],\"into\":{\"id\":\"ubuntu\",\"name\":\"Ubuntu 26.04\"},\"accounts_created\":[\"alex\"],\"accounts_kept\":[],\"owners_changed\":1,\"packages_installed\":9,\"packages_missing\":3,\"missing\":[\"zsh\"],\"packages_unsupported\":false,\"note\":\"\"}";
     a->ld_restore_parts=9u;assert(json_parse(&j,back,tokens,256)>0);complete_ld_job(a,&j,J_LD_RESTORE,true);
-    assert(a->screen==RESULT&&a->successful&&a->result_return==LINUX_DATA&&strstr(a->message,"Ubuntu 26.04")&&strstr(a->message,"akisha")&&strstr(a->message,"zsh")&&!a->ld_known);
+    assert(a->screen==RESULT&&a->successful&&a->result_return==LINUX_DATA&&strstr(a->message,"Ubuntu 26.04")&&strstr(a->message,"alex")&&strstr(a->message,"zsh")&&!a->ld_known);
     /* 2026-11-13: copies protected with a password. The toggle asks for it once; a closed archive
        asks for it and is read again; a helper that could not open a copy has its work started again. */
     copy(a->workdir,sizeof(a->workdir),"/tmp/a22x-ui-test-password");mkdir(a->workdir,0700);

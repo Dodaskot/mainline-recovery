@@ -49,6 +49,7 @@ def main():
     ap.add_argument('--add', action='append', default=[], help='new ramdisk/path=host/file')
     ap.add_argument('--link', action='append', default=[], help='new ramdisk/path=target')
     ap.add_argument('--remove', action='append', default=[], help='ramdisk/path to leave out of the image')
+    ap.add_argument('--scrub', action='append', default=[], help='TEXT=REPLACEMENT in the build records etc/a22x-recovery/*.json')
     ap.add_argument('--bytecode', type=Path, help='list of standard library sources to compile into the image')
     ap.add_argument('--kernel', type=Path, help='kernel payload to use instead of the one in the base image')
     ap.add_argument('--dtb', type=Path, help='DT table to use instead of the one in the base image')
@@ -117,6 +118,14 @@ def main():
     if a.build_update:
         build.update(json.loads(a.build_update.read_text()))
     byname['etc/a22x-recovery/build.json'][2] = json.dumps(build, indent=2, sort_keys=True).encode() + b'\n'
+    # 2026-11-13: the build records name the folders of the computer they were made on (a user's
+    # home); a public image gets them replaced. Nothing checks these records against a hash.
+    for item in a.scrub:
+        text, replacement = (part.encode() for part in item.split('=', 1))
+        for name, entry in byname.items():
+            if name.startswith('etc/a22x-recovery/') and name.endswith('.json') and text in entry[2]:
+                entry[2] = entry[2].replace(text, replacement)
+                report.setdefault('scrubbed', []).append(name)
     ramdisk = a.output / 'ramdisk.cpio.gz'
     with open(ramdisk, 'wb') as f:
         f.write(gzip.compress(write_cpio(entries), 9, mtime=0))

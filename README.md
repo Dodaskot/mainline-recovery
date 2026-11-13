@@ -12,7 +12,7 @@ Ukrainian: [README.uk.md](README.uk.md) · What changed in each version:
 | | |
 |---|---|
 | Download | [Releases](https://github.com/Dodaskot/mainline-recovery/releases): the recovery image and the installer app |
-| Phone | SM-A226B only. Images and firmware are checked to be made for it |
+| Phone | SM-A226B only, 64 GB and 128 GB (tested on a 64 GB phone). Images and firmware are checked to be made for it |
 | Recovery kernel | `7.2.0-a22x-recovery+`, [linux-a22x](https://github.com/Dodaskot/linux-a22x) branch `a22x-recovery` |
 | Linux BOOT | the mainline kernel of [a22x-mainline](https://gitlab.com/pessdres/a22x-mainline), downloaded by the recovery when a system needs it |
 
@@ -52,15 +52,20 @@ More, page by page: [docs/screenshots/en](docs/screenshots/en).
 
 ### Android
 
-- **Samsung firmware** (`AP_….tar.md5` with CSC, BL, CP beside it), as Odin flashes
-  it, without the bootloader chain, the modem or the PIT; then data is formatted
-  for Android as stock recovery does.
+- **Samsung firmware** (`AP_….tar.md5` with CSC, BL, CP beside it, or the whole
+  firmware ZIP as downloaded), as Odin flashes it, without the bootloader chain,
+  the modem or the PIT; then data is formatted for Android as stock recovery does.
 - **GSIs and ROMs**: from the catalog (Google's GSIs, LineageOS, crDroid and others),
   or from a file: a system image, a 7z, a block-based OTA, `payload.bin`, an image
   ZIP or a flashable ZIP.
 - **Flashable ZIPs** with their own installer (`update-binary`, edify), one or
   several in a row, each in an isolated room that sees only the partitions an
-  Android ROM may change; `adb sideload` works as in TWRP.
+  Android ROM may change; `adb sideload` works as in TWRP. Tested on the phone:
+  LineageOS 20 for the A226B, AnyKernel3 kernels, Magisk. A block-based ROM whose
+  own installer fails is written by the recovery itself, and super is laid out for
+  a ROM whose partitions do not fit.
+- After a ZIP changed Android's BOOT, the recovery offers to reset Android's data:
+  on this Samsung, Android does not start on its old data with a changed BOOT.
 - **Root**: Magisk (the newest release, patched on the phone) or APatch; root can
   be removed again.
 - **Why Android did not start**: the recovery reads the last kernel log Android left
@@ -72,6 +77,24 @@ More, page by page: [docs/screenshots/en](docs/screenshots/en).
 - **Copies of Android's partitions** as one compressed
   archive (`tar.zst`) on a card or USB drive, optionally with Android's encrypted
   data. A restore checks the archive first and writes only what differs.
+- **Linux snapshots**: BOOT and the used blocks of `userdata` (partclone, zstd),
+  verified before they are marked complete; restore and wipe of `userdata` from a
+  snapshot, on any SM-A226B with the same layout.
+- **Linux data**: home folders, accounts, settings (Wi-Fi, Bluetooth, SSH, locale)
+  and the list of packages, without the system, into one archive. It is restored
+  into another distribution installed here, or on any other Linux device with the
+  `restore.sh` inside it: packages are installed under the names that system uses.
+- **Copies of EFS and IMEI** (the phone's identity partitions).
+- **Protected with a password** (Backup > "Protect copies with a password"): copies
+  of Android, Linux data and archives made in Files are encrypted (AES-256-CTR,
+  PBKDF2-SHA-256, an HMAC over the whole file). They open on any computer with
+  `openssl`, without the recovery:
+
+  ```fish
+  head -c -56 NAME.tar.zst.enc | openssl enc -d -aes-256-ctr -pbkdf2 -iter 600000 -md sha256 | tar --zstd -x
+  ```
+
+  Linux snapshots, the recovery image and EFS/IMEI copies are saved without it.
 - Backups can be verified, renamed and deleted on the phone.
 
 ### Flashing
@@ -94,15 +117,19 @@ More, page by page: [docs/screenshots/en](docs/screenshots/en).
 
 - File manager for every volume: `userdata`, microSD, USB drives, `cache`, and
   Android's partitions inside super (`system`, `vendor`, `product`, `odm`,
-  read-only). Copy, rename, edit text, permissions and owner, delete.
+  read-only). Copy, rename, edit text, permissions and owner, delete; several
+  entries at once (a long press selects).
+- **Archives**: chosen files and folders into a `tar.zst` (owners, permissions and
+  links kept), and any `tar`, `tar.gz`, `tar.xz` or `tar.zst` extracted beside it.
 - **USB files** (MTP) to a computer; **partition a card**; **wipe** cache or a
-  volume; **repair** and **grow** ext4 filesystems.
+  volume as ext4 or F2FS; **check and repair** ext4, F2FS and FAT; **grow** ext4.
 - Terminal, screenshots (Volume down + Power), flashlight.
 
 ### Network and remote access
 
 - Wi-Fi with saved networks; downloads over HTTPS.
-- **ADB** (shell, push/pull, sideload) and **SSH** with keys, over USB and Wi-Fi.
+- **ADB** (shell, push/pull, sideload) and **SSH** with keys, over the USB cable
+  (the USB network `172.16.42.1`).
 - An optional **password** locks the recovery and is asked on the phone before a
   computer gets a shell. When the settings that hold it cannot be read, the
   recovery stays locked.
@@ -129,7 +156,7 @@ updates itself from the newest release. `apk/build.sh` builds it without the And
    to RECOVERY in Download Mode, for example with Heimdall:
 
    ```fish
-   heimdall flash --recovery recovery-a22x-0.6.206.img
+   heimdall flash --recovery recovery-a22x-1.0.0.img
    ```
 
    or install it from a rooted Android with the app.
@@ -166,7 +193,7 @@ partition → recovery.
 
 ## Building
 
-`tools/build-image.sh NN` builds `build-v06-NN/recovery-a22x-mainline-k108-v0.6.img`
+`VERSION=1.0.0 tools/build-image.sh NN` builds `build-v06-NN/recovery-a22x-mainline-k108-v0.6.img`
 from these sources, the recovery kernel and the runtimes, on top of the qualified
 base image, and checks that every file in the image equals this tree. Device
 firmware and the sealed platform profile are captured from your own phone with

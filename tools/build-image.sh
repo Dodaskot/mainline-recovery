@@ -89,6 +89,35 @@ fi
 if [ "${PUBLIC:-}" = 1 ]; then
     : > build-no-keys
     ADD+=(--replace "etc/a22x-recovery/authorized_keys=build-no-keys")
+    # 2026-11-13: the base's stock profile (the pinned DZC3 bundle) was qualified on the developer's
+    # phone and names its eMMC (parent_cid_sha256). A public image gets it unqualified, without the
+    # mapping of that phone's boot areas; Samsung firmware from its tar or ZIP does not use it.
+    python3 - "$BASE" "$S" <<'Q'
+import gzip, importlib.util, json, sys
+from pathlib import Path
+base, src = Path(sys.argv[1]), Path(sys.argv[2])
+spec = importlib.util.spec_from_file_location('b', src / 'tools/build_v06_image.py')
+b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)
+entries = {n: bytes(rest[-1]) for fields, n, *rest in b.read_cpio(gzip.decompress((base / 'ramdisk.cpio.gz').read_bytes()))}
+profile = json.loads(entries['etc/a22x-recovery/install-stock-profile.json'])
+cids = set()
+def find(o):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k == 'parent_cid_sha256' and isinstance(v, str):
+                cids.add(v)
+            find(v)
+    elif isinstance(o, list):
+        for v in o:
+            find(v)
+find(profile)
+profile.update(qualified=False, blockers=['STOCK_PROFILE_OF_ANOTHER_PHONE'], protected_prefixes={})
+Path('build-public-stock-profile.json').write_text(json.dumps(profile, indent=2, sort_keys=True) + '\n')
+Path('build-public-forbidden.txt').write_text(''.join(c + '\n' for c in sorted(cids)))
+Q
+    ADD+=(--replace "etc/a22x-recovery/install-stock-profile.json=build-public-stock-profile.json")
+    # The build records name this computer's folders; a public image says only /build.
+    ADD+=(--scrub "$(dirname "$WORK")=/build" --scrub "$HOME=/build")
 fi
 # The base image of 0.5 carries the qualification capsule of the phone it was made on, with a hash of
 # that phone's eMMC identity. Linux snapshots no longer need it (backend/qualification.py
@@ -151,6 +180,13 @@ for fields, n, *rest in b.read_cpio(gzip.decompress((root / 'ramdisk.cpio.gz').r
     if n == 'bin/recovery-ui' and bytes(rest[-1]) != (src / 'ui/a22x-recovery-ui-aarch64').read_bytes():
         bad.append(n)
 print('image differs from source in:', bad)
+# A public image must not carry the developer phone's eMMC identity anywhere (2026-11-13).
+forbidden = Path('build-public-forbidden.txt')
+if nn.endswith('-public') and forbidden.exists():
+    blob = gzip.decompress((root / 'ramdisk.cpio.gz').read_bytes())
+    found = [c[:12] for c in forbidden.read_text().split() if c.encode() in blob]
+    print('phone identities in the public image:', found)
+    bad += found
 sys.exit(1 if bad else 0)
 P
 sha256sum "build-v06-$NN/recovery-a22x-mainline-k108-v0.6.img"

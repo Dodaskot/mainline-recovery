@@ -50,14 +50,14 @@ class LinuxData(unittest.TestCase):
         self.addCleanup(lambda: [os.environ.pop(k, None) for k in ('A22X_LINUX_DATA_PATH', 'A22X_STUB_LOG')])
 
     def make_arch(self, top):
-        for folder in ('etc/NetworkManager/system-connections', 'etc/ssh', 'home/akisha/.cache/junk', 'home/akisha/Документи', 'root',
+        for folder in ('etc/NetworkManager/system-connections', 'etc/ssh', 'home/alex/.cache/junk', 'home/alex/Документи', 'root',
                        'var/lib/pacman/local/firefox-1-1', 'var/lib/pacman/local/htop-3-1', 'var/lib/pacman/local/libfoo-1-1',
                        'var/lib/pacman/local/zsh-5-1', 'var/lib/pacman/local/linux-aarch64-1-1', 'var/tmp', 'lib/modules/7.2.0'):
             (top / folder).mkdir(parents=True)
         (top / 'etc/os-release').write_text('NAME="Arch Linux ARM"\nID=archarm\nID_LIKE=arch\nPRETTY_NAME="Arch Linux ARM"\n')
-        (top / 'etc/passwd').write_text('root:x:0:0::/root:/bin/bash\nakisha:x:1000:1000::/home/akisha:/bin/zsh\nnobody:x:65534:65534::/:/sbin/nologin\n')
-        (top / 'etc/shadow').write_text('root:$6$r$R:1::::::\nakisha:$6$salt$HASH:1::::::\n')
-        (top / 'etc/group').write_text('wheel:x:998:akisha\nvideo:x:985:akisha\nakisha:x:1000:\n')
+        (top / 'etc/passwd').write_text('root:x:0:0::/root:/bin/bash\nalex:x:1000:1000::/home/alex:/bin/zsh\nnobody:x:65534:65534::/:/sbin/nologin\n')
+        (top / 'etc/shadow').write_text('root:$6$r$R:1::::::\nalex:$6$salt$HASH:1::::::\n')
+        (top / 'etc/group').write_text('wheel:x:998:alex\nvideo:x:985:alex\nalex:x:1000:\n')
         (top / 'etc/hostname').write_text('a22x\n')
         (top / 'etc/locale.conf').write_text('LANG=uk_UA.UTF-8\n')
         (top / 'etc/localtime').symlink_to('/usr/share/zoneinfo/Europe/Berlin')
@@ -65,9 +65,9 @@ class LinuxData(unittest.TestCase):
         (top / 'etc/ssh/ssh_host_ed25519_key').write_text('KEY')
         (top / 'etc/ssh/sshd_config').write_text('system file')
         (top / 'etc/fstab').write_text('this phone only')
-        (top / 'home/akisha/Документи/нотатка.txt').write_text('моє\n')
-        (top / 'home/akisha/.zshrc').write_text('alias ll=ls\n')
-        (top / 'home/akisha/.cache/junk/big').write_bytes(b'x' * 4096)
+        (top / 'home/alex/Документи/нотатка.txt').write_text('моє\n')
+        (top / 'home/alex/.zshrc').write_text('alias ll=ls\n')
+        (top / 'home/alex/.cache/junk/big').write_bytes(b'x' * 4096)
         (top / 'root/.bash_history').write_text('ls\n')
         for name, reason in (('firefox', None), ('htop', '0'), ('libfoo', '1'), ('zsh', None), ('linux-aarch64', None)):
             (top / ('var/lib/pacman/local/%s-%s-1/desc' % (name, '3' if name == 'htop' else '5' if name == 'zsh' else '1'))).write_text(
@@ -79,18 +79,18 @@ class LinuxData(unittest.TestCase):
     def test_inspect_backup_and_restore_into_another_distribution(self):
         seen = ld.inspect(self.ctx)
         self.assertTrue(seen['linux'], seen)
-        self.assertEqual((seen['os']['family'], seen['accounts'], seen['parts']['packages'], seen['parts']['accounts']), ('arch', ['akisha'], 3, 1))
+        self.assertEqual((seen['os']['family'], seen['accounts'], seen['parts']['packages'], seen['parts']['accounts']), ('arch', ['alex'], 3, 1))
         self.assertEqual([d['volume'] for d in seen['destinations']], ['sdcard-p1'])
         self.assertFalse(self.ctx.volume('userdata')['mounted'])  # left as it was found
         done = ld.backup(self.ctx, ['home', 'accounts', 'settings', 'packages'], 'sdcard-p1', None, True, self.progress)
         archive = self.sd / done['archive']['path'].lstrip('/')
         self.assertTrue(archive.is_file() and done['packages'] == 3 and done['accounts'] == 1)
         names = subprocess.run(['tar', '--zstd', '-tf', str(archive)], capture_output=True, text=True, check=True).stdout.split('\n')
-        self.assertIn('home/akisha/Документи/нотатка.txt', names)
+        self.assertIn('home/alex/Документи/нотатка.txt', names)
         self.assertIn('settings/etc/NetworkManager/system-connections/Home.nmconnection', names)
         self.assertIn('settings/etc/ssh/ssh_host_ed25519_key', names)
         self.assertIn('restore.sh', names)
-        for absent in ('home/akisha/.cache/junk/big', 'settings/etc/fstab', 'settings/etc/ssh/sshd_config'):
+        for absent in ('home/alex/.cache/junk/big', 'settings/etc/fstab', 'settings/etc/ssh/sshd_config'):
             self.assertNotIn(absent, names)
         # A card mounted only to be looked at is let go again.
         config = json.loads((self.root / 'filesystem-fixture.json').read_text())
@@ -106,7 +106,7 @@ class LinuxData(unittest.TestCase):
         (self.root / '.filesystem-state.json').unlink(missing_ok=True)
         listed = ld.inspect(self.ctx)['archives']
         self.assertEqual((len(listed), listed[0]['parts'], listed[0]['os']['family'], listed[0]['accounts']),
-                         (1, list(ld.PARTS), 'arch', ['akisha']))
+                         (1, list(ld.PARTS), 'arch', ['alex']))
         # The phone is erased and another distribution installed: Debian, no account of that name.
         shutil.rmtree(self.data)
         for folder in ('etc/NetworkManager', 'etc/ssh', 'home', 'root', 'var/tmp', 'bin'):
@@ -118,9 +118,9 @@ class LinuxData(unittest.TestCase):
         (self.data / 'bin/bash').write_text('#!')
         (self.data / 'bin/bash').chmod(0o755)
         back = ld.restore(fs.FixtureContext(self.root), 'sdcard-p1', None, listed[0]['path'], list(ld.PARTS), True, self.progress)
-        self.assertEqual((back['accounts_created'], back['into']['id'], back['owners_changed']), (['akisha'], 'debian', 1))
+        self.assertEqual((back['accounts_created'], back['into']['id'], back['owners_changed']), (['alex'], 'debian', 1))
         self.assertEqual((back['packages_installed'], back['packages_missing'], back['missing']), (2, 1, ['zsh']))
-        self.assertEqual((self.data / 'home/akisha/Документи/нотатка.txt').read_text(), 'моє\n')
+        self.assertEqual((self.data / 'home/alex/Документи/нотатка.txt').read_text(), 'моє\n')
         self.assertEqual((self.data / 'root/.bash_history').read_text(), 'ls\n')
         self.assertEqual((self.data / 'etc/hostname').read_text(), 'a22x\n')
         self.assertEqual(os.readlink(self.data / 'etc/localtime'), '/usr/share/zoneinfo/Europe/Berlin')
@@ -128,15 +128,15 @@ class LinuxData(unittest.TestCase):
         self.assertEqual((self.data / 'etc/ssh/ssh_host_ed25519_key').read_text(), 'KEY')
         self.assertFalse((self.data / 'var/tmp/a22x-restore').exists())
         calls = (self.root / 'calls.log').read_text()
-        self.assertIn('useradd -m -u 1000 -s /bin/bash akisha', calls)   # zsh is not there: bash
-        self.assertIn('usermod -p $6$salt$HASH akisha', calls)
-        self.assertIn('usermod -aG sudo akisha', calls)
-        self.assertIn('usermod -aG video akisha', calls)
+        self.assertIn('useradd -m -u 1000 -s /bin/bash alex', calls)   # zsh is not there: bash
+        self.assertIn('usermod -p $6$salt$HASH alex', calls)
+        self.assertIn('usermod -aG sudo alex', calls)
+        self.assertIn('usermod -aG video alex', calls)
         self.assertIn('apt-get install -y -q --no-install-recommends --no-remove firefox-esr htop', calls)  # firefox by Debian's name
         # Restored once more: the account is there now, and its password is left alone.
         (self.root / 'calls.log').write_text('')
         again = ld.restore(fs.FixtureContext(self.root), 'sdcard-p1', None, listed[0]['path'], ['accounts'], True, self.progress)
-        self.assertEqual((again['accounts_created'], again['accounts_kept']), ([], ['akisha']))
+        self.assertEqual((again['accounts_created'], again['accounts_kept']), ([], ['alex']))
         self.assertNotIn('usermod -p', (self.root / 'calls.log').read_text())
 
     def test_parts_alone_and_refusals(self):
@@ -185,20 +185,20 @@ class LinuxData(unittest.TestCase):
         self.assertTrue(ld.inspect(self.ctx)['archives'][0]['wrong_password'])
         pa.PASSWORD = 'мій пароль'
         row = ld.inspect(self.ctx)['archives'][0]
-        self.assertEqual((row['locked'], row['encrypted'], row['parts'], row['accounts']), (False, True, ['home', 'accounts'], ['akisha']))
-        (self.data / 'home/akisha/Документи/нотатка.txt').write_text('changed')
+        self.assertEqual((row['locked'], row['encrypted'], row['parts'], row['accounts']), (False, True, ['home', 'accounts'], ['alex']))
+        (self.data / 'home/alex/Документи/нотатка.txt').write_text('changed')
         back = ld.restore(self.ctx, 'sdcard-p1', None, row['path'], ['home'], True, self.progress)
         self.assertEqual(back['parts'], ['home'])
-        self.assertEqual((self.data / 'home/akisha/Документи/нотатка.txt').read_text(), 'моє\n')
+        self.assertEqual((self.data / 'home/alex/Документи/нотатка.txt').read_text(), 'моє\n')
         # One byte changed: refused before a file of it reaches the system.
         blob = bytearray(archive.read_bytes())
         blob[len(blob) // 2] ^= 1
         archive.write_bytes(bytes(blob))
-        (self.data / 'home/akisha/Документи/нотатка.txt').write_text('changed')
+        (self.data / 'home/alex/Документи/нотатка.txt').write_text('changed')
         with self.assertRaises(ac.CryptError) as caught:
             ld.restore(self.ctx, 'sdcard-p1', None, row['path'], ['home'], True, self.progress)
         self.assertEqual(caught.exception.code, 'BACKUP_DAMAGED')
-        self.assertEqual((self.data / 'home/akisha/Документи/нотатка.txt').read_text(), 'changed')
+        self.assertEqual((self.data / 'home/alex/Документи/нотатка.txt').read_text(), 'changed')
         blob[len(blob) // 2] ^= 1
         archive.write_bytes(bytes(blob))
         if shutil.which('openssl'):
@@ -211,7 +211,7 @@ class LinuxData(unittest.TestCase):
                        PATH=os.environ['A22X_LINUX_DATA_PATH'] + ':' + os.environ['PATH'])
             run = subprocess.run(['sh', str(ROOT / 'linux_data_restore.sh'), str(archive), '--parts', 'home'], env=env, capture_output=True, text=True)
             self.assertIn('a22x: done', run.stdout, run.stdout + run.stderr)
-            self.assertEqual((other / 'home/akisha/Документи/нотатка.txt').read_text(), 'моє\n')
+            self.assertEqual((other / 'home/alex/Документи/нотатка.txt').read_text(), 'моє\n')
             env['A22X_PASSWORD'] = 'wrong'
             run = subprocess.run(['sh', str(ROOT / 'linux_data_restore.sh'), str(archive)], env=env, capture_output=True, text=True)
             self.assertEqual(run.returncode, 1)

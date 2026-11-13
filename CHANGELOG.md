@@ -4,9 +4,27 @@ What changed in each version of A22x Mainline Recovery, newest first. Every item
 was checked on the phone unless it says otherwise. Before 0.6.124: [docs/CHANGELOG.md](docs/CHANGELOG.md);
 day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md).
 
-## Not released yet: fixes from code reviews
+## 1.0.0 (2026-11-13)
 
-Found by two automated code reviews (the changes of 0.6.198–0.6.206, and `distro.py`,
+The first release for every SM-A226B, after 0.6.206. In short:
+
+- **Every SM-A226B**: the 128 GB phone as well as the 64 GB one (userdata and the eMMC are sized
+  from the phone, by the rule of Samsung's PIT; tested on a 64 GB phone only).
+- **Linux snapshots** restore and wipe on any SM-A226B, without a capsule made for one phone.
+- **Linux data**: homes, accounts, settings and packages into another distribution or onto
+  another Linux device, with `restore.sh`.
+- **Copies protected with a password**, opened with `openssl` on any computer.
+- **Files**: several entries at once, archives in and out, check and repair of F2FS and FAT.
+- **Android**: Samsung firmware straight from its ZIP; LineageOS 20, AnyKernel3 and block-based ROMs;
+  an offer to reset Android's data after a ZIP changed BOOT.
+- **Code reviews** of the access gate and adb, flashing and installation, `distro.py` and
+  `filesystem.py`, Linux backups, and of everything new since 0.6.206: every finding fixed.
+
+In detail, newest first:
+
+### Fixes from code reviews
+
+Found by automated code reviews (the changes of 0.6.198–0.6.206, and `distro.py`,
 `filesystem.py`, `dm_linear.py`), checked in the code and fixed; tested on the computer, the app's
 BOOT copy also on the phone.
 
@@ -39,6 +57,18 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **The 128 GB SM-A226B** (1.0.0): the recovery took the size of the eMMC and of userdata from
+  the 64 GB phone and refused a 128 GB one before any installation. Samsung's PIT for this model
+  gives every partition before userdata a fixed place and userdata the rest of the device, so
+  only these two sizes differ: the eMMC is admitted from 64 to 128 GB and userdata's sizes follow
+  it (stock: 8192 sectors short of the end; grown by a Linux image: 33). Tested on the computer;
+  the 64 GB phone keeps its sizes. **Not tested on a 128 GB phone.**
+- **Copies of Android protected with a password, on the phone** (0.6.236): five partitions saved
+  encrypted (opens with openssl on a computer), shown closed after a restart, a wrong password
+  refused, verified, and restored: a damaged vbmeta_system was written back and read back.
+  An archive of /home/user (402 files) made in Files with the password and extracted again,
+  identical; a Linux data backup with the password restored by hand on Ubuntu with `restore.sh`
+  (the password, with a space in it, typed at its prompt).
 - **Fixes from the review of 0.6.207–0.6.235** (0.6.236), 15 findings, all confirmed and fixed:
   - archives extracted in Files and Linux data no longer follow a hard link out of their folder or
     make device nodes, and a part of Linux data stays in its own folder (checked on the phone: an

@@ -1,13 +1,49 @@
 # Test results
 
-Recovery **0.6.206**, recovery kernel `7.2.0-a22x-recovery+ #137`, BOOT v147 (kernel `#138`), 2026-11-12.
+Recovery **1.0.0**, recovery kernel `7.2.0-a22x-recovery+ #137`, BOOT v147 (kernel `#138`), 2026-11-13,
+on a 64 GB SM-A226B.
 
 Two kinds of evidence are kept apart here. The first is automatic: tests that run on a computer
 against fixtures, with no phone attached. The second is what was done on the phone itself
 (SM-A226B), by touch, the way an owner would do it. Something that passed only on the computer
 is never listed as working on the phone.
 
-## Automatic tests (computer, fixtures)
+## On the phone, 0.6.207 to 1.0.0 (2026-11-12 and 2026-11-13)
+
+Done by touch on the phone unless said otherwise.
+
+| What | Build | Result |
+|---|---|---|
+| Linux snapshot without a qualification capsule: userdata erased in Files, an Ubuntu 26.04 snapshot restored | 234 | restored and verified; Ubuntu started: no failed service, Phosh, network, `/home` with its 402 files |
+| A new snapshot made; userdata erased by the snapshot's own wipe; the snapshot restored | 235 | each step verified; Ubuntu started with the same state |
+| A card mounted in Files chosen as the backup store | 235 | mounted for copies; before, `SD_ALREADY_MOUNTED_ELSEWHERE` |
+| Restore lists the snapshots after the card is mounted on the Storage page | 235 | works; before, the list stayed empty |
+| Copy of five Android partitions with a password | 236 | saved encrypted (`Salted__`, opens with openssl on a computer); after a restart shown closed; a wrong password refused; verified; restored: a damaged `vbmeta_system` written back, read back, its hash as before |
+| Archive of `/home/user` in Files with the password, then extracted | 236 | 402 files, identical (one hash over all of them), owner and modes kept |
+| Linux data with the password, restored by hand on Ubuntu: `restore.sh` taken out with openssl, the password (with a space) typed at its prompt | 236 | accounts kept, homes, 8 settings, 79 of 79 packages; a deleted file came back with its owner |
+| An archive that wrote through a hard link out of its folder | 236 | refused (`ARCHIVE_UNSAFE`); the file outside unchanged |
+| 1100 folders packed into an archive under a limit of 256 open files | 236 | packed |
+| Linux data offers a card that is only inserted as the place to save to | 236 | offered, and let go afterwards |
+| The Brotli decoder with bytes after the end of the stream | 236 | refused |
+| Stock firmware A226BXXSBDZC3 installed from its ZIP on the card | 218 | unpacked, MD5-checked, written and read back; stock Android started |
+| LineageOS 20 for A226B installed by its own `update-binary` | 221 | installed; started after the offered reset of Android's data |
+| An AnyKernel3 kernel ZIP (BakaSU + SUSFS) | 220 | installed; Android started after the data reset |
+| The KKRT One UI port (block OTA): its installer crashed; the recovery wrote its images itself | 217 | written and read back |
+| Linux data: Arch Linux ARM's homes, accounts, settings and packages restored into Ubuntu 26.04 | 227–230 | 372 files identical, owners mapped by name; apt installed what Ubuntu has |
+| Several files at once in Files; a hold acts as soon as it is full | 222 | works |
+| Check and repair of F2FS and FAT | 231 | on scratch filesystems on the phone |
+
+### Not proven on the phone yet
+
+- A **128 GB** SM-A226B: the sizes follow Samsung's PIT and are tested on the computer only.
+- A USB stick as the backup store, Safely remove, and check and repair on a real F2FS or FAT
+  volume (pending: the phone's one port is needed for the stick).
+- Android opening its data after a restore from a copy.
+- The Android app on a phone (its scripts were run in the recovery against test devices).
+
+## Earlier: 0.6.206
+
+### Automatic tests (computer, fixtures), 0.6.206
 
 One full run of every suite on the sources of 0.6.206: **24 of 24 suites passed**.
 
@@ -45,7 +81,7 @@ real interface binary through its own input decoder against fixture devices.
 The Android app has its own check (`apk/build.sh` runs it at every build): 68 checks of the
 scripts that hand images and settings to the recovery, run against test devices.
 
-## On the phone, 2026-11-11 and 2026-11-12
+### On the phone, 2026-11-11 and 2026-11-12
 
 Done by touch on the phone unless said otherwise.
 
@@ -93,7 +129,7 @@ Done by touch on the phone unless said otherwise.
 | Full copy of Evolution X with its data; then Arch Linux ARM with Plasma Mobile and automatic sign-in installed over it; then the copy restored (done by the owner) | 206 | Arch Linux: started the first time. After the restore Evolution X started with the same data: setup done, Magisk root (31.1) and both apps from before the copy, no reset asked |
 | Installer app: updates page, Android's BOOT kept on cache by itself | 205 | works |
 
-### Android images tried on this phone
+#### Android images tried on this phone
 
 | Image | Result |
 |---|---|
@@ -104,14 +140,14 @@ Done by touch on the phone unless said otherwise.
 | Google's Android 15 GSI | does not start: needs kernel 4.19, the phone's Android kernel is 4.14; removed from the catalog |
 | Samsung firmware restored from the recovery's own copy | starts |
 
-### Not proven on the phone yet
+#### Not proven on the phone then
 
 - Phosh under the owner's own finger in the Manjaro image (touches were sent to the touchscreen's input node from a computer).
 - Android opening its data after a restore from a copy (the restore itself is checked above).
 - The Android images installed on 2026-11-12 have not been started: Android is not started without the owner at the phone.
 - The Android app on a phone (its scripts were run in the recovery against test devices).
 
-### Found while testing, 2026-11-12
+#### Found while testing, 2026-11-12
 
 - **A pushed file lost 16 MiB once.** A recovery image sent with `adb push` hashed right from
   memory, and read back with 16 MiB of zeros after the volume was mounted again. It did not
