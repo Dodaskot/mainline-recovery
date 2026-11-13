@@ -4300,6 +4300,9 @@ static void reopen(App*a,enum Screen s){
     else if(s==ROOT_PAGE){a->root_known=false;start_root_job(a,J_ROOT_LIST);}
     /* The card is read again: it may have been partitioned, mounted or pulled out meanwhile. */
     else if(s==CARD_PAGE){a->card_known=false;start_card_job(a,J_CARD_LIST);}
+    /* 2026-11-13, on the phone: a card mounted on the Storage page did not show its snapshots on
+       the way back; the list is read again once its storage is there. */
+    else if(s==LIST&&a->device&&!a->preview&&!a->install.pick_backup&&!access(a->repositories[a->store],F_OK))start_job(a,J_LIST);
 }
 /* Settings back to their defaults (2026-11-11). The language and the time zone stay: they say who
  * uses the phone, not how the recovery behaves. So do the password, the lock mode and the access

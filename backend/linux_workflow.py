@@ -513,8 +513,10 @@ def make_destructive_plan(context, backup_path, operation, progress=None):
     with operation_lock(context) as lease:
         context = context.refresh()
         path, manifest, manifest_sha = load_manifest(context, backup_path)
-        if manifest["device"] != context.device or manifest["source_mode"] != context.mode or manifest.get("source_contract") != context.contract:
-            fail("WRONG_DEVICE", "Linux backup does not belong to this exact device/storage contract")
+        # 2026-11-13: a snapshot of any SM-A226B with this layout, not of one phone's eMMC alone.
+        if (manifest["device"].get("model") != context.device.get("model") or manifest["source_mode"] != context.mode
+                or manifest.get("source_contract") != context.contract):
+            fail("WRONG_DEVICE", "Linux backup was made for another model or storage layout")
         parts = _parts(context)
         if qualified.geometry_record(parts) != manifest.get("source_geometry"):
             fail("TARGET_SIZE_MISMATCH", "Linux backup partition identity and geometry differ from this device")
@@ -884,7 +886,7 @@ def execute(context, plan, confirmation, progress=None):
         tools = qualified.toolchain(context)
         parts, repo = _check_plan(context, plan, operation, confirmation, tools)
         path, manifest, manifest_sha = load_manifest(context, plan["backup_path"])
-        if (manifest_sha != plan["manifest_sha256"] or manifest["device"] != context.device
+        if (manifest_sha != plan["manifest_sha256"] or manifest["device"].get("model") != context.device.get("model")
                 or manifest["source_mode"] != context.mode or manifest.get("source_contract") != context.contract
                 or manifest.get("source_geometry") != qualified.geometry_record(parts)):
             fail("PLAN_STALE", "The sealed source backup or target contract changed after review")

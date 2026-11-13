@@ -39,6 +39,18 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **Linux snapshots on every SM-A226B** (0.6.234): restoring and wiping no longer need a
+  qualification capsule made for one phone's eMMC. That rule dates from when the recovery could
+  hardly do anything; the build now admits these itself by the model, the partitions (number,
+  name, internal eMMC, admitted size) and the hash of every pinned tool, while every archive is
+  still read whole before a write, BOOT is admitted by its contents and every write is read back.
+  A snapshot from another A226B with the same layout is accepted. Checked on the phone without a
+  capsule: userdata erased, an Ubuntu snapshot restored and verified, Ubuntu started with its
+  /home (402 files) and network.
+- **A card open in Files becomes the backup store** (0.6.235): the Storage page failed with
+  SD_ALREADY_MOUNTED_ELSEWHERE; it now lists such a card as not mounted, and Mount lets Files'
+  mount go first. Restore reads its list again when you come back from Storage. Checked on the
+  phone.
 - **Copies protected with a password** (0.6.231, Backup > "Protect copies with a password"): the
   password is typed once and kept in RAM until the recovery restarts. Copies of Android's
   partitions, Linux data and archives made in Files are then encrypted (`NAME.tar.zst.enc`:

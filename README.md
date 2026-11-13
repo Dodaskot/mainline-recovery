@@ -161,9 +161,6 @@ partition → recovery.
 - Plasma keeps its language in the shared `/home`, so Plasma systems share it.
 - The setup of an installed system cannot be run again; reinstall it to get newer
   fixes.
-- Linux snapshots are not offered yet: they were qualified for the stock userdata size only, and
-  restoring one needs a new qualification capsule. A userdata grown by a Linux installation is
-  not that size.
 - A power loss while the recovery partition itself is being written leaves no
   recovery to start: flash one from a computer in Download Mode.
 

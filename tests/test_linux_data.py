@@ -92,6 +92,16 @@ class LinuxData(unittest.TestCase):
         self.assertIn('restore.sh', names)
         for absent in ('home/akisha/.cache/junk/big', 'settings/etc/fstab', 'settings/etc/ssh/sshd_config'):
             self.assertNotIn(absent, names)
+        # A card mounted only to be looked at is let go again.
+        config = json.loads((self.root / 'filesystem-fixture.json').read_text())
+        config['volumes'][1]['mounted'] = False
+        (self.root / 'filesystem-fixture.json').write_text(json.dumps(config))
+        (self.root / '.filesystem-state.json').unlink(missing_ok=True)  # the backup had mounted it for writing
+        self.assertEqual(len(ld.inspect(fs.FixtureContext(self.root))['archives']), 1)
+        self.assertFalse(fs.FixtureContext(self.root).volume('sdcard-p1')['mounted'])
+        config['volumes'][1]['mounted'] = True
+        (self.root / 'filesystem-fixture.json').write_text(json.dumps(config))
+        (self.root / '.filesystem-state.json').unlink(missing_ok=True)
         listed = ld.inspect(self.ctx)['archives']
         self.assertEqual((len(listed), listed[0]['parts'], listed[0]['os']['family'], listed[0]['accounts']),
                          (1, list(ld.PARTS), 'arch', ['akisha']))

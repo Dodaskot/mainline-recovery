@@ -330,8 +330,10 @@ def collect(pin, parts, accounts):
     return files, [e[0] for e in entries if e[1] is None], sizes
 
 
-def externals(context, mount=False):
-    """SD cards and sticks; with MOUNT, one that is not mounted is mounted read-only to be looked at."""
+def externals(context, mount=False, opened=None):
+    """SD cards and sticks; with MOUNT, one that is not mounted is mounted read-only to be looked at,
+    and its id put in OPENED, so that it is let go again (2026-11-13, on the phone: a card left mounted
+    here kept the backup store from taking it)."""
     found = []
     for volume in context.volumes():
         if not volume['id'].startswith(('sdcard', 'usb')) or not volume.get('mountable'):
@@ -340,14 +342,26 @@ def externals(context, mount=False):
             with contextlib.suppress(fs.FilesystemError, OSError):
                 context.mount(volume['id'], 'ro', False, volume['volume_token'])
                 volume = context.volume(volume['id'])
+                if opened is not None:
+                    opened.append(volume['id'])
         if volume['mounted']:
             found.append(volume)
     return found
 
 
 def archives(context, mount=False):
+    opened = []
+    try:
+        return archives_on(context, externals(context, mount, opened))
+    finally:
+        for ident in opened:
+            with contextlib.suppress(fs.FilesystemError, OSError):
+                context.unmount(ident, context.volume(ident)['volume_token'])
+
+
+def archives_on(context, volumes):
     found = []
-    for volume in externals(context, mount):
+    for volume in volumes:
         try:
             with fs.PinnedVolume(context, volume['id']) as pin, pin.directory(STORE) as folder:
                 for name in sorted(os.listdir(folder), reverse=True):

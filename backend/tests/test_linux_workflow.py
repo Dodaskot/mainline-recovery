@@ -473,10 +473,19 @@ class LinuxTests(unittest.TestCase):
                 self.assertTrue(result["eligible"])
                 changed = copy.deepcopy(record)
                 changed["sources"]["backend/linux_workflow.py"] = "0" * 64
-                with mock.patch.object(qualification, "implementation", return_value=changed):
+                self.assertEqual(result["basis"], "capsule")
+                # 2026-11-13: a capsule of another build or phone no longer blocks; the build's own
+                # admission decides (the model, the layout and the pinned tools), and refuses another layout.
+                own = {"status": "qualified", "eligible": True, "capsule_id": "b" * 64, "basis": "built-in",
+                       "blockers": [], "linux_boot_sha256": None}
+                with mock.patch.object(qualification, "implementation", return_value=changed), \
+                        mock.patch.object(qualification, "built_in_admission", return_value=own):
+                    self.assertEqual(qualification.admission(SimpleNamespace(mode="device"), parts=[{}], tools={}), own)
+                with mock.patch.object(qualification, "implementation", return_value=changed), \
+                        mock.patch.object(qualification, "device_binding", side_effect=RecoveryError("GEOMETRY_MISMATCH", "other layout")):
                     refused = qualification.admission(SimpleNamespace(mode="device"), parts=[{}], tools={})
                 self.assertFalse(refused["eligible"])
-                self.assertIn("QUALIFICATION_CHANGED", refused["blockers"])
+                self.assertEqual(refused["blockers"], ["GEOMETRY_MISMATCH"])
         self.assertFalse((output / "userdata.img").is_symlink())
 
     def _take_lock(self):

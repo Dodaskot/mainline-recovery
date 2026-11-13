@@ -90,6 +90,18 @@ if [ "${PUBLIC:-}" = 1 ]; then
     : > build-no-keys
     ADD+=(--replace "etc/a22x-recovery/authorized_keys=build-no-keys")
 fi
+# The base image of 0.5 carries the qualification capsule of the phone it was made on, with a hash of
+# that phone's eMMC identity. Linux snapshots no longer need it (backend/qualification.py
+# built_in_admission), so it is left out unless CAPSULE names one.
+[ -n "${CAPSULE:-}" ] || ADD+=(--remove "etc/a22x-recovery/linux-workflow-qualification.json")
+# CAPSULE=path (relative to WORK): the Linux snapshot qualification of one phone and this exact build
+# (backend/LINUX_WORKFLOW.md), made by backend/qualify_linux.py from a real snapshot of that phone. It
+# names the phone's storage chip, so it never goes into a public image.
+if [ -n "${CAPSULE:-}" ]; then
+    if [ "${PUBLIC:-}" = 1 ]; then echo "build-image.sh: a qualification capsule belongs to one phone, not to a public image" >&2; exit 2; fi
+    [ -f "$CAPSULE" ] || { echo "build-image.sh: no capsule at $WORK/$CAPSULE" >&2; exit 2; }
+    ADD+=(--replace "etc/a22x-recovery/linux-workflow-qualification.json=$CAPSULE")
+fi
 
 rm -rf "build-v06-$NN" build-themes
 mkdir build-themes
@@ -106,7 +118,7 @@ python3 -B "$S/tools/build_v06_image.py" --base "$BASE" --output "build-v06-$NN"
     --replace "$R/display.py=$S/display.py" --replace "$R/terminal.py=$S/terminal.py" \
     --replace "$R/distro.py=$S/distro.py" --replace "$R/install.py=$S/install.py" \
     --replace "$R/backend/linux_workflow.py=$S/backend/linux_workflow.py" \
-    --replace "$R/backend/common.py=$S/backend/common.py" --replace "$R/backend/storage.py=$S/backend/storage.py" \
+    --replace "$R/backend/common.py=$S/backend/common.py" --replace "$R/backend/storage.py=$S/backend/storage.py" --replace "$R/storage.py=$S/storage.py" \
     --replace "$R/backend/engine.py=$S/backend/engine.py" --replace "$R/backend/recoveryctl.py=$S/backend/recoveryctl.py" \
     --replace "$R/backend/qualification.py=$S/backend/qualification.py" \
     --replace "etc/a22x-recovery/distro-platform.json=$PRIVATE/distro-platform-v2.json" \

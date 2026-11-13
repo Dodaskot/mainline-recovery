@@ -48,6 +48,7 @@ def main():
     ap.add_argument('--replace', action='append', default=[], help='ramdisk/path=host/file')
     ap.add_argument('--add', action='append', default=[], help='new ramdisk/path=host/file')
     ap.add_argument('--link', action='append', default=[], help='new ramdisk/path=target')
+    ap.add_argument('--remove', action='append', default=[], help='ramdisk/path to leave out of the image')
     ap.add_argument('--bytecode', type=Path, help='list of standard library sources to compile into the image')
     ap.add_argument('--kernel', type=Path, help='kernel payload to use instead of the one in the base image')
     ap.add_argument('--dtb', type=Path, help='DT table to use instead of the one in the base image')
@@ -64,6 +65,11 @@ def main():
         data = Path(host).read_bytes()
         report[name] = {'before': hashlib.sha256(byname[name][2]).hexdigest(), 'after': hashlib.sha256(data).hexdigest()}
         byname[name][2] = data
+    for name in a.remove:
+        # 2026-11-13: what the base image holds of one phone (its qualification capsule) stays out.
+        if name in byname:
+            report[name] = {'before': hashlib.sha256(byname[name][2]).hexdigest(), 'after': None}
+            entries.remove(byname.pop(name))
     template = byname['opt/a22x-recovery/distro.py'][0]
     dirmode = byname['opt/a22x-recovery'][0]
     inode = max(e[0][0] for e in entries) + 1
