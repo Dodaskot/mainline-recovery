@@ -203,6 +203,33 @@ class TestImageInstall(unittest.TestCase):
         self.assertTrue((self.f.live / 'usr/bin/a22x-reboot').exists())
         self.f.assert_home(self)
 
+    def test_links_of_the_image_never_lead_the_adapter_out_of_it(self):
+        """2026-11-12 review: /boot -> / and etc/... -> /etc/... in an image made the adapter, which
+        runs as root, empty and write the recovery's own folders."""
+        outside = Path(self.tmp.name) / 'host'
+        (outside / 'keep').mkdir(parents=True)
+        (outside / 'keep/precious').write_text('host file\n')
+        (outside / 'selinux-config').write_text('SELINUX=enforcing\n')
+        (outside / 'passwd').write_text('host:x:0:0::/:/bin/sh\n')
+        new = self.f.new
+        import shutil
+        if (new / 'boot').is_dir() and not (new / 'boot').is_symlink():
+            shutil.rmtree(new / 'boot')
+        (new / 'boot').symlink_to(str(outside / 'keep'))
+        (new / 'etc/selinux').mkdir(parents=True, exist_ok=True)
+        (new / 'etc/selinux/config').symlink_to(str(outside / 'selinux-config'))
+        (new / 'tmp').exists() and shutil.rmtree(new / 'tmp')
+        (new / 'tmp').symlink_to(str(outside / 'keep'))
+        with tarfile.open(self.f.image, 'w:gz', format=tarfile.PAX_FORMAT) as out:
+            for item in sorted(new.rglob('*')):
+                out.add(item, arcname=item.relative_to(new).as_posix(), recursive=False)
+        d.install(self.f.context, self.plan(), True)
+        self.assertEqual((outside / 'keep/precious').read_text(), 'host file\n')
+        self.assertEqual((outside / 'selinux-config').read_text(), 'SELINUX=enforcing\n')
+        root = self.root('distro-1-0')
+        self.assertTrue((root / 'boot').is_dir() and not (root / 'boot').is_symlink())
+        self.assertTrue((root / 'tmp').is_dir() and not (root / 'tmp').is_symlink())
+
     def test_an_account_made_in_one_system_does_not_lock_out_the_others(self):
         """2026-11-12 review: a "New user" of a system installed beside the others has its home in
         the shared /home, and every switch back failed with HOME_ACCOUNT_MISMATCH."""

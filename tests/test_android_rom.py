@@ -52,7 +52,7 @@ def operation(kind, offset, data, start, blocks, digest=True):
     return body
 
 
-def payload(partitions, groups=(), incremental=()):
+def payload(partitions, groups=(), incremental=(), partial=False):
     """A version 2 payload.bin: PARTITIONS is [(name, content, how)], HOW 'replace', 'xz', 'bz2' or 'zero'."""
     blobs, parts = bytearray(), []
     for name, content, how in partitions:
@@ -73,7 +73,9 @@ def payload(partitions, groups=(), incremental=()):
     if groups:
         dynamic = b''.join(field(1, field(1, g.encode()) + field(2, size) + b''.join(field(3, n.encode()) for n in names))
                            for g, size, names in groups)
-        manifest += field(16, dynamic)
+        manifest += field(15, dynamic)  # dynamic_partition_metadata (update_metadata.proto)
+    if partial:
+        manifest += field(16, 1)  # partial_update
     head = b'CrAU' + struct.pack('>QQI', 2, len(manifest), 0)
     return head + manifest + bytes(blobs)
 
@@ -116,6 +118,14 @@ class Packages(unittest.TestCase):
         refused = self.run_main(['extract', str(path), '--partition', 'lk', '--out', str(self.root / 'lk.img')])
         self.assertEqual(refused, 2)
         self.assertFalse((self.root / 'lk.img').exists())
+
+    def test_a_partial_update_payload_is_read(self):
+        """2026-11-12 review: partial_update (field 16) was taken for the partition groups, and its
+        number 1 failed the reading with a TypeError and no answer."""
+        data = payload([('boot', os.urandom(BLOCK), 'replace')], groups=[('main', 1 << 30, ['system'])], partial=True)
+        path = self.zip('partial.zip', {'payload.bin': data, 'META-INF/com/android/metadata': 'pre-device=a22x\n'})
+        info = rom.inspect(path)
+        self.assertEqual((info['format'], info['groups'][0]['name']), ('payload', 'main'))
 
     def run_main(self, argv):
         import contextlib

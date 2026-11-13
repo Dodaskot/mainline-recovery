@@ -127,7 +127,9 @@ class Payload:
         self.data_start = 24 + manifest_size + signature_size
         self.manifest = message(manifest)
         self.block_size = first(self.manifest, 3, 4096)
-        self.minor = first(self.manifest, 15, 0)
+        # update_metadata.proto, DeltaArchiveManifest: minor_version 12, partitions 13,
+        # dynamic_partition_metadata 15, partial_update 16 (2026-11-12 review: 15 and 16 were read).
+        self.minor = first(self.manifest, 12, 0)
         self.partitions = []
         for raw in self.manifest.get(13, []):
             part = message(raw)
@@ -139,8 +141,8 @@ class Payload:
                                     'incremental': old_info is not None,
                                     'operations': operations})
         self.groups = []
-        dynamic = first(self.manifest, 16)
-        if dynamic:
+        dynamic = first(self.manifest, 15)
+        if isinstance(dynamic, bytes) and dynamic:
             for raw in message(dynamic).get(1, []):
                 group = message(raw)
                 self.groups.append({'name': first(group, 1, b'').decode('ascii', 'replace'), 'size': first(group, 2, 0),

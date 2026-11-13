@@ -33,6 +33,15 @@ BOOT copy also on the phone.
   for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
   the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
   start removes descriptions of saved BOOTs whose image is gone.
+- **From the review of access, adb and Android installs** (0.6.210): an installed image's links
+  can no longer lead the adapter, which runs as root, to empty or write the recovery's own files
+  (every path is resolved inside the image, as the system itself sees it); adb always asks the
+  recovery password; approved computers are never dropped from cache and are loaded before the
+  first connection; data from the computer is acknowledged when taken (a 300 MB push kept adbd at
+  25 MB on the phone); a computer that vanishes ends its connection within a minute; a cut push
+  leaves no open file or part file; USB endpoints are never closed under another thread; OTA
+  payloads are read with the right protobuf fields; the app's hold-to-confirm is timed by the clock
+  and its root commands really time out.
 - **From the review of flashing, installation and copies** (0.6.209): a tar image can no longer
   write outside its folder (absolute names, `..`, a file over a link); another phone's Android data
   is never restored here; an old Android copy in a folder follows the archive's rules (locked
