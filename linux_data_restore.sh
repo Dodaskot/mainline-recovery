@@ -53,7 +53,10 @@ fi
 if want accounts && [ -f "$STAGED/accounts.tsv" ]; then
     while IFS='|' read -r name uid gid home shell admin hash groups; do
         [ -n "$name" ] || continue
+        made=0
         if getent passwd "$name" >/dev/null 2>&1; then
+            # An account that is already here keeps its own password and shell (2026-11-13, on the
+            # phone: the password set at the installation was replaced by the archive's).
             say "account $name kept"
         else
             [ -x "$ROOT$shell" ] || { [ -x "$ROOT/bin/bash" ] && shell=/bin/bash || shell=/bin/sh; }
@@ -64,9 +67,10 @@ if want accounts && [ -f "$STAGED/accounts.tsv" ]; then
                 adduser -D -s "$shell" "$name"
             fi || { say "account $name failed"; continue; }
             say "account $name created"
+            made=1
         fi
-        case $hash in
-            ''|-|'!'*|'*') ;;
+        case $made$hash in
+            0*|1|1-|'1!'*|'1*') ;;
             *) usermod -p "$hash" "$name" 2>/dev/null || echo "$name:$hash" | chpasswd -e 2>/dev/null ;;
         esac
         if [ "$admin" = 1 ]; then
@@ -153,7 +157,9 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
             DEBIAN_FRONTEND=noninteractive
             export DEBIAN_FRONTEND
             have() { apt-cache show "$1" 2>/dev/null | grep -q '^Package:'; }
-            add() { apt-get install -y -q --no-install-recommends "$@"; }
+            # Never at the price of what is installed (2026-11-13, on the phone: dhcpcd and netctl from
+            # an Arch list took network-manager and phosh-core away).
+            add() { apt-get install -y -q --no-install-recommends --no-remove "$@"; }
             has() { dpkg -s "$1" 2>/dev/null | grep -q '^Status: install ok installed'; }
             apt-get update -q >/dev/null 2>&1 ;;
         fedora)
@@ -162,7 +168,7 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
             has() { rpm -q "$1" >/dev/null 2>&1; } ;;
         suse)
             have() { zypper -n info "$1" 2>/dev/null | grep -q '^Name'; }
-            add() { zypper -n install "$@"; }
+            add() { zypper -n install --no-force-resolution "$@"; }
             has() { rpm -q "$1" >/dev/null 2>&1; } ;;
         alpine)
             have() { apk info -e "$1" >/dev/null 2>&1 || apk search -x "$1" 2>/dev/null | grep -q .; }
@@ -179,7 +185,7 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
     for n in $names; do
         # The kernel, firmware, boot and base of the system the archive came from stay there.
         case $n in
-            linux|linux-*|*-keyring|base|base-files|grub*|mkinitcpio*|dracut*|systemd|systemd-*|uboot-*|zram-generator) continue ;;
+            linux|linux-*|*-keyring|base|base-files|grub*|mkinitcpio*|dracut*|systemd|systemd-*|uboot-*|zram-generator|dhcpcd|netctl) continue ;;
         esac
         if has "$n"; then installed=$((installed + 1))
         elif have "$n"; then ok="$ok $n"

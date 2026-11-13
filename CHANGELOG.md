@@ -46,7 +46,16 @@ BOOT copy also on the phone.
   installed next: missing accounts are made, homes go to the account of the same name, packages
   are installed under the names the new distribution gives them and the ones it lacks are named.
   The archive carries its own restore.sh, so it restores on any other Linux device as well
-  (`sudo sh restore.sh ARCHIVE`). Not yet run on the phone.
+  (`sudo sh restore.sh ARCHIVE`). An account that is already there keeps its password; installing
+  packages never removes one that is installed; the kernel, firmware, base and network plumbing of
+  the source system are not carried over.
+  On the phone (0.6.227 to 0.6.230): the Arch Linux ARM of 2026-11-03 restored to userdata; its
+  data saved from the menu (2 accounts, 1.4 GiB of homes, 5 Wi-Fi networks, 49 packages: 886 MiB
+  in 40 s); userdata formatted; Ubuntu 26.04 with Phosh installed from a file and started; the data
+  restored into it in 2 minutes: all 372 files of the homes byte for byte, owners moved to the
+  accounts of the same name (the UIDs were the other way round), the missing account made, host
+  name, Wi-Fi networks and SSH key in place, 38 packages there and 3 Arch-only ones named; Ubuntu
+  started again with it all.
 - **Files and folders into an archive, and out again** (0.6.225): in Files, a long press, the
   entries chosen, "Archive" puts them into A22xArchives/FOLDER-DATE.tar.zst on an SD card or a stick
   (tap the destination to change it); owners, permissions, times and links are kept. "Extract here"

@@ -120,7 +120,12 @@ class LinuxData(unittest.TestCase):
         self.assertIn('usermod -p $6$salt$HASH akisha', calls)
         self.assertIn('usermod -aG sudo akisha', calls)
         self.assertIn('usermod -aG video akisha', calls)
-        self.assertIn('apt-get install -y -q --no-install-recommends firefox-esr htop', calls)  # firefox by Debian's name
+        self.assertIn('apt-get install -y -q --no-install-recommends --no-remove firefox-esr htop', calls)  # firefox by Debian's name
+        # Restored once more: the account is there now, and its password is left alone.
+        (self.root / 'calls.log').write_text('')
+        again = ld.restore(fs.FixtureContext(self.root), 'sdcard-p1', None, listed[0]['path'], ['accounts'], True, self.progress)
+        self.assertEqual((again['accounts_created'], again['accounts_kept']), ([], ['akisha']))
+        self.assertNotIn('usermod -p', (self.root / 'calls.log').read_text())
 
     def test_parts_alone_and_refusals(self):
         done = ld.backup(self.ctx, ['settings'], 'sdcard-p1', None, True, self.progress)

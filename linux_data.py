@@ -65,6 +65,11 @@ qt6-wayland|qt6-wayland|qt6-qtwayland
 xdg-user-dirs|xdg-user-dirs|xdg-user-dirs
 pipewire-pulse|pipewire-pulse|pipewire-pulseaudio
 imagemagick|imagemagick|ImageMagick
+android-tools|adb|android-tools
+noto-fonts-emoji|fonts-noto-color-emoji|google-noto-color-emoji-fonts
+mesa|libgl1-mesa-dri|mesa-dri-drivers
+vulkan-panfrost|mesa-vulkan-drivers|mesa-vulkan-drivers
+which|debianutils|which
 p7zip|p7zip-full|p7zip
 """
 
@@ -164,12 +169,13 @@ def accounts_table(accounts):
                              a['hash'] or '-', ','.join(a['groups']) or '-')) + '\n' for a in accounts).encode()
 
 
-HARDWARE = re.compile(r'^(linux|linux-.*|.*-keyring|base|base-files|grub.*|mkinitcpio.*|dracut.*|systemd|systemd-.*|uboot-.*|zram-generator)$')
+HARDWARE = re.compile(r'^(linux|linux-.*|.*-keyring|base|base-files|grub.*|mkinitcpio.*|dracut.*|systemd|systemd-.*|uboot-.*|zram-generator|dhcpcd|netctl)$')
 
 
 def packages_of(root_fd, family):
     found = packages_read(root_fd, family)
-    # The kernel, firmware, boot and base of this system belong to it, not to its owner.
+    # The kernel, firmware, boot and base of this system belong to it, not to its owner; so does the
+    # way it brings its network up.
     return None if found is None else [name for name in found if not HARDWARE.match(name)]
 
 
@@ -506,6 +512,9 @@ def restore(context, volume, token, path, parts, confirmed, progress):
                 fd = os.open(script, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o700)
                 with os.fdopen(fd, 'wb') as out:
                     out.write(SCRIPT.read_bytes())
+                # And its own table of names: it grows with what the phones have taught it.
+                if (staging / 'aliases.tsv').is_file() and not (staging / 'aliases.tsv').is_symlink():
+                    (staging / 'aliases.tsv').write_bytes(ALIASES.encode())
                 lines, status, note = [], None, ''
                 try:
                     run_parts = list(parts)
