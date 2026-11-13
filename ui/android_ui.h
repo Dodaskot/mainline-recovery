@@ -548,9 +548,10 @@ static void zip_result(App*a,bool ok,const char*code,const char*changed,const ch
         }
         append(a->message,sizeof(a->message),"\n");
     }
+    if(ok&&a->zip_reset){append(a->message,sizeof(a->message),tr("Android's BOOT changed. On this Samsung, Android starts with a changed BOOT only after its data is formatted: everything in Android is erased, the SD card stays."));append(a->message,sizeof(a->message),"\n\n");}
     append(a->message,sizeof(a->message),log);
     a->root_known=false;a->result_return=ANDROID_MENU;a->zip_ran=true;
-    a->zip_restart_at=ok&&a->zip_restart&&a->allow_power?a->now+ZIP_RESTART_MS:0;a->zip_restart_shown=0;
+    a->zip_restart_at=ok&&a->zip_restart&&a->allow_power&&!a->zip_reset?a->now+ZIP_RESTART_MS:0;a->zip_restart_shown=0;
     /* The list stays as it was reviewed, should the owner go back to it. */
     if(a->zip_count)zip_item_to_review(a,&a->zip_queue[a->zip_count-1]);
     screen(a,RESULT);
@@ -638,6 +639,8 @@ static void complete_zip_job(App*a,const Json*j,int kind,bool ok){
         ZipItem*it=a->zip_at<a->zip_count?&a->zip_queue[a->zip_at]:NULL;
         if(it){it->state=ok?1:2;copy(it->changed,sizeof(it->changed),changed);}
         a->root_known=false;
+        if(a->zip_at==0)a->zip_reset=false;
+        if(ok&&json_bool(j,json_get(j,0,"android_boot_changed"),0)==1)a->zip_reset=true;
         if(ok&&it&&a->zip_at+1<a->zip_count){
             /* The next one in the list: its review is put back, and its installer starts. */
             a->zip_at++;zip_item_to_review(a,&a->zip_queue[a->zip_at]);
@@ -712,6 +715,8 @@ static bool zip_action(App*a,int id){
         a->zip_adding=false;
         screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
     }
+    /* From the result page: Android's data formatted after its BOOT changed (2026-11-13). */
+    if(id==A_ZIP_RESET&&a->screen==RESULT){if(ui_free(a)){a->zip_ran=a->zip_reset=false;a->wipe_android=true;a->reset_page=false;screen(a,WIPE_REVIEW);}return true;}
     if(a->screen!=ZIP_REVIEW)return false;
     if(id==A_ZIP_ADD){
         if(!ui_free(a)||!a->zip_count||a->zip_count>=ZIP_QUEUE)return true;

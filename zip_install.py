@@ -965,6 +965,9 @@ def run(context, args, progress):
         result = {'zip': about['name'], 'sha256': about['sha256'], 'title': about['title'], 'what': about['what'], 'exit': code,
                   'changed': changed, 'log': shown[-40:], 'kept_boot': kept.get('kept') if kept else None,
                   'keeps_recovery': bool(marked), 'mappings_left': left,
+                  # 2026-11-13, the owner, on stock and custom builds alike: Android starts with a
+                  # BOOT changed by a kernel, Magisk or APatch ZIP only after its data is erased.
+                  'android_boot_changed': bool(marked),
                   'super_fitted': {name: {'from': now, 'to': then} for name, (now, then) in fitted.items()}}
         now = protected_hashes(context)
         touched = sorted(label for label, digest in guarded.items() if now.get(label) != digest)

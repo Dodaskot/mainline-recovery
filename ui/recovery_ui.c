@@ -133,7 +133,7 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_LIST_CATEGORY=7400 /* ..7401 */,A_COPY_VERIFY=7404,A_COPY_RESTORE,A_COPY_DELETE,A_COPY_REFRESH,A_COPY_ITEM=7410 /* ..7433 */,
     A_COPY_MOUNT=7440 /* ..7443 */,A_COPY_PART=7450 /* ..7457 */,A_SOURCE_REFRESH=7460,A_SOURCE_CANCEL,A_ANDROID_FILE,A_NEW_FORMAT,
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
-    A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
+    A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_RESET,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
     A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
@@ -428,7 +428,7 @@ typedef struct {
     char zip_helper[PATH_LEN],zip_volume[96],zip_token[80],zip_path[PATH_LEN],zip_name[208],zip_sha[72],zip_title[128],zip_what[16],zip_installer[16],zip_warnings[512],zip_parts[160];
     uint64_t zip_size;unsigned int zip_files;bool zip_pick,zip_known;
     /* The list of ZIPs to run: zip_adding: the picker is open for one more; zip_restart: restart the system when all finished. */
-    ZipItem zip_queue[ZIP_QUEUE];unsigned int zip_count,zip_at,zip_restart_shown;bool zip_adding,zip_restart,zip_ran;uint64_t zip_restart_at;char gsi_helper[PATH_LEN];char updates_helper[PATH_LEN],flash_after_label[16],upd_rec_installed[24],upd_rec_latest[24],upd_rec_sha[72],upd_rec_error[64],upd_boot_kind[12],upd_boot_state[12],upd_boot_latest[24],upd_boot_sha[72];bool updates_known,upd_rec_newer,upd_boot_newer;char saved_note[160],saved_argument[208]; /* Images saved on the phone; saved_delete counts from 1. */
+    ZipItem zip_queue[ZIP_QUEUE];unsigned int zip_count,zip_at,zip_restart_shown;bool zip_adding,zip_restart,zip_ran,zip_reset;uint64_t zip_restart_at;char gsi_helper[PATH_LEN];char updates_helper[PATH_LEN],flash_after_label[16],upd_rec_installed[24],upd_rec_latest[24],upd_rec_sha[72],upd_rec_error[64],upd_boot_kind[12],upd_boot_state[12],upd_boot_latest[24],upd_boot_sha[72];bool updates_known,upd_rec_newer,upd_boot_newer;char saved_note[160],saved_argument[208]; /* Images saved on the phone; saved_delete counts from 1. */
     bool catalog_checked,catalog_check_done;unsigned int catalog_servers,catalog_updated,catalog_gone,catalog_failed;char catalog_problem[120];
     bool systems_wipe,systems_plan_erase,systems_plan_format,systems_plan_boot,systems_adding;char systems_remote_id[48];uint64_t systems_plan_download;
     Job job;
@@ -1304,7 +1304,7 @@ static void render_result(App*a){
     bool diagnostic=a->result_return==TOOLS||a->result_return==TOOLS_EXPORT,second=!a->successful&&a->systems_remove_offer;
     second=second||(a->successful&&a->result_return==FLASH&&!a->flash_restore&&a->allow_power&&(!strcmp(flash_target_label(a),"recovery")||!strcmp(flash_target_label(a),"boot")));
     second=second||(a->successful&&a->result_return==ANDROID_MENU&&((a->android_installed&&a->allow_power)||a->stock_boot_path[0]));
-    second=second||(a->successful&&a->zip_ran&&a->allow_power);
+    second=second||(a->successful&&a->zip_ran&&(a->allow_power||a->zip_reset));
     int limit=second?1190:1304;
     Rect hero={28,232,664,150};rounded(a,hero,28,PANEL);gradient(a,(Rect){46,hero.y+19,112,112},34,ICON_FILL,ICON_FILL);
     icon(a,a->successful?A_VERIFY:A_SYSTEM,67,hero.y+40,70,a->successful?GREEN:RED);
@@ -1336,7 +1336,10 @@ static void render_result(App*a){
     }
     /* After stock Android the next step is its first start (2026-11-10). */
     /* After installers: the restart that was asked for counts down and can be stopped; otherwise it is offered, as TWRP offers it. */
-    if(a->successful&&a->zip_ran&&a->allow_power&&a->zip_restart_at){
+    /* A changed Android BOOT starts only after Android's data is erased (2026-11-13, the owner):
+       the next step is that format, not a restart into a logo that never ends. */
+    if(a->successful&&a->zip_ran&&a->zip_reset)button(a,(Rect){28,1206,664,96},"Format data for Android",A_ZIP_RESET,ui_free(a),false,0);
+    else if(a->successful&&a->zip_ran&&a->allow_power&&a->zip_restart_at){
         char label[96];unsigned int left=a->zip_restart_at>a->now?(unsigned int)((a->zip_restart_at-a->now+999)/1000):0;
         snprintf(label,sizeof(label),T("Stay in recovery (the system restarts in %u s)"),left);raw_text(true);button(a,(Rect){28,1206,664,96},label,A_ZIP_STAY,true,true,0);raw_text(false);
     }else if(a->successful&&a->zip_ran&&a->allow_power)button(a,(Rect){28,1206,664,96},"Reboot system",A_REBOOT,ui_free(a)&&!a->systems_reboot_blocked&&!a->install.reboot_blocked,false,0);
@@ -4225,7 +4228,7 @@ static void action_run(App*a,int id){
         break;
     case A_VERIFY_ONE:if(start_job(a,J_VERIFY))a->result_return=DETAIL;break; /* Back to the backup that was checked. */
     case A_CONFIRM:if(a->plan_can_execute)start_job(a,a->plan_wipe?J_WIPE:(a->plan_restore?J_RESTORE:J_BACKUP));break;
-    case A_DONE:a->systems_remove_offer=false;a->zip_ran=false;a->zip_restart_at=0;screen(a,a->result_return);if(a->result_return==DISPLAY_SETTINGS){a->display_note[0]=0;start_display_job(a,J_DISPLAY_STATUS);}else if(a->result_return==PREPARE_FILESYSTEM){a->prepare_known=false;a->fs_inventory_destination=PREPARE_FILESYSTEM;start_files_job(a,J_FS_INVENTORY);}else if(a->result_return==USB_FILES)start_usb_job(a,J_USB_STATUS);else if(a->result_return==CARD_PAGE&&a->screen==CARD_PAGE){a->card_known=false;start_card_job(a,J_CARD_LIST);}break;
+    case A_DONE:a->systems_remove_offer=false;a->zip_ran=a->zip_reset=false;a->zip_restart_at=0;screen(a,a->result_return);if(a->result_return==DISPLAY_SETTINGS){a->display_note[0]=0;start_display_job(a,J_DISPLAY_STATUS);}else if(a->result_return==PREPARE_FILESYSTEM){a->prepare_known=false;a->fs_inventory_destination=PREPARE_FILESYSTEM;start_files_job(a,J_FS_INVENTORY);}else if(a->result_return==USB_FILES)start_usb_job(a,J_USB_STATUS);else if(a->result_return==CARD_PAGE&&a->screen==CARD_PAGE){a->card_known=false;start_card_job(a,J_CARD_LIST);}break;
     case A_USB_FILES:case A_USB_REFRESH:
         if(id==A_USB_FILES)a->page_scroll=0;
         a->usb_volumes_known=false;
@@ -5570,6 +5573,15 @@ static int test_zip_queue(void){
     assert(!strcmp(a->status,"The installers finished")&&strstr(a->message,"boot super")&&strstr(a->message,"1. b.zip: finished")&&strstr(a->message,"3. a.zip: finished")&&strstr(a->message,"three")&&!strstr(a->message,"one"));
     render(a);assert(test_button(a,A_REBOOT)&&!test_button(a,A_ZIP_STAY));
     assert(test_press(a,A_DONE,50)&&!a->zip_ran);
+    /* One that changed Android's BOOT (2026-11-13): the next step is the format, no restart. */
+    a->zip_restart=true;a->allow_power=true;a->screen=ZIP_REVIEW;assert(test_press(a,A_ZIP_CONFIRM,5100)&&a->job.pid);zip_test_drop(a);
+    assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[\"boot\"],\"android_boot_changed\":true,\"log\":[\"one\"]}",J_ZIP_RUN,true)&&a->job.pid);zip_test_drop(a);
+    assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[],\"log\":[\"two\"]}",J_ZIP_RUN,true)&&a->job.pid);zip_test_drop(a);
+    assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[],\"log\":[\"three\"]}",J_ZIP_RUN,true)&&a->screen==RESULT&&a->zip_reset&&!a->zip_restart_at);
+    assert(strstr(a->message,"Android's BOOT changed"));
+    render(a);assert(test_button(a,A_ZIP_RESET)&&!test_button(a,A_REBOOT)&&!test_button(a,A_ZIP_STAY));
+    assert(test_press(a,A_ZIP_RESET,50)&&a->screen==WIPE_REVIEW&&a->wipe_android&&!a->zip_reset);
+    a->zip_restart=false;a->wipe_android=false;
     /* The second fails: the third is not run, and the result says which is which. */
     a->screen=ZIP_REVIEW;assert(test_press(a,A_ZIP_CONFIRM,5100)&&a->job.pid);zip_test_drop(a);
     assert(zip_test_reply(a,"{\"ok\":true,\"operation\":\"run\",\"changed\":[\"boot\"],\"log\":[\"one\"]}",J_ZIP_RUN,true)&&a->job.pid);zip_test_drop(a);

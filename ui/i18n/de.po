@@ -573,6 +573,9 @@ msgstr "Android belegt userdata: Das Image wird auf der Karte %s gespeichert"
 msgid "Android verified filesystem; writes are not qualified"
 msgstr "Verifiziertes Android-Dateisystem; Schreiben ist nicht qualifiziert"
 
+msgid "Android's BOOT changed. On this Samsung, Android starts with a changed BOOT only after its data is formatted: everything in Android is erased, the SD card stays."
+msgstr "Das BOOT von Android wurde geändert. Auf diesem Samsung startet Android mit einem geänderten BOOT erst, nachdem seine Daten formatiert wurden: Alles in Android wird gelöscht, die SD-Karte bleibt."
+
 msgid "Android's data is erased once when root is installed."
 msgstr "Bei der Root-Installation werden die Android-Daten einmal gelöscht."
 
@@ -1847,6 +1850,9 @@ msgstr "Vergessen"
 
 msgid "Forget the request"
 msgstr "Anfrage vergessen"
+
+msgid "Format data for Android"
+msgstr "Daten für Android formatieren"
 
 msgid "Format userdata and metadata for Android, as TWRP's Format Data"
 msgstr "userdata und metadata für Android formatieren, wie Format Data in TWRP"

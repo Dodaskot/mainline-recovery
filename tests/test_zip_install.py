@@ -105,6 +105,20 @@ class ZipInstall(unittest.TestCase):
         self.assertEqual((self.root / 'cache' / done['kept_boot'].lstrip('/')).read_bytes(), self.old)
         self.assertEqual(saved_boot.describe_boot((self.root / 'targets/boot').read_bytes())['kind'], 'linux')
         self.assertEqual((self.root / 'targets/recovery').read_bytes()[:8], b'recovery')
+        self.assertFalse(done['android_boot_changed'])  # a Linux BOOT: no data of Android to erase
+
+    def test_an_android_boot_changed_by_a_zip_asks_for_the_data_reset(self):
+        """2026-11-13 (AnyKernel3 on the phone): Android starts with the changed BOOT only after its
+        data is erased; the result says so."""
+        changed = bytearray(stock_boot())
+        changed[-1] ^= 1
+        (self.root / 'new-boot.img').write_bytes(signed(bytes(changed)))
+        path = self.archive('ak3.zip', 'dd if="$A22X_ZIP_ROOT/../new-boot.img" of="$A22X_ZIP_ROOT/dev/block/by-name/boot" conv=notrunc 2>/dev/null')
+        about = self.helper('inspect', path)[1]
+        code, done, _ = self.helper('run', path, '--expected-sha256', about['sha256'], '--confirm')
+        self.assertEqual(code, 0, done)
+        self.assertEqual(done['changed'], ['boot'])
+        self.assertTrue(done['android_boot_changed'] and done['keeps_recovery'])
 
     def test_an_installer_that_fails_is_reported_with_its_last_lines(self):
         path = self.archive('bad.zip', 'ui_print "! Unsupported device"', code=3)

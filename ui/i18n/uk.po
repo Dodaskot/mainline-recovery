@@ -573,6 +573,9 @@ msgstr "Android займає userdata: образ буде збережено н
 msgid "Android verified filesystem; writes are not qualified"
 msgstr "Перевірена ФС Android; запис не кваліфіковано"
 
+msgid "Android's BOOT changed. On this Samsung, Android starts with a changed BOOT only after its data is formatted: everything in Android is erased, the SD card stays."
+msgstr "BOOT Android змінено. На цьому Samsung Android запускається зі зміненим BOOT лише після форматування його даних: усе в Android буде стерто, SD-картка лишиться."
+
 msgid "Android's data is erased once when root is installed."
 msgstr "Під час встановлення root дані Android буде один раз стерто."
 
@@ -1847,6 +1850,9 @@ msgstr "Забути"
 
 msgid "Forget the request"
 msgstr "Забути запит"
+
+msgid "Format data for Android"
+msgstr "Форматувати дані для Android"
 
 msgid "Format userdata and metadata for Android, as TWRP's Format Data"
 msgstr "Форматувати userdata і metadata для Android, як Format Data у TWRP"

@@ -39,6 +39,12 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **After a ZIP changed Android's BOOT** (0.6.220): on this Samsung Android starts with a changed
+  BOOT (a kernel, Magisk or APatch) only after its data is formatted. The result page says so,
+  offers "Format data for Android" in place of the restart, and a restart asked for before is not
+  started. Checked on the phone with an AnyKernel3 kernel ZIP for SM-A226B (BakaSU + SUSFS
+  v1.4.0): the device check passed, only boot changed, its kernel is the release's Image.gz byte
+  for byte; after the format stock Android A226BXXSBDZC3 started with `4.14.186 (A226B@a22x)`.
 - Under a minute left, the progress page shows seconds ("About 25 s", rounded up to 5 s).
 - The native ROM installation shows real sizes and speed per partition, not a fraction as bytes.
 - The note after a firmware installation names the kept BOOT "the previous BOOT", Linux or not.

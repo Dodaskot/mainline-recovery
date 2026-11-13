@@ -188,6 +188,7 @@ Android super image
 Android system partitions
 Android uses userdata: the image is saved on the card %s
 Android verified filesystem; writes are not qualified
+Android's BOOT changed. On this Samsung, Android starts with a changed BOOT only after its data is formatted: everything in Android is erased, the SD card stays.
 Android's data is erased once when root is installed.
 Android's data needs userdata and metadata together: choose both, or neither
 Android's kernel stopped %s seconds after its start.
@@ -613,6 +614,7 @@ For the new system.
 For this phone
 Forget
 Forget the request
+Format data for Android
 Format userdata and metadata for Android, as TWRP's Format Data
 Formatted
 Formatted for Android instead, as Samsung's recovery does after Odin
