@@ -16,9 +16,21 @@ import struct
 import sys
 from pathlib import Path
 
-# userdata grown to the end of the eMMC by an image's first start (Manjaro ARM's resize-fs ran
-# sfdisk on 2026-11-08): the same start, ending at the last usable sector of the disk.
-GROWN_SIZES = {"userdata": ((122142720 - 33 - 17850368) * 512,)}
+# 2026-11-13, for every SM-A226B: Samsung's PIT for this model (A22X_EUR_OPEN.pit) gives every
+# partition before userdata a fixed start and size, and userdata "the rest of the device" (count 0).
+# The 64 GB and 128 GB phones differ only there. Stock userdata ends 8192 sectors before the end of
+# the eMMC (observed on the 64 GB phone: 53 393 489 920 bytes); a Linux image's first start grows it
+# to the last usable sector (33 before the end).
+USERDATA_START = 17850368
+
+
+def disk_admitted(sectors):
+    """An eMMC of a 64 GB or 128 GB SM-A226B, in 512-byte sectors."""
+    return 120_000_000 <= sectors <= 252_000_000
+
+
+def userdata_sizes(disk_sectors):
+    return ((disk_sectors - 8192 - USERDATA_START) * 512, (disk_sectors - 33 - USERDATA_START) * 512)
 
 from common import (CHUNK, LABELS, RETAINED_LABELS, RecoveryError, beneath, digest, directory_identity, fail,
                     hash_file, no_symlinks, open_regular_fd, read_json, stamp)
@@ -373,7 +385,8 @@ class DeviceContext:
             size = struct.unpack("Q", fcntl.ioctl(fd, 0x80081272, bytes(8)))[0]
             if size <= 0 or size > 128 * 1024 * 1024 * 1024:
                 fail("GEOMETRY_MISMATCH", "Partition size is outside the supported A226B range", label=label)
-            if not retained and (number != item["number"] or size not in (item["size_bytes"],) + GROWN_SIZES.get(label, ())):
+            sizes = (item["size_bytes"],) if label != "userdata" else userdata_sizes(int((sysfs.parent / "size").read_text()))
+            if not retained and (number != item["number"] or size not in sizes):
                 fail("GEOMETRY_MISMATCH", "Live partition differs from admitted geometry", label=label,
                      size_bytes=size, partition_number=number)
             if retained:

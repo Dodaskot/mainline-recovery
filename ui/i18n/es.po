@@ -3489,6 +3489,9 @@ msgstr "Perfil no disponible"
 msgid "Protect copies with a password"
 msgstr "Proteger las copias con contraseña"
 
+msgid "Protected with the password of copies: it gets the name .enc and opens in Files with that password, or with openssl on a computer (see the README)."
+msgstr "Protegido con la contraseña de las copias: recibe la extensión .enc y se abre en Archivos con esa contraseña, o con openssl en un ordenador (ver el README)."
+
 msgid "protected: tap to open"
 msgstr "protegida: toca para abrir"
 

@@ -31,13 +31,26 @@ TOOL_NAMES = frozenset({"partclone.ext4", "partclone.chkimg", "partclone.restore
                         "zstd", "e2fsck", "blkid", "dumpe2fs", "mkfs.ext4"})
 GEOMETRY = {"boot": (41, 33554432), "userdata": (54, 53393489920)}
 # 2026-11-13, the owner: "the Linux backup did not work". A Linux installation grows userdata to the
-# end of the eMMC (storage.GROWN_SIZES, install.GROWN_SIZES); this workflow refused that size.
-GROWN = {"userdata": ((122142720 - 33 - 17850368) * 512,)}
+# end of the eMMC (storage.userdata_sizes, install.userdata_sizes); this workflow refused that size.
+DISK = Path("/sys/block/mmcblk0/size")
+PHONE = Path("/etc/a22x-recovery/device.json")
 
 
-def admitted_sizes(label):
-    """The sizes a partition may have here: the stock one, and userdata grown to the end."""
-    return (GEOMETRY[label][1],) + GROWN.get(label, ())
+def size_admitted(label, size):
+    """Whether a partition may have SIZE: BOOT its own; userdata stock or grown to the end of the
+    eMMC (storage.userdata_sizes), on the phone that of its own eMMC, 64 GB or 128 GB. Elsewhere
+    (a computer qualifying a snapshot, fixtures) the eMMC is not this one: any admitted eMMC."""
+    if size == GEOMETRY[label][1]:
+        return True
+    if label != "userdata":
+        return False
+    import storage
+    if PHONE.is_file() and DISK.is_file():
+        return size in storage.userdata_sizes(int(DISK.read_text()))
+    if size <= 0 or size % 512:
+        return False
+    sectors = size // 512 + storage.USERDATA_START
+    return storage.disk_admitted(sectors + 8192) or storage.disk_admitted(sectors + 33)
 
 
 def _trusted_regular(path, *, executable=False):
@@ -140,7 +153,7 @@ def device_binding(context, parts):
         fail("LINUX_TARGET_FORBIDDEN", "Linux v2 admits exactly BOOT and userdata")
     for part in parts:
         number = GEOMETRY[part["label"]][0]
-        if part.get("partition_number") != number or part["size_bytes"] not in admitted_sizes(part["label"]):
+        if part.get("partition_number") != number or not size_admitted(part["label"], part["size_bytes"]):
             fail("GEOMETRY_MISMATCH", "Physical Linux workflow geometry differs from the qualified A226B")
         node = context.nodes[part["device"]]
         if context.graph.physical_roots(part["device"]) != {context.internal_disk}:
@@ -178,7 +191,7 @@ def validate_acceptance(acceptance, record):
             or acceptance.get("target_kind") != "owned-new-regular-files"
             or acceptance.get("target_e2fsck_exit") != 0
             or isinstance(acceptance.get("target_e2fsck_exit"), bool)
-            or acceptance.get("userdata_bytes") not in admitted_sizes("userdata")
+            or not size_admitted("userdata", acceptance.get("userdata_bytes") or 0)
             or acceptance.get("source_device") != record["binding"]["device"]
             or acceptance.get("implementation_sha256") != digest(record)):
         fail("INVALID_QUALIFICATION", "Acceptance does not describe this exact implementation, physical source and owned image target")

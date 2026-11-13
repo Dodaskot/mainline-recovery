@@ -4,7 +4,7 @@
 #define LANGUAGE_COUNT 6
 static const char*const language_codes[LANGUAGE_COUNT]={"en","uk","de","es","fr","pl"};
 static const char*const language_names[LANGUAGE_COUNT]={"English","Українська","Deutsch","Español","Français","Polski"};
-#define MESSAGE_COUNT 2198
+#define MESSAGE_COUNT 2199
 static const char*const message_ids[MESSAGE_COUNT]={
 "  /  skip-identical",
 " / preview truncated",
@@ -1133,6 +1133,7 @@ static const char*const message_ids[MESSAGE_COUNT]={
 "Processor",
 "Profile unavailable",
 "Protect copies with a password",
+"Protected with the password of copies: it gets the name .enc and opens in Files with that password, or with openssl on a computer (see the README).",
 "Published: %s",
 "Putting the old content back",
 "RESOLVED INSIDE THIS VOLUME",
@@ -3334,6 +3335,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Процесор",
 "Профіль недоступний",
 "Захищати копії паролем",
+"Захищено паролем копій: архів отримає назву .enc і відкривається у «Файлах» цим паролем або командою openssl на комп’ютері (див. README).",
 "Опубліковано: %s",
 "Повертаю попередній вміст",
 "ВИЗНАЧЕНО В МЕЖАХ ЦЬОГО ТОМУ",
@@ -5534,6 +5536,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Prozessor",
 "Profil nicht verfügbar",
 "Kopien mit Passwort schützen",
+"Mit dem Passwort der Kopien geschützt: Das Archiv erhält die Endung .enc und öffnet sich in Dateien mit diesem Passwort oder mit openssl am Computer (siehe README).",
 "Veröffentlicht: %s",
 "Alter Inhalt wird zurückgeschrieben",
 "INNERHALB DIESES VOLUMES AUFGELÖST",
@@ -7734,6 +7737,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Procesador",
 "Perfil no disponible",
 "Proteger las copias con contraseña",
+"Protegido con la contraseña de las copias: recibe la extensión .enc y se abre en Archivos con esa contraseña, o con openssl en un ordenador (ver el README).",
 "Publicado: %s",
 "Restaurando el contenido anterior",
 "RESUELTO DENTRO DE ESTE VOLUMEN",
@@ -9934,6 +9938,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Processeur",
 "Profil indisponible",
 "Protéger les copies par mot de passe",
+"Protégé par le mot de passe des copies : l’archive prend l’extension .enc et s’ouvre dans Fichiers avec ce mot de passe, ou avec openssl sur un ordinateur (voir le README).",
 "Publié : %s",
 "Remise de l’ancien contenu",
 "RÉSOLU DANS CE VOLUME",
@@ -12134,6 +12139,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Procesor",
 "Profil niedostępny",
 "Chroń kopie hasłem",
+"Chronione hasłem kopii: archiwum dostaje rozszerzenie .enc i otwiera się w Plikach tym hasłem lub poleceniem openssl na komputerze (zob. README).",
 "Opublikowane: %s",
 "Przywracanie poprzedniej zawartości",
 "ROZWIĄZANO W TYM WOLUMINIE",

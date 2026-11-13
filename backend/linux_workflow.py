@@ -662,7 +662,7 @@ def _open_target(context, part, tools, plan):
     # and no enable flag on that generic raw/Android API.
     qualified.require_admission(context, _parts(context), tools, plan["qualification"])
     number = qualified.GEOMETRY[part["label"]][0]
-    if part.get("partition_number") != number or part["size_bytes"] not in qualified.admitted_sizes(part["label"]):
+    if part.get("partition_number") != number or not qualified.size_admitted(part["label"], part["size_bytes"]):
         fail("LINUX_TARGET_FORBIDDEN", "Physical target is outside the fixed Linux partition allowlist")
     # 2026-11-13 review, checked on the phone: mke2fs opens its device with O_EXCL itself (its mount
     # check and EXT2_FLAG_EXCLUSIVE), so with this process holding userdata exclusively every wipe
@@ -1031,7 +1031,7 @@ def qualify_to_images(backup_path, output_directory, implementation_record, tool
         fail("INSUFFICIENT_SPACE", "Host lacks room for the restored allocated filesystem blocks", free_bytes=free, required_bytes=required)
     parts = [{"label": entry["label"], "size_bytes": entry["raw_bytes"]} for entry in manifest["entries"]]
     for part in parts:
-        if part["size_bytes"] not in qualified.admitted_sizes(part["label"]):
+        if not qualified.size_admitted(part["label"], part["size_bytes"]):
             fail("GEOMETRY_MISMATCH", "Qualification requires the full admitted A226B partition geometry")
     with contextlib.ExitStack() as stack:
         archives = _archives(stack, path, manifest, parts, tools, None)

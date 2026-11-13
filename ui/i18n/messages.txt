@@ -1160,6 +1160,7 @@ Previous
 Processor
 Profile unavailable
 Protect copies with a password
+Protected with the password of copies: it gets the name .enc and opens in Files with that password, or with openssl on a computer (see the README).
 protected: tap to open
 Published: %s
 Putting the old content back

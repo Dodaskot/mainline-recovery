@@ -2397,14 +2397,17 @@ static void render_file_confirmation(App*a){
         else wrapped(a,40,y,640,0,MUTED,a->fs_sel_count?"Everything in this folder except the entries left out":"Everything in this folder",2);
     }
     if(q->kind==J_ARCHIVE_PACK){text(a,40,1000,0,ORANGE,"ARCHIVE");raw_text(true);ellipsis(a,40,1040,640,0,TEXT,q->destination);ellipsis(a,40,1076,640,0,MUTED,q->destination_volume);raw_text(false);}
-    const char*note=q->kind==J_ARCHIVE_PACK?"Owners, permissions and links are kept. The archive opens in Files on any A22x, or with tar --zstd -xf on a computer.":
+    /* 2026-11-13, on the phone: an archive protected with the password was reviewed as a plain one. */
+    bool sealed=q->kind==J_ARCHIVE_PACK&&a->backup_encrypt&&a->backup_password[0];
+    const char*note=sealed?"Protected with the password of copies: it gets the name .enc and opens in Files with that password, or with openssl on a computer (see the README).":
+        q->kind==J_ARCHIVE_PACK?"Owners, permissions and links are kept. The archive opens in Files on any A22x, or with tar --zstd -xf on a computer.":
         q->kind==J_ARCHIVE_UNPACK?"Extracts into a new folder beside the archive, named after it. Nothing outside that folder is written.":
         q->kind==J_FS_DELETE_MANY?"Deletes the selected files, and the selected folders with everything in them. There is no undo.":
         q->kind==J_FS_DELETE?"This deletes the selected file or empty folder. There is no undo.":
         (q->kind==J_FS_WRITE?(q->create?"Create this text file. An existing file will not be overwritten.":"Replace this file only if its contents still match the version you opened."):
         (q->kind==J_FS_MOUNT?"Write access allows changes on this volume. Nothing is formatted.":
         (q->kind==J_FS_CHMOD||q->kind==J_FS_CHOWN?"Change only this exact entry if it still matches the version you inspected. This action is not recursive.":"The destination must be a new name. Existing files will not be replaced.")));
-    wrapped(a,40,q->kind==J_ARCHIVE_PACK?1124:1050,640,q->kind==J_ARCHIVE_PACK?0:1,q->kind==J_FS_DELETE||q->kind==J_FS_DELETE_MANY?RED:MUTED,note,q->kind==J_ARCHIVE_PACK?3:4);
+    wrapped(a,40,q->kind==J_ARCHIVE_PACK?1124:1050,640,q->kind==J_ARCHIVE_PACK?0:1,q->kind==J_FS_DELETE||q->kind==J_FS_DELETE_MANY?RED:(sealed?ORANGE:MUTED),note,q->kind==J_ARCHIVE_PACK?3:4);
     unsigned int pages=confirmation_pages(q);
     if(pages>1){char label[48];snprintf(label,sizeof(label),T("Path %u / %u"),a->fs_confirm_page+1,pages);button(a,(Rect){28,1224,180,64},"Previous",A_FS_CONFIRM_PREV,a->fs_confirm_page>0,false,0);centered(a,(Rect){224,1224,272,64},0,MUTED,label);button(a,(Rect){512,1224,180,64},"Next",A_FS_CONFIRM_NEXT,a->fs_confirm_page+1<pages,false,0);}
     bool erase=q->kind==J_FS_DELETE||q->kind==J_FS_DELETE_MANY;

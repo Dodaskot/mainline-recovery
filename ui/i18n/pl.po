@@ -3489,6 +3489,9 @@ msgstr "Profil niedostępny"
 msgid "Protect copies with a password"
 msgstr "Chroń kopie hasłem"
 
+msgid "Protected with the password of copies: it gets the name .enc and opens in Files with that password, or with openssl on a computer (see the README)."
+msgstr "Chronione hasłem kopii: archiwum dostaje rozszerzenie .enc i otwiera się w Plikach tym hasłem lub poleceniem openssl na komputerze (zob. README)."
+
 msgid "protected: tap to open"
 msgstr "chroniona: dotknij, aby otworzyć"
 

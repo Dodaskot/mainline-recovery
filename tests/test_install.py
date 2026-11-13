@@ -603,10 +603,18 @@ class Selector(unittest.TestCase):
         with self.assertRaises(i.fs.FilesystemError) as caught:
             i.check_active_selector(mapping, changed)
         self.assertEqual(caught.exception.code, 'ACTIVE_BOOT_SELECTOR_CHANGED')
-        for offset in (192, 226, 212):
+        for offset in (192, 226, 215):
             data = bytearray(self.raw()); data[offset] ^= 0xff
             with self.subTest(offset=offset), self.assertRaises(i.fs.FilesystemError):
                 i.decode_ext_csd(bytes(data))
+        # 2026-11-13: the 128 GB SM-A226B too; userdata follows the eMMC (Samsung's PIT: the rest).
+        data = bytearray(self.raw()); data[212:216] = (244285440).to_bytes(4, 'little')
+        self.assertEqual(i.decode_ext_csd(bytes(data))['user_sector_count'], 244285440)
+        self.assertEqual(i.userdata_sizes(i.MMC_SECTORS), (53393489920, (122142720 - 33 - 17850368) * 512))
+        self.assertEqual(i.userdata_sizes(244285440)[0], (244285440 - 8192 - 17850368) * 512)
+        data[212:216] = (60_000_000).to_bytes(4, 'little')
+        with self.assertRaises(i.fs.FilesystemError):
+            i.decode_ext_csd(bytes(data))
 
 
 if __name__ == '__main__':

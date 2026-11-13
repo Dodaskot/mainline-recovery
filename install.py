@@ -62,7 +62,23 @@ LINUX_BOOT_K121 = 'e3542fcdd905a4b89a10eb828fa983bc9f0837a2635155d0124c692f6c5fb
 LINUX_BOOT_K122 = '9701f48ddced60c648e79a502885778935d1cb5610a011d77fc1898eea01d41a'
 # Kernel 138 (BOOT v147, 2026-11-12): the battery percent kept in the PMIC; same modules.
 LINUX_BOOT_K138 = '5faafaa0035bff7bd77251ab01e2b4c395798755ad24db7b3240cc3d6139ad0f'
-MMC_SECTORS = 122142720
+MMC_SECTORS = 122142720  # the 64 GB phone, for fixtures
+# 2026-11-13, for every SM-A226B: Samsung's PIT for this model (A22X_EUR_OPEN.pit) gives every
+# partition before userdata a fixed start and size, and userdata "the rest of the device" (count 0).
+# The 64 GB and 128 GB phones differ only there. Stock userdata ends 8192 sectors before the end of
+# the eMMC (observed on the 64 GB phone: 53 393 489 920 bytes); a Linux image's first start grows it
+# to the last usable sector (33 before the end).
+USERDATA_START = 17850368
+
+
+def disk_admitted(sectors):
+    """An eMMC of a 64 GB or 128 GB SM-A226B, in 512-byte sectors."""
+    return 120_000_000 <= sectors <= 252_000_000
+
+
+def userdata_sizes(disk_sectors):
+    """The sizes userdata may have on an eMMC of DISK_SECTORS: stock, and grown to the end."""
+    return ((disk_sectors - 8192 - USERDATA_START) * 512, (disk_sectors - 33 - USERDATA_START) * 512)
 MMC_BOOT_BYTES = 4 * CHUNK
 PLATFORM_BASELINE = {
     'dtbo': '97ed1a566cc30418477d790b3b2f4b21af4f0307bc466769c77d2b4edc21fa16',
@@ -70,8 +86,6 @@ PLATFORM_BASELINE = {
     'vbmeta_system': '22b6c3abbc5dc56a3ff1d75c88655b97ae446f96885d2b3a5f9b979e2855c56e',
 }
 CHECKPOINT_LABELS = ('boot', 'recovery', 'dtbo', 'vbmeta', 'vbmeta_system')
-# userdata grown to the end of the eMMC by an image's first start (see distro.USERDATA_SIZES).
-GROWN_SIZES = {'userdata': ((122142720 - 33 - 17850368) * 512,)}
 PROTECTED_GEOMETRY = {'lk': (17, 415744, 2097152), 'tee1': (14, 370688, 2097152)}
 PROTECTED_HASHES = {
     'bootloader': (362496, '76b7f9754cc54a208b4e2d9d792d59aac16457b7407f071582d64b5a655bd057',
@@ -629,7 +643,8 @@ class DeviceContext:
         require(fields.get('PARTNAME') == label and fields.get('PARTUUID')
                 and int((sysfs / 'partition').read_text()) == number
                 and int((sysfs / 'start').read_text()) == start
-                and int((sysfs / 'size').read_text()) * 512 in (size,) + GROWN_SIZES.get(label, ()),
+                and int((sysfs / 'size').read_text()) * 512 in ((size,) if label != 'userdata'
+                                                                 else userdata_sizes(int((sysfs.parent / 'size').read_text()))),
                 'GPT_GEOMETRY_MISMATCH', 'Kernel GPT identity/geometry differs from the fixed A22x profile', label=label)
         size = int((sysfs / 'size').read_text()) * 512
         return {'label': label, 'path': str(expected), 'size_bytes': size,
@@ -863,7 +878,7 @@ def decode_ext_csd(raw):
     sectors = int.from_bytes(raw[212:216], 'little')
     area_bytes = raw[226] * 128 * 1024
     selector = (raw[179] >> 3) & 7
-    require(sectors == MMC_SECTORS and area_bytes == MMC_BOOT_BYTES and 5 <= raw[192] <= 9,
+    require(disk_admitted(sectors) and area_bytes == MMC_BOOT_BYTES and 5 <= raw[192] <= 9,
             'EXT_CSD_GEOMETRY_MISMATCH', 'Live EXT_CSD geometry/revision differs from the fixed internal eMMC')
     require(selector in (1, 2), 'ACTIVE_BOOT_SELECTOR_UNSUPPORTED', 'The active eMMC boot selection is not a hardware boot area')
     return {'method': 'mmc-cmd8-readonly-v1', 'ext_csd_sha256': hashlib.sha256(raw).hexdigest(),
@@ -902,7 +917,7 @@ def read_active_boot_selector(context):
     cid = hashlib.sha256((card / 'cid').read_bytes().strip()).hexdigest()
     require(context.raw.internal_disk == devno and (card / 'type').read_text().strip() == 'MMC'
             and context.device['identity'] == 'emmc-cid-sha256:' + cid
-            and int((node / 'size').read_text()) == MMC_SECTORS,
+            and disk_admitted(int((node / 'size').read_text())),
             'WRONG_INTERNAL_DEVICE', 'Live selector source is not the admitted whole internal eMMC')
     path = Path('/dev/mmcblk0')
     named = path.lstat()
@@ -912,7 +927,7 @@ def read_active_boot_selector(context):
     try:
         opened = os.fstat(fd)
         require(stat.S_ISBLK(opened.st_mode) and same_object(opened) == same_object(named)
-                and struct.unpack('Q', fcntl.ioctl(fd, 0x80081272, bytes(8)))[0] == MMC_SECTORS * 512,
+                and struct.unpack('Q', fcntl.ioctl(fd, 0x80081272, bytes(8)))[0] == int((node / 'size').read_text()) * 512,
                 'MMC_IDENTITY_CHANGED', 'Opened MMC descriptor differs from the pinned whole device')
         observed = read_ext_csd_fd(fd)
         require(same_object(path.lstat()) == same_object(opened)
