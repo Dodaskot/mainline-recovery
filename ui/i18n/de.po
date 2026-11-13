@@ -300,6 +300,15 @@ msgstr "Für diesen geprüften Plan ist ein privates RAM-Verzeichnis erforderlic
 msgid "A private runtime directory is required for reviewed plans."
 msgstr "Für geprüfte Pläne ist ein privates Laufzeitverzeichnis erforderlich."
 
+msgid "A protected archive needs a password"
+msgstr "Ein geschütztes Archiv braucht ein Passwort"
+
+msgid "A protected backup needs a password"
+msgstr "Eine geschützte Sicherung braucht ein Passwort"
+
+msgid "A protected copy needs a password"
+msgstr "Eine geschützte Kopie braucht ein Passwort"
+
 msgid "A qualified stock profile is not available in this recovery."
 msgstr "In diesem Recovery ist kein qualifiziertes Stock-Profil verfügbar."
 
@@ -618,6 +627,9 @@ msgstr "Ein anderes Android ist nötig. Images für ältere Telefone (Treble-GSI
 msgid "Another block device uses this card"
 msgstr "Ein anderes Blockgerät benutzt diese Karte"
 
+msgid "another password"
+msgstr "anderes Passwort"
+
 msgid "Another phone"
 msgstr "Anderes Telefon"
 
@@ -710,6 +722,9 @@ msgstr "Beim Recovery-Start abgefragt"
 
 msgid "At least 4 characters."
 msgstr "Mindestens 4 Zeichen."
+
+msgid "At least 6 characters. It is kept nowhere and asked again after a restart: without it the copies cannot be opened."
+msgstr "Mindestens 6 Zeichen. Es wird nirgends gespeichert und nach einem Neustart erneut gefragt: Ohne es lassen sich die Kopien nicht öffnen."
 
 msgid "At start"
 msgstr "Beim Start"
@@ -1041,8 +1056,8 @@ msgstr "Erneut prüfen"
 msgid "Check and repair"
 msgstr "Prüfen und reparieren"
 
-msgid "Check and repair: ext4 only"
-msgstr "Prüfen und reparieren: nur ext4"
+msgid "Check and repair: not for this filesystem"
+msgstr "Prüfen und reparieren: nicht für dieses Dateisystem"
 
 msgid "Check backup integrity"
 msgstr "Sicherung auf Fehler prüfen"
@@ -2043,6 +2058,9 @@ msgstr "GSI"
 msgid "GSIs from the internet: choose the Android version and type"
 msgstr "GSIs aus dem Internet: Android-Version und Typ wählen"
 
+msgid "Hide"
+msgstr "Verbergen"
+
 msgid "history"
 msgstr "Verlauf"
 
@@ -2520,6 +2538,9 @@ msgstr "Linux-Daten wiederhergestellt"
 msgid "Linux data saved"
 msgstr "Linux-Daten gesichert"
 
+msgid "Linux data saved, protected with the password"
+msgstr "Linux-Daten gesichert, mit dem Passwort geschützt"
+
 msgid "Linux from SD or USB stick, switch systems"
 msgstr "Linux von SD oder USB-Stick, Systemwechsel"
 
@@ -2792,6 +2813,9 @@ msgstr "Nie"
 
 msgid "New account"
 msgstr "Neues Konto"
+
+msgid "New copies are encrypted with it."
+msgstr "Neue Kopien werden damit verschlüsselt."
 
 msgid "New files belong to root:root (0644; folders 0755). MTP has limited Linux metadata support. Stop sharing before mounting, editing in recovery, or making an offline snapshot."
 msgstr "Neue Dateien gehören root:root (0644; Ordner 0755). MTP unterstützt Linux-Metadaten nur eingeschränkt. Beenden Sie die Freigabe vor dem Einhängen, Bearbeiten im Recovery oder einem Offline-Snapshot."
@@ -3330,6 +3354,9 @@ msgstr "PASSWORT"
 msgid "Password"
 msgstr "Passwort"
 
+msgid "Password for copies"
+msgstr "Passwort für Kopien"
+
 msgid "Password removed"
 msgstr "Passwort entfernt"
 
@@ -3449,6 +3476,12 @@ msgstr "Prozessor"
 
 msgid "Profile unavailable"
 msgstr "Profil nicht verfügbar"
+
+msgid "Protect copies with a password"
+msgstr "Kopien mit Passwort schützen"
+
+msgid "protected: tap to open"
+msgstr "geschützt: zum Öffnen tippen"
 
 msgid "Published: %s"
 msgstr "Veröffentlicht: %s"
@@ -4251,6 +4284,9 @@ msgstr "Shift"
 msgid "Short press Power to turn the screen off or on."
 msgstr "Ein-/Aus-Taste schaltet den Bildschirm um."
 
+msgid "Show"
+msgstr "Anzeigen"
+
 msgid "Sign-in"
 msgstr "Anmeldung"
 
@@ -4854,6 +4890,12 @@ msgstr "Die DT-Tabelle ist abgeschnitten"
 msgid "The DT table lies outside the partition"
 msgstr "Die DT-Tabelle liegt außerhalb der Partition"
 
+msgid "The encrypted archive is cut short or was changed"
+msgstr "Das verschlüsselte Archiv ist abgeschnitten oder wurde verändert"
+
+msgid "The encrypted archive was changed or is damaged"
+msgstr "Das verschlüsselte Archiv wurde verändert oder ist beschädigt"
+
 msgid "The exact plan, source, backup, targets, journal or safety policy was not confirmed."
 msgstr "Plan, Quelle, Sicherung, Ziele, Journal oder Sicherheitsrichtlinie wurden nicht genau bestätigt."
 
@@ -5079,6 +5121,12 @@ msgstr "Die Installer sind fertig"
 msgid "The interrupted transaction changed. Review the refreshed Systems screen."
 msgstr "Die unterbrochene Transaktion hat sich geändert. Prüfen Sie den aktualisierten Systembildschirm."
 
+msgid "The kernel cipher returned too little"
+msgstr "Die Kernel-Chiffre lieferte zu wenig zurück"
+
+msgid "The kernel cipher took a partial block"
+msgstr "Die Kernel-Chiffre nahm einen unvollständigen Block"
+
 msgid "The kernel could not read the new partition table"
 msgstr "Der Kernel konnte die neue Partitionstabelle nicht lesen"
 
@@ -5295,8 +5343,23 @@ msgstr "Abweichende Partitionen werden zuerst in eine neue Kopie gesichert, dann
 msgid "The password could not be changed"
 msgstr "Passwort nicht geändert"
 
+msgid "The password could not be kept"
+msgstr "Das Passwort konnte nicht behalten werden"
+
+msgid "The password does not open this backup"
+msgstr "Das Passwort öffnet diese Sicherung nicht"
+
+msgid "The password does not open this copy. Try again."
+msgstr "Das Passwort öffnet diese Kopie nicht. Versuche es erneut."
+
+msgid "The password is too long"
+msgstr "Das Passwort ist zu lang"
+
 msgid "The password is wrong."
 msgstr "Das Passwort ist falsch."
+
+msgid "The password the copy was made with."
+msgstr "Das Passwort, mit dem die Kopie erstellt wurde."
 
 msgid "The password was set in the Android app."
 msgstr "Das Passwort wurde in der Android-App festgelegt."
@@ -5688,6 +5751,9 @@ msgstr "Dieses Android braucht Kernel %s oder neuer. Der Android-Kernel dieses T
 msgid "This backup belongs to another phone. Restoring it would give this phone a foreign identity"
 msgstr "Diese Sicherung gehört zu einem anderen Telefon. Ihre Wiederherstellung gäbe diesem Telefon eine fremde Identität"
 
+msgid "This backup is protected with a password"
+msgstr "Diese Sicherung ist mit einem Passwort geschützt"
+
 msgid "This BOOT already has another root: flash the stock BOOT back first (Remove root)"
 msgstr "Dieses BOOT hat schon ein anderes Root: Flashe zuerst das Stock-BOOT zurück (Root entfernen)"
 
@@ -5708,6 +5774,9 @@ msgstr "Diese Komprimierung wird nicht unterstützt"
 
 msgid "This copy is no longer listed. Go back and read the cards again."
 msgstr "Diese Kopie ist nicht mehr aufgeführt. Gehen Sie zurück und lesen Sie die Karten erneut."
+
+msgid "This copy is protected with a password."
+msgstr "Diese Kopie ist mit einem Passwort geschützt."
 
 msgid "This copy needs about %s, and %s has %s free. Free some room there, leave partitions out, or choose another card."
 msgstr "Diese Kopie braucht etwa %s, und auf %s sind %s frei. Dort Platz schaffen, Partitionen auslassen oder eine andere Karte wählen."

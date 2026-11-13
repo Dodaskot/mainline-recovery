@@ -77,9 +77,13 @@ def format_admitted(volume, fs_type, external):
         fail('UNSUPPORTED_FILESYSTEM', 'This filesystem is not offered for this volume')
 
 
-# TWRP's "Repair file system": e2fsck for ext2/3/4. The recovery has no fsck for F2FS or FAT.
-CHECK_TYPES = frozenset(('ext2', 'ext3', 'ext4'))
+# TWRP's "Repair file system": e2fsck for ext2/3/4; since 2026-11-13 fsck.f2fs and fsck.fat too
+# (Arch Linux ARM's f2fs-tools and dosfstools, run with the recovery's bundled glibc).
+EXT_TYPES = frozenset(('ext2', 'ext3', 'ext4'))
+CHECK_TYPES = EXT_TYPES | frozenset(('f2fs', 'vfat'))
 E2FSCK = '/sbin/e2fsck'
+FSCK_F2FS = '/bin/fsck.f2fs'
+FSCK_FAT = '/bin/fsck.fat'
 
 
 def check_admitted(volume, external):
@@ -89,7 +93,10 @@ def check_admitted(volume, external):
     if volume.get('mounted'):
         fail('VOLUME_MOUNTED', 'Unmount the volume before checking it')
     if volume.get('fs_type') not in CHECK_TYPES:
-        fail('UNSUPPORTED_FILESYSTEM', 'This recovery checks and repairs ext2, ext3 and ext4 only')
+        fail('UNSUPPORTED_FILESYSTEM', 'This recovery checks and repairs ext2, ext3, ext4, F2FS and FAT')
+    if volume.get('fscrypt_feature') and volume.get('fs_type') == 'f2fs':
+        # Android's own data: Android checks it itself at every start, with the fsck made for it.
+        fail('CHECK_FORBIDDEN', "Android's encrypted data is checked by Android itself at its start")
 
 
 def run_e2fsck(path, tool=E2FSCK):
@@ -102,6 +109,31 @@ def run_e2fsck(path, tool=E2FSCK):
         fail('CHECK_FAILED', 'The filesystem could not be checked', exit_code=rc, output=output)
     if rc & 4:
         fail('CHECK_ERRORS_LEFT', 'The check found errors it could not repair', exit_code=rc, output=output)
+    return {'result': 'repaired' if rc else 'clean', 'exit_code': rc, 'output': output}
+
+
+def run_fsck(path, fs_type, tools=None):
+    """Check and repair one filesystem by its kind. fsck.f2fs and fsck.fat exit as fsck does: 0 for a
+    clean filesystem, 1 after repairs, 4 when errors stay, 8 or more when they could not work."""
+    tools = tools or {'f2fs': FSCK_F2FS, 'vfat': FSCK_FAT, 'ext': E2FSCK}
+    if fs_type in EXT_TYPES:
+        return run_e2fsck(path, tools['ext'])
+    argv = [tools['f2fs'], '-f', '-y', str(path)] if fs_type == 'f2fs' else [tools['vfat'], '-a', '-w', str(path)]
+    if not os.path.exists(argv[0]):
+        fail('CHECK_UNAVAILABLE', 'This build of the recovery has no check for this filesystem', tool=argv[0])
+    done = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    rc, output = done.returncode, done.stdout[-600:]
+    if rc < 0 or rc >= 8:
+        fail('CHECK_FAILED', 'The filesystem could not be checked', exit_code=rc, output=output)
+    if rc & 4:
+        fail('CHECK_ERRORS_LEFT', 'The check found errors it could not repair', exit_code=rc, output=output)
+    if rc and fs_type == 'vfat':
+        # fsck.fat exits 1 for "repaired" and for "could not read the device" alike (2026-11-13, on
+        # the phone: an empty file counted as repaired). A second pass that changes nothing decides.
+        again = subprocess.run([tools['vfat'], '-n', str(path)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, text=True, errors='replace')
+        if again.returncode != 0:
+            fail('CHECK_FAILED', 'The filesystem could not be checked', exit_code=again.returncode, output=again.stdout[-600:])
     return {'result': 'repaired' if rc else 'clean', 'exit_code': rc, 'output': output}
 
 
@@ -1138,7 +1170,7 @@ class DeviceContext(BaseContext):
         self.confirm(confirmed)
         volume = self.volume(ident, expected)
         check_admitted(volume, volume.get('external') is True)
-        result = run_e2fsck(volume['path'])
+        result = run_fsck(volume['path'], volume['fs_type'])
         os.sync()
         return {'volume': self.volume(ident), 'checked': volume['fs_type'], **result}
 

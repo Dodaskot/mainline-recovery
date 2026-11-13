@@ -306,8 +306,9 @@ static void complete_root_job(App*a,const Json*j,int kind,bool ok){
 static void open_root(App*a){a->root_known=false;a->root_selected=-1;a->root_key_tool=-1;memset(a->root_superkey,0,sizeof(a->root_superkey));a->page_scroll=0;screen(a,ROOT_PAGE);start_root_job(a,J_ROOT_LIST);}
 static void render_superkey_prompt(App*a){
     heading(a,"SuperKey","APatch asks for it in its app in Android.",true);
-    account_field(a,236,"SUPERKEY",a->fs_prompt,false,true,A_ROOT_KEY_FIELD);
+    account_field(a,236,"SUPERKEY",a->fs_prompt,!a->secret_show,true,A_ROOT_KEY_FIELD);
     bool ready=superkey_ok(a->fs_prompt);
+    button(a,(Rect){210,540,300,60},a->secret_show?"Hide":"Show",A_SECRET_SHOW,ui_free(a),false,0);
     wrapped(a,40,394,640,0,a->fs_prompt[0]&&!ready?ORANGE:MUTED,"8 to 63 characters without spaces, with a letter and a digit. It is kept nowhere: remember it.",3);
     render_keyboard(a);
     button(a,(Rect){28,1370,256,84},"Cancel",A_BACK,ui_free(a),false,0);
@@ -398,7 +399,7 @@ static bool root_action(App*a,int id){
         int n=id-A_ROOT_KEY;
         if(n<(int)a->root_count&&a->root_tools[n].needs_key&&ui_free(a)){
             if(a->root_key_tool!=n)memset(a->root_superkey,0,sizeof(a->root_superkey));
-            a->root_key_tool=n;a->fs_prompt_kind=J_ROOT_SUPERKEY;copy(a->fs_prompt,sizeof(a->fs_prompt),a->root_superkey);
+            a->root_key_tool=n;a->secret_show=false;a->secret_typed_at=0;a->fs_prompt_kind=J_ROOT_SUPERKEY;copy(a->fs_prompt,sizeof(a->fs_prompt),a->root_superkey);
             a->prompt_cursor=strlen(a->fs_prompt);a->prompt_scroll=0;screen(a,FILE_PROMPT);
         }
         return true;

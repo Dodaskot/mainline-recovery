@@ -24,6 +24,7 @@ import errno
 import io
 import json
 import os
+import shutil
 import stat
 import struct
 import subprocess
@@ -31,6 +32,7 @@ import sys
 import tarfile
 import time
 
+import archive_crypt as ac
 import filesystem as fs
 import partition_archive as pa
 from filesystem import fail
@@ -41,7 +43,7 @@ def require(condition, code, message, **details):
         fail(code, message, **details)
 
 SCHEMA = 'a22x.files.v1'
-SUFFIXES = ('.tar.zst', '.tar.gz', '.tgz', '.tar.xz', '.tar')
+SUFFIXES = ('.tar.zst.enc', '.tar.zst', '.tar.gz', '.tar.xz', '.tgz', '.tar')
 STORE = 'A22xArchives'
 CHUNK = 1 << 20
 MAX_ENTRIES = 1 << 20
@@ -102,7 +104,11 @@ def tar_info(directory, name, info, arcname):
 def destination_name(path):
     clean = fs.clean_path(path)
     folder, _, name = clean.rpartition('/')
-    require(name.lower().endswith('.tar.zst') and len(name) > 8, 'INVALID_DESTINATION', 'The archive name must end in .tar.zst')
+    require(name.lower().endswith(('.tar.zst', '.tar.zst.enc')) and len(name) > 8, 'INVALID_DESTINATION',
+            'The archive name must end in .tar.zst')
+    # 2026-11-13: protected with a password, it is named for what it is.
+    if pa.ENCRYPT and pa.PASSWORD and not name.lower().endswith('.enc'):
+        name += ac.SUFFIX
     return folder, name
 
 
@@ -141,14 +147,20 @@ def pack(context, volume, token, path, everything, names, dest_volume, dest_toke
                         out = os.open(part_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644,
                                       dir_fd=parent)
                         try:
-                            done = write_archive(out, files, total, progress)
+                            crypt = contextlib.ExitStack()
+                            dest = crypt.enter_context(ac.sink(out, pa.PASSWORD if pa.ENCRYPT else None))
+                            done = write_archive(dest, files, total, progress)
                             manifest = json.dumps({'schema': SCHEMA, 'source': {'volume': volume, 'label': source_label,
                                                    'folder': folder}, 'created': int(time.time()), 'entries': len(files),
                                                    'bytes': done, 'top': sorted({e[3].split('/')[0] for e in files})[:64]},
                                                   ensure_ascii=False, separators=(',', ':')).encode()
-                            footer(out, manifest)
+                            footer(dest, manifest)
+                            crypt.close()
+                            os.fsync(out)
                             size = os.fstat(out).st_size
-                        except BaseException:
+                        except BaseException as error:
+                            with contextlib.suppress(BaseException):
+                                crypt.__exit__(type(error), error, None)
                             os.close(out)
                             with contextlib.suppress(OSError):
                                 os.unlink(part_name, dir_fd=parent)
@@ -246,15 +258,18 @@ class Counted:
 
 
 def footer(out, manifest):
-    os.lseek(out, 0, os.SEEK_END)
+    """The manifest after zstd's stream; OUT is the file, or the pipe into the cipher."""
+    with contextlib.suppress(OSError):
+        os.lseek(out, 0, os.SEEK_END)
     payload = manifest + struct.pack('<Q', len(manifest)) + pa.TRAILER
     pa.write_all(out, struct.pack('<II', pa.SKIPPABLE, len(payload)) + payload)
-    os.fsync(out)
+    with contextlib.suppress(OSError):
+        os.fsync(out)
 
 
 def decompressor(name):
     lower = name.lower()
-    if lower.endswith('.tar.zst'):
+    if lower.endswith(('.tar.zst', '.tar.zst.enc')):
         return [pa.zstd_path(), '-q', '-d', '-c']
     if lower.endswith(('.tar.gz', '.tgz')):
         return ['gzip', '-dc']
@@ -283,6 +298,11 @@ def unpack(context, volume, token, path, confirmed, progress):
             try:
                 pin.check_fd(target)
                 count = extract(source, total, name, '/proc/self/fd/%d' % target, progress)
+            except BaseException:
+                # Nothing half-unpacked is left behind (2026-11-13: an archive whose password was
+                # not given left its empty folder, and the next try found it in the way).
+                shutil.rmtree(stem, dir_fd=directory, ignore_errors=True)
+                raise
             finally:
                 os.close(target)
         finally:
@@ -294,7 +314,17 @@ def unpack(context, volume, token, path, confirmed, progress):
 def extract(source, total, name, destination, progress):
     command = decompressor(name)
     os.lseek(source, 0, os.SEEK_SET)
-    proc = subprocess.Popen(command, stdin=source, stdout=subprocess.PIPE, stderr=subprocess.PIPE) if command else None
+    crypt = contextlib.ExitStack()
+    plain = source
+    if ac.is_encrypted(source):
+        # Checked whole before one file of it is unpacked.
+        key = ac.open_key(source, pa.PASSWORD)
+        try:
+            ac.verify(source, key, lambda done, size: progress(done // 2, size, ''))
+        finally:
+            key.close()
+        plain = crypt.enter_context(ac.source(source, pa.PASSWORD))
+    proc = subprocess.Popen(command, stdin=plain, stdout=subprocess.PIPE, stderr=subprocess.PIPE) if command else None
     stream = proc.stdout if proc else os.fdopen(os.dup(source), 'rb')
     count, finished = 0, False
     try:
@@ -325,6 +355,8 @@ def extract(source, total, name, destination, progress):
         else:
             stream.close()
             code, said = 0, ''
+        with contextlib.suppress(ac.CryptError):
+            crypt.close()
     if code != 0:
         fail('ARCHIVE_DAMAGED', 'The archive is damaged', said=said)
     progress(total, total, '')
@@ -360,6 +392,8 @@ def parser():
         command.add_argument('--volume', required=True)
         command.add_argument('--expected-volume-token')
         command.add_argument('--path', required=True)
+        command.add_argument('--password-file')
+        command.add_argument('--encrypt', action='store_true')
         if name != 'inspect':
             command.add_argument('--confirm', action='store_true')
         if name == 'pack':
@@ -376,6 +410,9 @@ def main(argv=None):
         args = parser().parse_args(argv)
         operation = args.operation
         context = fs.FixtureContext(args.fixture) if args.fixture else fs.DeviceContext()
+        pa.PASSWORD = ac.read_password(args.password_file)
+        pa.ENCRYPT = bool(args.encrypt)
+        require(not pa.ENCRYPT or pa.PASSWORD, 'PASSWORD_REQUIRED', 'A protected archive needs a password')
         last = [0.0]
 
         def progress(done, total, label):
@@ -400,7 +437,7 @@ def main(argv=None):
         return 0
     except fs.FilesystemError as exc:
         error = {'code': exc.code, 'message': exc.message, 'details': exc.details}
-    except pa.ArchiveError as exc:
+    except (pa.ArchiveError, ac.CryptError) as exc:
         error = {'code': exc.code, 'message': str(exc), 'details': {}}
     except OSError as exc:
         error = {'code': 'IO_ERROR', 'message': str(exc), 'details': {'errno': exc.errno}}

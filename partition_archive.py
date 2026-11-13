@@ -24,13 +24,30 @@ import tempfile
 import threading
 import time
 
+import archive_crypt
+
 SUFFIX = '.tar.zst'
+# 2026-11-13: with a password the archive is encrypted (archive_crypt.py) and named NAME.tar.zst.enc.
+# A helper sets PASSWORD from the file the interface hands it; ENCRYPT says whether new archives
+# are protected with it.
+ENCRYPTED_SUFFIX = SUFFIX + archive_crypt.SUFFIX
+SUFFIXES = (SUFFIX, ENCRYPTED_SUFFIX)
+PASSWORD = None
+ENCRYPT = False
+
+
+def new_suffix():
+    return ENCRYPTED_SUFFIX if ENCRYPT and PASSWORD else SUFFIX
 SKIPPABLE = 0x184D2A5E
 TRAILER = b'a22xtar1'
 MAX_MANIFEST = 1 << 16
 LEVEL = 3
 PIPE_BYTES = 1 << 20
 F_SETPIPE_SZ = 1031
+
+
+def crypt_error(error):
+    return ArchiveError(error.code, str(error))
 
 
 class ArchiveError(ValueError):
@@ -116,8 +133,11 @@ class Writer:
     def __init__(self, fd, threads=0):
         self.fd, self.left, self.pad = fd, 0, 0
         self.errors = tempfile.TemporaryFile()
+        # Encrypted: zstd and the footer after it go through a pipe into the cipher.
+        self.stack = contextlib.ExitStack()
+        self.out = self.stack.enter_context(archive_crypt.sink(fd, PASSWORD if ENCRYPT else None))
         self.proc = subprocess.Popen([zstd_path(), '-q', '-%d' % LEVEL, '-T%d' % threads, '-c'], stdin=subprocess.PIPE,
-                                     stdout=fd, stderr=self.errors, bufsize=0)
+                                     stdout=self.out, stderr=self.errors, bufsize=0)
         self.pipe = self.proc.stdin.fileno()
         with contextlib.suppress(OSError):
             fcntl.fcntl(self.pipe, F_SETPIPE_SZ, PIPE_BYTES)
@@ -156,12 +176,16 @@ class Writer:
             raise write_failure(said(self.errors))
         try:
             # zstd wrote through the same open file, so its end is where the footer goes.
-            os.lseek(self.fd, 0, os.SEEK_END)
+            if self.out == self.fd:
+                os.lseek(self.fd, 0, os.SEEK_END)
             payload = manifest + struct.pack('<Q', len(manifest)) + TRAILER
-            write_all(self.fd, struct.pack('<II', SKIPPABLE, len(payload)) + payload)
+            write_all(self.out, struct.pack('<II', SKIPPABLE, len(payload)) + payload)
+            self.stack.close()  # an encrypted archive gets its end here
             os.fsync(self.fd)
         except OSError as error:
             raise write_failure(os.strerror(error.errno)) from None
+        except archive_crypt.CryptError as error:
+            raise crypt_error(error) from None
         finally:
             self.errors.close()
 
@@ -171,19 +195,39 @@ class Writer:
         if self.proc.poll() is None:
             self.proc.kill()
         self.proc.wait()
+        with contextlib.suppress(BaseException):
+            self.stack.__exit__(ArchiveError, ArchiveError('ARCHIVE_WRITE_FAILED', 'aborted'), None)
 
 
 def footer(fd):
-    """The manifest kept after the zstd stream: its bytes, or None when the file has no such footer."""
-    size = os.fstat(fd).st_size
+    """The manifest kept after the zstd stream: its bytes, or None when the file has no such footer.
+    An encrypted archive needs PASSWORD: without it, or with another one, ArchiveError says so."""
+    if archive_crypt.is_encrypted(fd):
+        try:
+            key = archive_crypt.open_key(fd, PASSWORD)
+            try:
+                tail = archive_crypt.read_tail(fd, key, MAX_MANIFEST + 24)
+            finally:
+                key.close()
+        except archive_crypt.CryptError as error:
+            raise crypt_error(error) from None
+        size = len(tail)
+
+        def at(count, offset):
+            return tail[offset:offset + count]
+    else:
+        size = os.fstat(fd).st_size
+
+        def at(count, offset):
+            return os.pread(fd, count, offset)
     if size < 24:
         return None
-    length, magic = struct.unpack('<Q8s', os.pread(fd, 16, size - 16))
+    length, magic = struct.unpack('<Q8s', at(16, size - 16))
     if magic != TRAILER or not 0 < length <= MAX_MANIFEST or size < 24 + length:
         return None
-    if struct.unpack('<II', os.pread(fd, 8, size - 24 - length)) != (SKIPPABLE, length + 16):
+    if struct.unpack('<II', at(8, size - 24 - length)) != (SKIPPABLE, length + 16):
         return None
-    data = os.pread(fd, length, size - 16 - length)
+    data = at(length, size - 16 - length)
     return data if len(data) == length else None
 
 
@@ -194,7 +238,12 @@ def members(fd):
     unpacked every frame and its checksum; a damaged archive raises BACKUP_DAMAGED."""
     os.lseek(fd, 0, os.SEEK_SET)
     errors = tempfile.TemporaryFile()
-    proc = subprocess.Popen([zstd_path(), '-q', '-d', '-c'], stdin=fd, stdout=subprocess.PIPE, stderr=errors, bufsize=PIPE_BYTES)
+    stack = contextlib.ExitStack()
+    try:
+        plain = stack.enter_context(archive_crypt.source(fd, PASSWORD))
+    except archive_crypt.CryptError as error:
+        raise crypt_error(error) from None
+    proc = subprocess.Popen([zstd_path(), '-q', '-d', '-c'], stdin=plain, stdout=subprocess.PIPE, stderr=errors, bufsize=PIPE_BYTES)
     with contextlib.suppress(OSError):
         fcntl.fcntl(proc.stdout.fileno(), F_SETPIPE_SZ, PIPE_BYTES)
     finished = False
@@ -227,6 +276,11 @@ def members(fd):
         code = proc.wait()
         text = said(errors)
         errors.close()
+        try:
+            stack.close()  # an encrypted archive: its HMAC was checked as it was read
+        except archive_crypt.CryptError as error:
+            if finished:
+                raise crypt_error(error) from None
     if not finished:
         raise ArchiveError('BACKUP_DAMAGED', 'The archive was not read to its end')
     if code != 0:

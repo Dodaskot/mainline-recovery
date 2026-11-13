@@ -39,7 +39,30 @@ if [ -z "$STAGED" ]; then
     [ -f "$ARCHIVE" ] || usage
     STAGED=$(mktemp -d /var/tmp/a22x-restore.XXXXXX) || exit 1
     CLEAN=1
-    if tar --zstd -xpf "$ARCHIVE" -C "$STAGED" --numeric-owner 2>/dev/null; then :
+    case $ARCHIVE in
+        *.enc)
+            # Protected with a password (archive_crypt.py): openssl opens it; the last 56 bytes are
+            # the recovery's own check and are left out.
+            command -v openssl >/dev/null 2>&1 || { echo "This archive is encrypted: install openssl, then run this again."; rm -rf "$STAGED"; exit 1; }
+            command -v zstd >/dev/null 2>&1 || { echo "This archive needs zstd: install the package zstd, then run this again."; rm -rf "$STAGED"; exit 1; }
+            if [ -z "${A22X_PASSWORD:-}" ]; then
+                printf 'Password of the backup: '
+                stty -echo 2>/dev/null
+                read -r A22X_PASSWORD
+                stty echo 2>/dev/null
+                echo
+            fi
+            export A22X_PASSWORD
+            if ! head -c -56 "$ARCHIVE" | openssl enc -d -aes-256-ctr -pbkdf2 -iter 600000 -md sha256 -pass env:A22X_PASSWORD 2>/dev/null |
+                    zstd -dc 2>/dev/null | tar -xpf - -C "$STAGED" --numeric-owner 2>/dev/null || [ ! -f "$STAGED/manifest.json" ]; then
+                echo "The password does not open this archive, or the archive is damaged."
+                rm -rf "$STAGED"
+                exit 1
+            fi
+            ARCHIVE= ;;
+    esac
+    if [ -z "$ARCHIVE" ]; then :
+    elif tar --zstd -xpf "$ARCHIVE" -C "$STAGED" --numeric-owner 2>/dev/null; then :
     elif command -v zstd >/dev/null 2>&1 && zstd -dc "$ARCHIVE" | tar -xpf - -C "$STAGED" --numeric-owner; then :
     else
         echo "This archive needs zstd: install the package zstd, then run this again."

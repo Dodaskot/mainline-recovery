@@ -10,7 +10,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ('recovery_ui.c', 'systems_ui.h', 'install_ui.h', 'wifi_ui.h', 'installer_ui.h', 'images_ui.h', 'adb_ui.h', 'packages_ui.h', 'identity_ui.h', 'android_plan_ui.h', 'wipe_ui.h', 'androidlog_ui.h', 'updates_ui.h', 'android_ui.h', 'card_ui.h', 'copies_ui.h', 'source_ui.h', 'screenshot_ui.h', 'linuxdata_ui.h', 'charger_ui.h', 'shells_ui.h', 'locale_ui.h', 'terminal_ui.h', 'flash_ui.h', 'theme.h')
-HELPERS = ('../flash.py', '../themes.py', '../sysinfo.py', '../samsung_firmware.py', '../android_gsi.py', '../saved_boot.py', '../sevenzip.py', '../root.py', '../bcb.py', '../clock.py', '../zip_install.py', '../sdcard.py', '../identity_backup.py', '../partition_archive.py', '../linux_data.py', '../file_archive.py')
+HELPERS = ('../flash.py', '../themes.py', '../sysinfo.py', '../samsung_firmware.py', '../android_gsi.py', '../saved_boot.py', '../sevenzip.py', '../root.py', '../bcb.py', '../clock.py', '../zip_install.py', '../sdcard.py', '../identity_backup.py', '../partition_archive.py', '../linux_data.py', '../file_archive.py', '../archive_crypt.py')
 WORDS = {'archive', 'folder', 'read-only', 'finished', 'failed', 'not run', 'unavailable', 'mounted', 'offline', 'raw', 'active', 'yes', 'no', 'live', 'history', 'on', 'off', 'unknown',
          'backup', 'wipe', 'restore', '30 s', 'minimal', 'signed', 'none', 'arm64',
          'Europe', 'America', 'Asia', 'Africa', 'Australia', 'Pacific', 'Atlantic', 'Antarctica', 'Arctic'}

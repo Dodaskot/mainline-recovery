@@ -151,6 +151,60 @@ class LinuxData(unittest.TestCase):
         seen = ld.inspect(fs.FixtureContext(self.root))
         self.assertEqual((seen['linux'], seen['reason'], len(seen['archives'])), (False, 'NO_LINUX', 1))
 
+    def test_a_backup_protected_with_a_password(self):
+        """2026-11-13: encrypted when a password is set; listed closed without it; restored with it;
+        and restore.sh alone opens it on another device with openssl."""
+        import archive_crypt as ac
+        import partition_archive as pa
+        self.addCleanup(lambda: (setattr(pa, 'PASSWORD', None), setattr(pa, 'ENCRYPT', False), setattr(ac, 'ROUNDS', ac.ROUNDS)))
+        pa.PASSWORD, pa.ENCRYPT = 'мій пароль', True
+        done = ld.backup(self.ctx, ['home', 'accounts'], 'sdcard-p1', None, True, self.progress)
+        self.assertTrue(done['encrypted'] and done['archive']['path'].endswith('.tar.zst.enc'), done)
+        archive = self.sd / done['archive']['path'].lstrip('/')
+        self.assertTrue(archive.read_bytes().startswith(b'Salted__'))
+        self.assertNotIn('HASH'.encode(), archive.read_bytes())
+        pa.PASSWORD, pa.ENCRYPT = None, False
+        row = ld.inspect(self.ctx)['archives'][0]
+        self.assertEqual((row['locked'], row['encrypted'], row['parts'], row['os']['name']), (True, True, [], 'archarm'))
+        with self.assertRaises(pa.ArchiveError) as caught:
+            ld.restore(self.ctx, 'sdcard-p1', None, row['path'], ['home'], True, self.progress)
+        self.assertEqual(caught.exception.code, 'PASSWORD_REQUIRED')
+        pa.PASSWORD = 'not it'
+        self.assertTrue(ld.inspect(self.ctx)['archives'][0]['wrong_password'])
+        pa.PASSWORD = 'мій пароль'
+        row = ld.inspect(self.ctx)['archives'][0]
+        self.assertEqual((row['locked'], row['encrypted'], row['parts'], row['accounts']), (False, True, ['home', 'accounts'], ['akisha']))
+        (self.data / 'home/akisha/Документи/нотатка.txt').write_text('changed')
+        back = ld.restore(self.ctx, 'sdcard-p1', None, row['path'], ['home'], True, self.progress)
+        self.assertEqual(back['parts'], ['home'])
+        self.assertEqual((self.data / 'home/akisha/Документи/нотатка.txt').read_text(), 'моє\n')
+        # One byte changed: refused before a file of it reaches the system.
+        blob = bytearray(archive.read_bytes())
+        blob[len(blob) // 2] ^= 1
+        archive.write_bytes(bytes(blob))
+        (self.data / 'home/akisha/Документи/нотатка.txt').write_text('changed')
+        with self.assertRaises(ac.CryptError) as caught:
+            ld.restore(self.ctx, 'sdcard-p1', None, row['path'], ['home'], True, self.progress)
+        self.assertEqual(caught.exception.code, 'BACKUP_DAMAGED')
+        self.assertEqual((self.data / 'home/akisha/Документи/нотатка.txt').read_text(), 'changed')
+        blob[len(blob) // 2] ^= 1
+        archive.write_bytes(bytes(blob))
+        if shutil.which('openssl'):
+            # Another device: restore.sh from the repository, the archive and its password.
+            other = self.root / 'other'
+            (other / 'etc').mkdir(parents=True)
+            (other / 'etc/passwd').write_text('root:x:0:0::/root:/bin/sh\n')
+            (other / 'etc/group').write_text('')
+            env = dict(os.environ, A22X_ROOT=str(other), A22X_FAKE_ROOT='1', A22X_PASSWORD='мій пароль', TMPDIR=str(self.root),
+                       PATH=os.environ['A22X_LINUX_DATA_PATH'] + ':' + os.environ['PATH'])
+            run = subprocess.run(['sh', str(ROOT / 'linux_data_restore.sh'), str(archive), '--parts', 'home'], env=env, capture_output=True, text=True)
+            self.assertIn('a22x: done', run.stdout, run.stdout + run.stderr)
+            self.assertEqual((other / 'home/akisha/Документи/нотатка.txt').read_text(), 'моє\n')
+            env['A22X_PASSWORD'] = 'wrong'
+            run = subprocess.run(['sh', str(ROOT / 'linux_data_restore.sh'), str(archive)], env=env, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 1)
+            self.assertIn('password does not open', run.stdout)
+
     def test_debian_package_list(self):
         top = self.root / 'deb'
         (top / 'var/lib/dpkg').mkdir(parents=True)
@@ -163,6 +217,17 @@ class LinuxData(unittest.TestCase):
         self.addCleanup(os.close, fd)
         self.assertEqual(ld.packages_of(fd, 'debian'), ['htop'])
         self.assertIsNone(ld.packages_of(fd, 'fedora'))
+        self.assertIsNone(ld.packages_of(fd, 'suse'))
+        # 2026-11-13: dnf5's own record of why a package is there, and apk's world.
+        (top / 'usr/lib/sysimage/libdnf5').mkdir(parents=True)
+        (top / 'usr/lib/sysimage/libdnf5/packages.toml').write_text(
+            'version = "1.0"\n[packages]\n"htop.aarch64" = {reason = "User"}\n"glibc.aarch64" = {reason = "Dependency"}\n'
+            '"linux-firmware.noarch" = {reason = "User"}\n[packages."python3.12-pip.noarch"]\nreason = "User"\n'
+            '[packages.vim-enhanced.aarch64]\nreason = "User"\n[packages.libfoo.aarch64]\nreason = "Weak Dependency"\n')
+        self.assertEqual(ld.packages_of(fd, 'fedora'), ['htop', 'python3.12-pip', 'vim-enhanced'])
+        (top / 'etc/apk').mkdir(parents=True)
+        (top / 'etc/apk/world').write_text('alpine-base\nhtop\nfish>=3.0\nfoo@testing\n')
+        self.assertEqual(ld.packages_of(fd, 'alpine'), ['alpine-base', 'fish', 'foo', 'htop'])
 
 
 if __name__ == '__main__':

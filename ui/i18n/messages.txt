@@ -97,6 +97,9 @@ A partition table: it would repartition the phone
 A private RAM directory is required for this installation plan.
 A private RAM directory is required for this reviewed plan.
 A private runtime directory is required for reviewed plans.
+A protected archive needs a password
+A protected backup needs a password
+A protected copy needs a password
 A qualified stock profile is not available in this recovery.
 A required rootfs directory is missing or symlinked
 A reset restores the default theme, terminal colours, animation, navigation, vibration, screen timeout, brightness and refresh rate. The language, time zone, password and lock, Wi-Fi networks and keys stay.
@@ -203,6 +206,7 @@ Android's kernel stopped %s seconds after its start.
 Animations
 Another Android is needed. Images made for older phones (Treble GSIs such as crDroid) start with this kernel, and so does Samsung's firmware.
 Another block device uses this card
+another password
 Another phone
 Antarctica
 AOSP
@@ -234,6 +238,7 @@ Asia
 Asked at start and after the screen turns off
 Asked when recovery starts
 At least 4 characters.
+At least 6 characters. It is kept nowhere and asked again after a restart: without it the copies cannot be opened.
 At start
 Atlantic
 August
@@ -344,7 +349,7 @@ Charging
 Charging screen
 Check again
 Check and repair
-Check and repair: ext4 only
+Check and repair: not for this filesystem
 Check backup integrity
 Check it before you rely on it.
 Check it, or write it back to the phone.
@@ -678,6 +683,7 @@ Grow to fill
 Grown to %s
 GSI
 GSIs from the internet: choose the Android version and type
+Hide
 history
 Hold 1 second to discard
 Hold 2 seconds to back up
@@ -837,6 +843,7 @@ Linux boot + rootfs
 Linux data
 Linux data restored
 Linux data saved
+Linux data saved, protected with the password
 Linux from SD or USB stick, switch systems
 Linux restore awaits qualification
 Linux systems
@@ -928,6 +935,7 @@ Network and apps
 NETWORK NAME
 Never
 New account
+New copies are encrypted with it.
 New files belong to root:root (0644; folders 0755). MTP has limited Linux metadata support. Stop sharing before mounting, editing in recovery, or making an offline snapshot.
 New folder
 NEW MODE / OCTAL
@@ -1107,6 +1115,7 @@ Partitions to save
 Parts of this partition lie outside super
 PASSWORD
 Password
+Password for copies
 Password removed
 Password saved
 Passwords
@@ -1147,6 +1156,8 @@ Preparing...
 Previous
 Processor
 Profile unavailable
+Protect copies with a password
+protected: tap to open
 Published: %s
 Putting the old content back
 raw
@@ -1414,6 +1425,7 @@ Shell exited (%d). Exit to release storage.
 Shells and sign-in
 Shift
 Short press Power to turn the screen off or on.
+Show
 Sign-in
 SIGN-IN SCREEN
 Sign-in: %s  /  also: %s
@@ -1615,6 +1627,8 @@ The downloaded image differs from the catalog. Try again.
 The downloaded Linux BOOT is not the one the catalog names
 The DT table is cut short
 The DT table lies outside the partition
+The encrypted archive is cut short or was changed
+The encrypted archive was changed or is damaged
 The exact plan, source, backup, targets, journal or safety policy was not confirmed.
 The exact private plan file, source, target or preservation policy was not confirmed.
 The existing shell has not become ready. Refresh or close this exact session; another shell is not started.
@@ -1690,6 +1704,8 @@ The installer of this ZIP ended with an error
 The installer result did not match the requested environment or operation.
 The installers finished
 The interrupted transaction changed. Review the refreshed Systems screen.
+The kernel cipher returned too little
+The kernel cipher took a partial block
 The kernel could not read the new partition table
 The kernel did not open this partition of super
 The kernel does not show the new partitions
@@ -1762,7 +1778,12 @@ The partition of super is still in use
 The partition of super is still mounted elsewhere
 The partitions that differ are saved to a new copy first, then written and read back.
 The password could not be changed
+The password could not be kept
+The password does not open this backup
+The password does not open this copy. Try again.
+The password is too long
 The password is wrong.
+The password the copy was made with.
 The password was set in the Android app.
 The passwords do not match
 The patched BOOT does not fit its partition
@@ -1893,6 +1914,7 @@ This action replaces the listed targets.
 This Android needs a newer kernel than the Android kernel of this phone, so Android restarts the phone on every start.
 This Android needs kernel %s or newer. The Android kernel of this phone is older, so Android restarts the phone on every start.
 This backup belongs to another phone. Restoring it would give this phone a foreign identity
+This backup is protected with a password
 This BOOT already has another root: flash the stock BOOT back first (Remove root)
 This BOOT already has another root: remove it first.
 This build of the recovery has no APatch
@@ -1900,6 +1922,7 @@ This can pass: storage may be busy for a moment. Try again.
 This card is no longer attached
 This compression is not supported
 This copy is no longer listed. Go back and read the cards again.
+This copy is protected with a password.
 This copy needs about %s, and %s has %s free. Free some room there, leave partitions out, or choose another card.
 This copy was made on another phone and is not written back here.
 This copy's Android data belongs to another phone: restore it without its data

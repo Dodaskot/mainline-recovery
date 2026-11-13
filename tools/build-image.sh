@@ -41,7 +41,7 @@ cd "$WORK"
 ADD=()
 add() { ADD+=(--add "$1=$2"); }
 for f in glibc-runtime/lib/* glibc-runtime/bin/*; do add "opt/a22x-recovery/glibc/${f#glibc-runtime/}" "$f"; done
-for t in make_f2fs lz4 unsquashfs; do add "bin/$t" "rt-wrappers/$t"; done
+for t in make_f2fs lz4 unsquashfs fsck.f2fs fsck.fat; do add "bin/$t" "rt-wrappers/$t"; done
 # The Brotli decoder for block-based ROM packages (*.new.dat.br): tools/brotli_dec.c with c/common and
 # c/dec of google/brotli 1.1.0, built static for arm64 (2026-11-13). Without it such ROMs are refused.
 if [ -f helpers/brotli-dec ]; then add bin/brotli-dec helpers/brotli-dec; fi
@@ -59,6 +59,7 @@ if [ -f "$KERNEL_DIR/wifi-modules.tar.xz" ]; then
     add opt/a22x-recovery/openpgp.py "$S/openpgp.py"
     add opt/a22x-recovery/identity_backup.py "$S/identity_backup.py"
     add opt/a22x-recovery/partition_archive.py "$S/partition_archive.py"
+    add opt/a22x-recovery/archive_crypt.py "$S/archive_crypt.py"
     add opt/a22x-recovery/file_archive.py "$S/file_archive.py"
     add opt/a22x-recovery/linux_data.py "$S/linux_data.py"
     add opt/a22x-recovery/linux_data_restore.sh "$S/linux_data_restore.sh"

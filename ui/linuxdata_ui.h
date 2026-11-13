@@ -27,13 +27,15 @@ static bool start_ld_job(App*a,int kind){
     if(a->job.pid||a->preview||!a->filesystem_helper[0])return false;
     static char helper[PATH_LEN],parts[64];
     copy(helper,sizeof(helper),a->filesystem_helper);char*slash=strrchr(helper,'/');if(slash)slash[1]=0;else helper[0]=0;append(helper,sizeof(helper),"linux_data.py");
-    char*args[16];int n=0;args[n++]=a->python;args[n++]=helper;
+    char*args[24];int n=0;args[n++]=a->python;args[n++]=helper;
     if(a->device)args[n++]="--device";else{args[n++]="--fixture";args[n++]=a->fixture;}
+    if(a->backup_password[0]&&a->backup_password_file[0]){args[n++]="--password-file";args[n++]=a->backup_password_file;}
     if(kind==J_LD_INSPECT)args[n++]="inspect";
     else if(kind==J_LD_BACKUP){
         if(a->ld_dest_index<0||a->ld_dest_index>=(int)a->ld_dest_count||!a->ld_parts)return false;
         ld_parts_argument(a->ld_parts,parts,sizeof(parts));
         args[n++]="backup";args[n++]="--volume";args[n++]=a->ld_dest[a->ld_dest_index].id;args[n++]="--parts";args[n++]=parts;args[n++]="--confirm";
+        if(a->backup_encrypt&&a->backup_password[0])args[n++]="--encrypt";
     }else{
         if(a->ld_selected<0||a->ld_selected>=(int)a->ld_archive_count||!a->ld_restore_parts)return false;
         LdArchive*x=&a->ld_archives[a->ld_selected];ld_parts_argument(a->ld_restore_parts,parts,sizeof(parts));
@@ -70,14 +72,16 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
             jstring(j,i,"name",x->name,sizeof(x->name));jstring(j,i,"label",x->label,sizeof(x->label));
             int os=json_get(j,i,"os");if(os>=0)jstring(j,os,"name",x->os,sizeof(x->os));
             x->bytes=json_uint(j,json_get(j,i,"bytes"),0);x->created=json_uint(j,json_get(j,i,"created"),0);x->packages=(unsigned int)json_uint(j,json_get(j,i,"packages"),0);
-            x->parts=ld_mask(j,json_get(j,i,"parts"));ld_names(j,json_get(j,i,"accounts"),x->accounts,sizeof(x->accounts));}
+            x->parts=ld_mask(j,json_get(j,i,"parts"));ld_names(j,json_get(j,i,"accounts"),x->accounts,sizeof(x->accounts));
+            x->locked=json_bool(j,json_get(j,i,"locked"),0)==1;x->encrypted=json_bool(j,json_get(j,i,"encrypted"),0)==1;x->wrong=json_bool(j,json_get(j,i,"wrong_password"),0)==1;}
         a->ld_known=true;a->dirty=true;if(a->screen==PROGRESS)screen(a,LINUX_DATA);return;
     }
     a->successful=true;a->result_return=LINUX_DATA;a->ld_known=false;
     if(kind==J_LD_BACKUP){
         char where[PATH_LEN]={0},bytes[48];int archive=json_get(j,0,"archive");
         if(archive>=0){jstring(j,archive,"path",where,sizeof(where));human_bytes(json_uint(j,json_get(j,archive,"bytes"),0),bytes,sizeof(bytes));}else bytes[0]=0;
-        copy(a->status,sizeof(a->status),"Linux data saved");
+        bool protected_copy=json_bool(j,json_get(j,0,"encrypted"),0)==1;
+        copy(a->status,sizeof(a->status),protected_copy?"Linux data saved, protected with the password":"Linux data saved");
         snprintf(a->message,sizeof(a->message),T("The archive is %s, %s.\n\nIt restores into any Linux installed here from this page, and on another device with the restore.sh inside it."),where,bytes);
         screen(a,RESULT);return;
     }
@@ -130,9 +134,9 @@ static void render_linux_data(App*a){
     for(unsigned int n=0;n<a->ld_archive_count&&n<3;n++){
         LdArchive*x=&a->ld_archives[n];Rect r={28,954+(int)n*112,664,100};rounded(a,r,20,PANEL);
         char when[48]="",size[48],line[200];time_t t=(time_t)x->created;struct tm local;if(x->created&&localtime_r(&t,&local))strftime(when,sizeof(when),"%Y-%m-%d %H:%M",&local);
-        human_bytes(x->bytes,size,sizeof(size));snprintf(line,sizeof(line),"%s  /  %s  /  %.60s",when,size,x->label);
-        raw_text(true);ellipsis(a,52,r.y+14,580,1,TEXT,x->os[0]?x->os:x->name);ellipsis(a,52,r.y+58,580,0,MUTED,line);raw_text(false);
-        icon(a,ICON_CHEVRON,640,r.y+34,32,MUTED);register_button(a,r,A_LD_ARCHIVE+(int)n,ui_free(a),0);
+        human_bytes(x->bytes,size,sizeof(size));snprintf(line,sizeof(line),"%s  /  %s  /  %.60s",when,size,x->locked?tr(x->wrong?"another password":"protected: tap to open"):x->label);
+        raw_text(true);ellipsis(a,52,r.y+14,580,1,TEXT,x->os[0]?x->os:x->name);ellipsis(a,52,r.y+58,580,0,x->locked?ORANGE:MUTED,line);raw_text(false);
+        icon(a,x->encrypted?ICON_LOCK:ICON_CHEVRON,640,r.y+34,32,MUTED);register_button(a,r,A_LD_ARCHIVE+(int)n,ui_free(a),0);
     }
     button(a,(Rect){28,1340,664,84},"Refresh",A_LD_REFRESH,ui_free(a),false,0);
 }
@@ -163,6 +167,11 @@ static bool ld_action(App*a,int id){
         if(id>=A_LD_PART&&id<A_LD_PART+(int)LD_PARTS){if(ui_free(a)){a->ld_parts^=1u<<(id-A_LD_PART);a->dirty=true;}return true;}
         if(id==A_LD_DEST){if(ui_free(a)&&a->ld_dest_count){a->ld_dest_index=(a->ld_dest_index+1)%(int)a->ld_dest_count;a->dirty=true;}return true;}
         if(id==A_LD_BACKUP){if(ui_free(a)&&!start_ld_job(a,J_LD_BACKUP))files_problem(a,"LINUX_DATA_UNAVAILABLE","Wait for the current operation to finish.",LINUX_DATA);return true;}
+        if(id>=A_LD_ARCHIVE&&id<A_LD_ARCHIVE+(int)a->ld_archive_count&&a->ld_archives[id-A_LD_ARCHIVE].locked){
+            /* Protected: the password is asked, and the list is read again with it. */
+            if(ui_free(a))backup_password_ask(a,J_LD_INSPECT,a->ld_archives[id-A_LD_ARCHIVE].wrong,LINUX_DATA);
+            return true;
+        }
         if(id>=A_LD_ARCHIVE&&id<A_LD_ARCHIVE+(int)a->ld_archive_count){if(ui_free(a)){a->ld_selected=id-A_LD_ARCHIVE;a->ld_restore_parts=a->ld_archives[a->ld_selected].parts;screen(a,LINUX_DATA_RESTORE);}return true;}
     }
     if(a->screen==LINUX_DATA_RESTORE){

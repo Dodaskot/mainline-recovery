@@ -39,6 +39,27 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **Copies protected with a password** (0.6.231, Backup > "Protect copies with a password"): the
+  password is typed once and kept in RAM until the recovery restarts. Copies of Android's
+  partitions, Linux data and archives made in Files are then encrypted (`NAME.tar.zst.enc`:
+  AES-256-CTR, key from PBKDF2-HMAC-SHA-256 with 600 000 rounds, an HMAC-SHA-256 over the whole
+  file). A protected copy is listed closed, with a lock; a tap asks for the password and opens it;
+  a wrong password is said at once; one changed byte is found before anything is restored. The
+  format is the one `openssl enc -aes-256-ctr -pbkdf2` writes, so a copy opens without this recovery:
+  `head -c -56 NAME.tar.zst.enc | openssl enc -d -aes-256-ctr -pbkdf2 -iter 600000 -md sha256 | tar --zstd -x`,
+  and `restore.sh` of Linux data asks for the password by itself. Not encrypted: copies of the
+  identity partitions (EFS) and Linux boot + rootfs snapshots. Checked on the phone: a protected
+  Linux data copy made, opened on a computer with openssl, listed closed after a restart, opened
+  with the password and restored.
+- **A password is typed as dots** (0.6.232): the character just typed is seen for a moment, then
+  becomes a dot that springs in. A new password for copies and APatch's SuperKey have "Show".
+- **Check and repair for F2FS and FAT** (0.6.231): `fsck.f2fs` and `fsck.fat` from Arch Linux
+  ARM's signed packages (`tools/fetch-fsck-tools.sh` fetches and verifies them). Android's
+  encrypted data is left to Android. A FAT repair is confirmed by a second pass that changes
+  nothing. Checked on the phone on scratch filesystems.
+- **Linux data: package lists of Fedora and Alpine** (0.6.231): dnf5's own record of what was
+  asked for, and apk's world. openSUSE and dnf4 keep theirs in SQLite, which the recovery cannot
+  read. Not yet run against a real Fedora or Alpine system.
 - **Linux data** (0.6.226, Backup > Linux data): what is one's own in a Linux system, without the
   system: home folders, accounts (with passwords and admin right), settings (host name, language,
   time zone, Wi-Fi and Bluetooth, SSH host keys) and the list of packages, each chosen by itself,

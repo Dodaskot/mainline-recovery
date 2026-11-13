@@ -1076,7 +1076,8 @@ class CheckRepairTest(FilesystemFixtureSupport):
     def test_fixture_admission(self):
         self.cli('check', '--volume', 'sdcard-p1', '--confirm', ok=False)  # mounted
         self.config['volumes'][1]['mounted'] = False
-        self.config['volumes'].append({'id': 'usb-1', 'path': 'volumes/sd', 'fs_type': 'vfat', 'mounted': False, 'read_only': False})
+        self.config['volumes'].append({'id': 'usb-1', 'path': 'volumes/sd', 'fs_type': 'exfat', 'mounted': False, 'read_only': False})
+        self.config['volumes'].append({'id': 'usb-2', 'path': 'volumes/sd', 'fs_type': 'vfat', 'mounted': False, 'read_only': False})
         self.config['volumes'].append({'id': 'system', 'path': 'volumes/data', 'fs_type': 'ext4', 'mounted': False, 'read_only': True})
         self.write_config()
         self.assertEqual(self.cli('check', '--volume', 'sdcard-p1', ok=False)['error']['code'], 'CONFIRMATION_REQUIRED')
@@ -1084,6 +1085,35 @@ class CheckRepairTest(FilesystemFixtureSupport):
         self.assertEqual((done['checked'], done['result'], done['exit_code']), ('ext4', 'clean', 0))
         self.assertEqual(self.cli('check', '--volume', 'usb-1', '--confirm', ok=False)['error']['code'], 'UNSUPPORTED_FILESYSTEM')
         self.assertEqual(self.cli('check', '--volume', 'system', '--confirm', ok=False)['error']['code'], 'CHECK_FORBIDDEN')
+        # 2026-11-13: F2FS and FAT are checked too; Android's encrypted F2FS is left to Android.
+        self.assertEqual(self.cli('check', '--volume', 'usb-2', '--confirm')['checked'], 'vfat')
+        fs.check_admitted({'id': 'userdata', 'mounted': False, 'fs_type': 'f2fs', 'fscrypt_feature': False}, False)
+        self.assert_error('CHECK_FORBIDDEN', fs.check_admitted, {'id': 'userdata', 'mounted': False, 'fs_type': 'f2fs', 'fscrypt_feature': True}, False)
+
+    def test_f2fs_and_fat_tools_by_their_exit_codes(self):
+        tools = {}
+        for name, code in (('clean', 0), ('fixed', 1), ('left', 4), ('broken', 8)):
+            path = self.root / name
+            path.write_text('#!/bin/sh\necho "$0 $*" > "%s.args"\necho checked\nexit %d\n' % (path, code))
+            path.chmod(0o755)
+            tools[name] = str(path)
+        done = fs.run_fsck('/dev/x', 'f2fs', {'f2fs': tools['clean'], 'vfat': tools['fixed'], 'ext': tools['broken']})
+        self.assertEqual((done['result'], done['exit_code']), ('clean', 0))
+        self.assertTrue((self.root / 'clean.args').read_text().strip().endswith('-f -y /dev/x'))
+        # fsck.fat says 1 for "repaired" and for "could not read it": a pass that changes nothing decides.
+        flaky = self.root / 'fat'
+        flaky.write_text('#!/bin/sh\necho "$*" >> "%s.args"\ncase $1 in -n) exit ${FAT_AGAIN:-0} ;; esac\nexit 1\n' % flaky)
+        flaky.chmod(0o755)
+        done = fs.run_fsck('/dev/y', 'vfat', {'f2fs': tools['clean'], 'vfat': str(flaky), 'ext': tools['broken']})
+        self.assertEqual((done['result'], done['exit_code']), ('repaired', 1))
+        self.assertEqual((self.root / 'fat.args').read_text().split('\n')[:2], ['-a -w /dev/y', '-n /dev/y'])
+        os.environ['FAT_AGAIN'] = '1'
+        self.addCleanup(os.environ.pop, 'FAT_AGAIN', None)
+        self.assert_error('CHECK_FAILED', fs.run_fsck, '/dev/y', 'vfat', {'f2fs': '', 'vfat': str(flaky), 'ext': ''})
+        os.environ.pop('FAT_AGAIN')
+        self.assert_error('CHECK_ERRORS_LEFT', fs.run_fsck, '/dev/x', 'f2fs', {'f2fs': tools['left'], 'vfat': '', 'ext': ''})
+        self.assert_error('CHECK_FAILED', fs.run_fsck, '/dev/x', 'vfat', {'f2fs': '', 'vfat': tools['broken'], 'ext': ''})
+        self.assert_error('CHECK_UNAVAILABLE', fs.run_fsck, '/dev/x', 'f2fs', {'f2fs': str(self.root / 'none'), 'vfat': '', 'ext': ''})
 
     def test_mounted_volume_is_refused_with_its_reason(self):
         result = self.cli('check', '--volume', 'userdata', '--confirm', ok=False)

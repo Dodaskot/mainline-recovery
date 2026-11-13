@@ -300,6 +300,15 @@ msgstr "Ten sprawdzony plan wymaga prywatnego katalogu w RAM."
 msgid "A private runtime directory is required for reviewed plans."
 msgstr "Sprawdzone plany wymagają prywatnego katalogu roboczego."
 
+msgid "A protected archive needs a password"
+msgstr "Chronione archiwum wymaga hasła"
+
+msgid "A protected backup needs a password"
+msgstr "Chroniona kopia wymaga hasła"
+
+msgid "A protected copy needs a password"
+msgstr "Chroniona kopia wymaga hasła"
+
 msgid "A qualified stock profile is not available in this recovery."
 msgstr "W tym recovery nie ma zakwalifikowanego profilu fabrycznego."
 
@@ -618,6 +627,9 @@ msgstr "Potrzebny jest inny Android. Obrazy dla starszych telefonów (Treble GSI
 msgid "Another block device uses this card"
 msgstr "Inne urządzenie blokowe używa tej karty"
 
+msgid "another password"
+msgstr "inne hasło"
+
 msgid "Another phone"
 msgstr "Inny telefon"
 
@@ -710,6 +722,9 @@ msgstr "Wymagane przy starcie recovery"
 
 msgid "At least 4 characters."
 msgstr "Co najmniej 4 znaki."
+
+msgid "At least 6 characters. It is kept nowhere and asked again after a restart: without it the copies cannot be opened."
+msgstr "Co najmniej 6 znaków. Nie jest nigdzie zapisywane i po restarcie trzeba je podać ponownie: bez niego kopii nie da się otworzyć."
 
 msgid "At start"
 msgstr "Przy starcie"
@@ -1041,8 +1056,8 @@ msgstr "Sprawdź ponownie"
 msgid "Check and repair"
 msgstr "Sprawdzanie i naprawa"
 
-msgid "Check and repair: ext4 only"
-msgstr "Sprawdzanie i naprawa: tylko ext4"
+msgid "Check and repair: not for this filesystem"
+msgstr "Sprawdź i napraw: nie dla tego systemu plików"
 
 msgid "Check backup integrity"
 msgstr "Sprawdź spójność kopii"
@@ -2043,6 +2058,9 @@ msgstr "GSI"
 msgid "GSIs from the internet: choose the Android version and type"
 msgstr "GSI z internetu: wybierz wersję i typ Androida"
 
+msgid "Hide"
+msgstr "Ukryj"
+
 msgid "history"
 msgstr "historia"
 
@@ -2520,6 +2538,9 @@ msgstr "Dane Linuksa przywrócone"
 msgid "Linux data saved"
 msgstr "Dane Linuksa zapisane"
 
+msgid "Linux data saved, protected with the password"
+msgstr "Dane Linuksa zapisane i chronione hasłem"
+
 msgid "Linux from SD or USB stick, switch systems"
 msgstr "Linux z karty SD lub USB, zmiana systemu"
 
@@ -2792,6 +2813,9 @@ msgstr "Nigdy"
 
 msgid "New account"
 msgstr "Nowe konto"
+
+msgid "New copies are encrypted with it."
+msgstr "Nowe kopie są nim szyfrowane."
 
 msgid "New files belong to root:root (0644; folders 0755). MTP has limited Linux metadata support. Stop sharing before mounting, editing in recovery, or making an offline snapshot."
 msgstr "Nowe pliki należą do root:root (0644; foldery 0755). MTP słabo obsługuje metadane Linuksa. Zatrzymaj udostępnianie przed montowaniem, edycją w recovery lub migawką offline."
@@ -3330,6 +3354,9 @@ msgstr "HASŁO"
 msgid "Password"
 msgstr "Hasło"
 
+msgid "Password for copies"
+msgstr "Hasło do kopii"
+
 msgid "Password removed"
 msgstr "Usunięto hasło"
 
@@ -3449,6 +3476,12 @@ msgstr "Procesor"
 
 msgid "Profile unavailable"
 msgstr "Profil niedostępny"
+
+msgid "Protect copies with a password"
+msgstr "Chroń kopie hasłem"
+
+msgid "protected: tap to open"
+msgstr "chroniona: dotknij, aby otworzyć"
 
 msgid "Published: %s"
 msgstr "Opublikowane: %s"
@@ -4251,6 +4284,9 @@ msgstr "Shift"
 msgid "Short press Power to turn the screen off or on."
 msgstr "Krótko naciśnij zasilanie, by wyłączyć lub włączyć ekran."
 
+msgid "Show"
+msgstr "Pokaż"
+
 msgid "Sign-in"
 msgstr "Logowanie"
 
@@ -4854,6 +4890,12 @@ msgstr "Tablica DT jest ucięta"
 msgid "The DT table lies outside the partition"
 msgstr "Tablica DT leży poza partycją"
 
+msgid "The encrypted archive is cut short or was changed"
+msgstr "Zaszyfrowane archiwum jest ucięte lub zostało zmienione"
+
+msgid "The encrypted archive was changed or is damaged"
+msgstr "Zaszyfrowane archiwum zostało zmienione lub jest uszkodzone"
+
 msgid "The exact plan, source, backup, targets, journal or safety policy was not confirmed."
 msgstr "Nie potwierdzono dokładnie planu, źródła, kopii, celów, dziennika ani zasad bezpieczeństwa."
 
@@ -5079,6 +5121,12 @@ msgstr "Instalatory zakończyły pracę"
 msgid "The interrupted transaction changed. Review the refreshed Systems screen."
 msgstr "Przerwana transakcja się zmieniła. Przejrzyj odświeżony ekran Systemów."
 
+msgid "The kernel cipher returned too little"
+msgstr "Szyfr jądra zwrócił za mało danych"
+
+msgid "The kernel cipher took a partial block"
+msgstr "Szyfr jądra przyjął niepełny blok"
+
 msgid "The kernel could not read the new partition table"
 msgstr "Jądro nie mogło odczytać nowej tablicy partycji"
 
@@ -5295,8 +5343,23 @@ msgstr "Różniące się partycje są najpierw zapisywane w nowej kopii, potem z
 msgid "The password could not be changed"
 msgstr "Nie można zmienić hasła"
 
+msgid "The password could not be kept"
+msgstr "Nie udało się zapamiętać hasła"
+
+msgid "The password does not open this backup"
+msgstr "Hasło nie otwiera tej kopii"
+
+msgid "The password does not open this copy. Try again."
+msgstr "Hasło nie otwiera tej kopii. Spróbuj ponownie."
+
+msgid "The password is too long"
+msgstr "Hasło jest za długie"
+
 msgid "The password is wrong."
 msgstr "Hasło jest nieprawidłowe."
+
+msgid "The password the copy was made with."
+msgstr "Hasło, z którym wykonano kopię."
 
 msgid "The password was set in the Android app."
 msgstr "Hasło ustawiono w aplikacji Androida."
@@ -5688,6 +5751,9 @@ msgstr "Ten Android wymaga jądra %s lub nowszego. Jądro Androida w tym telefon
 msgid "This backup belongs to another phone. Restoring it would give this phone a foreign identity"
 msgstr "Ta kopia należy do innego telefonu. Jej przywrócenie dałoby temu telefonowi cudzą tożsamość"
 
+msgid "This backup is protected with a password"
+msgstr "Ta kopia jest chroniona hasłem"
+
 msgid "This BOOT already has another root: flash the stock BOOT back first (Remove root)"
 msgstr "Ten BOOT ma już inny root: najpierw wgraj z powrotem fabryczny BOOT (Usuń root)"
 
@@ -5708,6 +5774,9 @@ msgstr "Ta kompresja nie jest obsługiwana"
 
 msgid "This copy is no longer listed. Go back and read the cards again."
 msgstr "Tej kopii nie ma już na liście. Wróć i odczytaj karty ponownie."
+
+msgid "This copy is protected with a password."
+msgstr "Ta kopia jest chroniona hasłem."
 
 msgid "This copy needs about %s, and %s has %s free. Free some room there, leave partitions out, or choose another card."
 msgstr "Ta kopia wymaga około %s, a na %s wolne jest %s. Zwolnij tam miejsce, pomiń część partycji albo wybierz inną kartę."

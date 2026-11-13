@@ -43,6 +43,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -55,6 +56,7 @@ import filesystem as fs
 import install
 from install import require
 from operation_lock import operation_lock
+import archive_crypt
 import partition_archive as archive
 
 SCHEMA = 'a22x.identity-backup.v1'
@@ -395,7 +397,7 @@ def save_archive(context, volume, parts, progress):
             stamp = PREFIX + time.strftime('-%Y%m%d-%H%M%S', time.gmtime())
             taken = set(os.listdir(top))
             for attempt in range(100):
-                name = stamp + ('-%d' % attempt if attempt else '') + archive.SUFFIX
+                name = stamp + ('-%d' % attempt if attempt else '') + archive.new_suffix()
                 partial = '.' + name + '.partial'
                 if name in taken or partial in taken:
                     continue
@@ -542,14 +544,14 @@ def checked_manifest(data):
 
 
 def is_archive(path):
-    return ARCHIVE and isinstance(path, str) and path.endswith(archive.SUFFIX)
+    return ARCHIVE and isinstance(path, str) and path.endswith(archive.SUFFIXES)
 
 
 @contextlib.contextmanager
 def backup_archive(context, volume, path):
     """An archive copy, opened: its descriptor, its manifest, the manifest's SHA-256 and bytes."""
     parts = fs.path_parts(path)
-    require(len(parts) == 2 and parts[0] == FOLDER and parts[1].endswith(archive.SUFFIX) and not parts[1].startswith('.'),
+    require(len(parts) == 2 and parts[0] == FOLDER and parts[1].endswith(archive.SUFFIXES) and not parts[1].startswith('.'),
             'INVALID_BACKUP_PATH', 'Choose an archive inside %s' % FOLDER)
     with fs.PinnedVolume(context.fs, volume) as pin, pin.directory('/' + FOLDER) as top:
         fd = os.open(parts[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=top)
@@ -639,10 +641,23 @@ def volume_copies(context, volume):
         try:
             if is_archive(path):
                 with backup_archive(context, volume, path) as (fd, manifest, manifest_sha, _raw):
-                    rows.append(copy_row(context, path, manifest, manifest_sha, os.fstat(fd).st_size))
+                    rows.append({**copy_row(context, path, manifest, manifest_sha, os.fstat(fd).st_size),
+                                 'encrypted': path.endswith(archive.ENCRYPTED_SUFFIX), 'locked': False})
             else:
                 with backup_folder(context, volume, path) as (_folder, manifest, manifest_sha):
                     rows.append(copy_row(context, path, manifest, manifest_sha))
+        except archive.ArchiveError as error:
+            if error.code not in ('PASSWORD_REQUIRED', 'WRONG_PASSWORD'):
+                continue
+            # 2026-11-13: a copy protected with a password is listed, closed: its name says when it
+            # was made; what is in it is shown once the password opens it.
+            stamp = re.search(r'-(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)', name)
+            with fs.PinnedVolume(context.fs, volume) as pin, pin.directory('/' + FOLDER) as top:
+                size = os.stat(name, dir_fd=top, follow_symlinks=False).st_size
+            rows.append({'path': path, 'created_utc': '%s-%s-%sT%s:%s:%sZ' % stamp.groups() if stamp else None, 'same_phone': True,
+                         'data_same_phone': False, 'partitions': 0, 'manifest_sha256': '', 'bytes': 0, 'labels': [],
+                         'archive': True, 'file_bytes': size, 'encrypted': True, 'locked': True,
+                         'wrong_password': error.code == 'WRONG_PASSWORD'})
         except (OSError, ValueError, fs.FilesystemError):
             continue
     return rows
@@ -1035,6 +1050,9 @@ def parser():
     mode.add_argument('--fixture', type=Path)
     result.add_argument('--kind', choices=sorted(KINDS), default='identity')
     result.add_argument('--labels', default='')
+    # 2026-11-13: the password that opens protected copies, and whether a new copy is protected with it.
+    result.add_argument('--password-file')
+    result.add_argument('--encrypt', action='store_true')
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('list')
     commands.add_parser('backup').add_argument('--volume', required=True)
@@ -1064,6 +1082,9 @@ def main(argv=None):
 
     try:
         use(args.kind, args.labels)
+        archive.PASSWORD = archive_crypt.read_password(args.password_file)
+        archive.ENCRYPT = bool(args.encrypt and ARCHIVE)
+        require(not archive.ENCRYPT or archive.PASSWORD, 'PASSWORD_REQUIRED', 'A protected copy needs a password')
         context = Fixture(args.fixture) if args.fixture else Device()
         result = {'list': lambda: listing(context), 'backup': lambda: backup(context, args, progress),
                   'verify': lambda: verify(context, args, progress), 'restore': lambda: restore(context, args, progress),

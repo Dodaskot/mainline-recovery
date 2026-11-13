@@ -59,6 +59,8 @@
 #define MAX_VOLUMES 80
 #define FILE_BATCH 64
 #define FS_SEL_MAX 512
+#define SECRET_REVEAL_MS 900u
+#define SECRET_POP_MS 420u
 #define LD_PARTS 4u
 #define LD_DESTS 4u
 #define LD_ARCHIVES 6u
@@ -140,7 +142,7 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
     A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_RESET,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
-    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE,A_FS_SEL_ARCHIVE,A_FS_EXTRACT,A_LD=7680,A_LD_DEST,A_LD_BACKUP,A_LD_REFRESH,A_LD_RESTORE,A_LD_PART=7690 /* ..7693 */,A_LD_RPART=7695 /* ..7698 */,A_LD_ARCHIVE=7700 /* ..7705 */ };
+    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE,A_FS_SEL_ARCHIVE,A_FS_EXTRACT,A_LD=7680,A_LD_DEST,A_LD_BACKUP,A_LD_REFRESH,A_LD_RESTORE,A_LD_PART=7690 /* ..7693 */,A_LD_RPART=7695 /* ..7698 */,A_LD_ARCHIVE=7700 /* ..7705 */,A_BACKUP_ENCRYPT=7710,A_BACKUP_PASSWORD_FIELD,A_SECRET_SHOW };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
     J_FS_STAT,J_FS_CHMOD,J_FS_CHOWN,J_FS_RESOLVE,J_FS_COPY_TREE,J_FS_FORMAT,J_FS_CHECK,J_FS_RESIZE,J_TOOLS_STATUS,J_TOOLS_EXPORT,J_DISPLAY_STATUS,J_DISPLAY_SET,J_WIPE_PLAN,J_WIPE,J_USB_STATUS,J_USB_START,J_USB_STOP,
@@ -148,6 +150,7 @@ enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J
     J_INSTALL_STATUS,J_INSTALL_BOOT_PLAN,J_INSTALL_STOCK_PLAN,J_INSTALL_RESUME_PLAN,J_INSTALL_EXECUTE,J_FLASH_TARGETS,J_FLASH_CHECK,J_FLASH_WRITE,J_FLASH_MEMBERS,J_USB_SYNC,J_USB_BACKUP,J_USB_EJECT,J_SYS_ACCOUNT_USER,J_SYS_ACCOUNT_PASS,J_SYS_WIFI_SSID,J_SYS_WIFI_PASS,J_LOCK_ENTER,J_LOCK_SET,J_LOCK_OLD,J_LOCK_CONFIRM,J_LOCK_ACCESS,J_SYSINFO,J_THEME_IMPORT,J_THEME_REMOVE,J_THEME_RESTORE,
     J_WIFI_STATUS,J_WIFI_SCAN,J_WIFI_CONNECT,J_WIFI_DISCONNECT,J_WIFI_FORGET,J_WIFI_SSID,J_WIFI_PASS,J_CATALOG,J_CATALOG_CHECK,J_PKG_SEARCH,J_PKG_QUERY,J_ID_LIST,J_ID_BACKUP,J_ID_BACKUPS,J_ID_RESTORE,J_ID_DELETE,J_CHARGER,J_IMAGES,J_IMAGES_DOWNLOAD,J_IMAGES_DELETE,J_APLAN_SHOW,J_APLAN_PREPARE,J_APLAN_FORGET,J_WIPE_CACHE,J_SAMSUNG_INSPECT,J_SAMSUNG_INSTALL,J_ANDROID_RESET,J_STOCK_BOOT,J_SAMSUNG_UNPACK,J_ROOT_LIST,J_ROOT_INSTALL,J_ROOT_PREPARE,J_ZIP_INSPECT,J_ZIP_RUN,J_BACKUP_RENAME,J_BACKUP_DELETE,J_CARD_LIST,J_CARD_APPLY,
     J_COPY_LIST,J_COPY_VERIFY,J_COPY_RESTORE,J_COPY_DELETE,J_ROM_KIND,J_UPDATES_CHECK,J_UPDATES_FETCH,J_FS_DELETE_MANY,J_ARCHIVE_PACK,J_ARCHIVE_UNPACK,J_LD_INSPECT,J_LD_BACKUP,J_LD_RESTORE,
+    J_BACKUP_PASSWORD /* a prompt: the password of protected copies */,
     J_ROOT_SUPERKEY /* a prompt, not a job: APatch's SuperKey */,J_BACKUP_NAME /* a prompt: the new name of a backup */ };
 enum ScrollSurface { SCROLL_NONE,SCROLL_FOLDER,SCROLL_VOLUMES,SCROLL_TEXT,SCROLL_PROMPT,SCROLL_TERMINAL,SCROLL_SYSTEMS,SCROLL_TOOLS,SCROLL_INSTALL_REVIEW,SCROLL_INSTALL_PENDING,SCROLL_PAGE };
 enum DisplayCommand { DC_NONE,DC_STATUS,DC_BRIGHTNESS,DC_BLANK,DC_WAKE,DC_TOGGLE };
@@ -193,7 +196,7 @@ typedef struct { char label[64],path[PATH_LEN]; uint64_t bytes; bool available,m
 #define ZIP_RESTART_MS 10000u
 typedef struct { char volume[96],token[80],path[PATH_LEN],name[208],sha[72],title[128],what[16],installer[16],changed[160];uint64_t size;unsigned int files;int state; /* 0 waits, 1 finished, 2 failed */ } ZipItem;
 #define COPY_WAITING 4
-typedef struct { char volume[32],token[72],place[64],path[256],created[32],sha[72],labels[COPY_PARTS][24]; unsigned int parts; uint64_t bytes,file_bytes; bool archive,writable,same; } PhoneCopy;
+typedef struct { char volume[32],token[72],place[64],path[256],created[32],sha[72],labels[COPY_PARTS][24]; unsigned int parts; uint64_t bytes,file_bytes; bool archive,writable,same,locked,encrypted,wrong; } PhoneCopy;
 typedef struct { char id[32],token[72],label[64],fs[16]; uint64_t bytes; } CopyVolume;
 typedef struct {
     char id[128],label[160],fs_type[40],mountpoint[PATH_LEN],reason[384],read_only_reason[384],token[256],mount_owner[40];
@@ -204,7 +207,7 @@ typedef struct { char name[256],path[PATH_LEN],type[32],mode[16],token[256],link
 typedef struct {char id[128],label[160],mountpoint[PATH_LEN],volume_token[256],mount_token[256];bool writable;} UsbCandidate;
 typedef struct {char id[80],name[400];bool active,boot_tested;} SystemSlot;
 typedef struct {char id[64],label[100];uint64_t free;} LdDest;
-typedef struct {char volume[64],token[80],path[300],name[128],label[100],os[96],accounts[160];unsigned int parts,packages;uint64_t bytes,created;} LdArchive;
+typedef struct {char volume[64],token[80],path[300],name[128],label[100],os[96],accounts[160];unsigned int parts,packages;uint64_t bytes,created;bool locked,encrypted,wrong;} LdArchive;
 typedef struct {
     int kind;
     char volume[128],volume_token[256],path[PATH_LEN],destination_volume[128],destination_token[256],destination[PATH_LEN];
@@ -398,6 +401,11 @@ typedef struct {
     bool fs_truncated,fs_dirty,fs_new_file,kb_shift,kb_uk,kb_symbols;
     /* Several entries of one folder chosen by a long press (2026-11-13): with fs_select_all the names
        are the ones left out, else the ones chosen. */
+    /* Copies protected with a password (2026-11-13): typed once, kept in RAM for this start of the
+       recovery and handed to the helpers in a file of the private RAM folder. */
+    /* A password as dots: when the last character was typed, and how many there were then. */
+    uint64_t secret_typed_at;unsigned int secret_count;bool secret_show;
+    bool backup_encrypt,pw_wrong;char backup_password[260],backup_password_file[PATH_LEN];int pw_retry_kind;enum Screen pw_return;
     bool ld_known,ld_linux;char ld_os[96],ld_accounts[160];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
     bool fs_select,fs_select_all;unsigned int fs_sel_count;char fs_sel[FS_SEL_MAX][256];
     int fs_prompt_kind,fs_destination_index;
@@ -1122,6 +1130,9 @@ static void render_backup(App*a){
      ellipsis(a,120,r.y+64,500,0,MUTED,"Home, accounts, settings, packages: for another system or device");icon(a,ICON_CHEVRON,640,r.y+44,32,MUTED);register_button(a,r,A_LD,ui_free(a),0);}
     destination(a,930);
     text_tile(a,1106,0,MUTED,!strcmp(a->profile,"linux")&&!a->linux_backup_available&&a->inventory_ok?"Compact Linux backup tools are unavailable in this recovery. Refresh system status to check availability.":"Planning measures the compressed size and checks free space on the destination. Userdata stays offline afterward.",5);
+    {Rect r={28,1232,664,74};rounded(a,r,20,a->backup_encrypt?PANEL2:PANEL);int cx=66,cy=r.y+37;
+     if(a->backup_encrypt){vector_circle(a,cx,cy,16,16,ORANGE);vector_line(a,cx-7,cy,cx-2,cy+6,3,ON_ORANGE);vector_line(a,cx-2,cy+6,cx+8,cy-6,3,ON_ORANGE);}else vector_circle(a,cx,cy,16,3,LINE);
+     ellipsis(a,104,r.y+20,560,1,TEXT,"Protect copies with a password");register_button(a,r,A_BACKUP_ENCRYPT,ui_free(a),0);}
     button(a,(Rect){28,1322,664,94},"Review backup",A_REVIEW_BACKUP,ui_free(a)&&a->repository_count>0&&(strcmp(a->profile,"linux")||a->linux_backup_available||a->preview),true,0);
 }
 static bool backup_is_linux_v2(const BackupEntry*e){return !strcmp(e->schema,"a22x.backup.v2")&&!strcmp(e->workflow,"linux-partclone-v2")&&!strcmp(e->profile,"linux");}
@@ -1895,10 +1906,11 @@ static void render_file_volume(App*a){
         }else{
             button(a,(Rect){28,1000,664,80},"Mount read-only",A_FS_MOUNT_RO,ui_free(a)&&v->mountable,true,0);
             button(a,(Rect){28,1092,664,76},"Mount with write access",A_FS_MOUNT_RW,ui_free(a)&&can_rw,false,0);
-            /* Like the file system repair and resize in TWRP: e2fsck and resize2fs, so ext2/3/4 only;
-               the recovery has no F2FS or FAT fsck. */
+            /* Like the file system repair and resize in TWRP: e2fsck and resize2fs for ext2/3/4; since
+               2026-11-13 fsck.f2fs and fsck.fat check and repair F2FS and FAT (not Android's encrypted data). */
             bool ext=!strcmp(v->fs_type,"ext4")||!strcmp(v->fs_type,"ext3")||!strcmp(v->fs_type,"ext2");int y=1180;
-            button(a,(Rect){28,y,664,76},ext?"Hold: check and repair":"Check and repair: ext4 only",A_FS_CHECK,ui_free(a)&&ext,false,ext?2000:0);y+=88;
+            bool checked=ext||!strcmp(v->fs_type,"vfat")||(!strcmp(v->fs_type,"f2fs")&&v->write_supported);
+            button(a,(Rect){28,y,664,76},checked?"Hold: check and repair":"Check and repair: not for this filesystem",A_FS_CHECK,ui_free(a)&&checked,false,checked?2000:0);y+=88;
             if(ext){button(a,(Rect){28,y,664,76},"Hold: grow to fill the partition",A_FS_RESIZE,ui_free(a),false,2000);y+=88;}
             button(a,(Rect){28,y,320,76},"Hold: erase, ext4",A_FS_FORMAT_EXT4,ui_free(a),false,internal?6000:4000);
             button(a,(Rect){372,y,320,76},internal?"Hold: erase, F2FS":"Hold: erase, FAT32",internal?A_FS_FORMAT_F2FS:A_FS_FORMAT_VFAT,ui_free(a),false,internal?6000:4000);
@@ -1995,7 +2007,7 @@ static void render_file_browser(App*a){
 }
 static bool theme_file_name(const char*name){return theme_file_suffix(name,".a22xtheme");}
 static bool tar_archive_name(const char*name){
-    static const char*const ends[]={".tar.zst",".tar.gz",".tgz",".tar.xz",".tar"};
+    static const char*const ends[]={".tar.zst.enc",".tar.zst",".tar.gz",".tgz",".tar.xz",".tar"};
     size_t length=strlen(name);for(size_t n=0;n<sizeof(ends)/sizeof(ends[0]);n++){size_t e=strlen(ends[n]);if(length>e&&!strcasecmp(name+length-e,ends[n]))return true;}
     return false;
 }
@@ -2208,13 +2220,32 @@ static void pad_side(App*a,int cx,int cy,int glyph,const char*label,int action){
     if(label)centered(a,(Rect){r.x-16,cy+(glyph?14:-20),r.w+32,40},0,TEXT,label);
     register_button(a,r,action,true,0);
 }
+/* A password as dots (2026-11-13, the owner): the character just typed is seen for a moment, then
+   becomes a dot that grows in past its size and settles, as a spring does. LIVE: this is the field
+   being typed into. Returns the width the dots take. */
+static float secret_spring(float t){return t>=1.f?1.f:1.f-expf(-5.5f*t)*cosf(11.f*t);}
+static bool secret_animating(const App*a){return a->secret_typed_at&&a->now<a->secret_typed_at+SECRET_REVEAL_MS+SECRET_POP_MS+60u;}
+static int secret_dots(App*a,const char*value,int center,int cy,int gap,int radius,unsigned int limit,bool live){
+    unsigned int count=0;const char*last=value;for(const char*p=value;*p;count++){last=p;(void)utf8_next(&p);}
+    if(!count)return 0;
+    unsigned int shown=count>limit?limit:count;int x=center-gap*(int)(shown-1)/2;
+    uint64_t age=a->now>=a->secret_typed_at?a->now-a->secret_typed_at:0;
+    bool fresh=live&&a->secret_typed_at&&count==a->secret_count&&age<SECRET_REVEAL_MS+SECRET_POP_MS;
+    for(unsigned int n=0;n<shown;n++,x+=gap){
+        if(fresh&&n+1==shown){
+            if(age<SECRET_REVEAL_MS){raw_text(true);centered(a,(Rect){x-40,cy-36,80,72},2,TEXT,last);raw_text(false);}
+            else{float r=(float)radius*secret_spring((float)(age-SECRET_REVEAL_MS)/(float)SECRET_POP_MS);
+                 if(r>0.3f)canvas_ring(a->pixels,canvas_bounds(a),(float)x*1.5f,(float)cy*1.5f,r*1.5f,r*1.5f,TEXT);}
+        }else vector_circle(a,x,cy,radius,radius,TEXT);
+    }
+    return (int)(shown-1)*gap+radius*2;
+}
 static void pad_dots(App*a,int cy){
     unsigned int typed=0,shown;for(const char*p=a->fs_prompt;*p;typed++)(void)utf8_next(&p);
     shown=typed>16?16:typed;
     int gap=shown>10?36:46,shake=0;
     if(a->now<a->lock_shake_until){float left=(float)(a->lock_shake_until-a->now)/400.f;shake=(int)(sinf(left*22.f)*16.f*left);}
-    int x=CW/2-gap*(int)(shown-1)/2+shake;
-    for(unsigned int n=0;n<shown;n++,x+=gap)vector_circle(a,x,cy,12,12,TEXT);
+    (void)secret_dots(a,a->fs_prompt,CW/2+shake,cy,gap,12,16,true);
 }
 /* The button says what will happen: this page opens the phone, keeps a password or allows a computer. */
 static const char*lock_button(const App*a){
@@ -2265,9 +2296,7 @@ static void account_field(App*a,int y,const char*label,const char*value,bool sec
     text(a,52,y+16,0,focused?ORANGE:MUTED,label);
     int middle=y+84,width=0;
     if(secret&&value[0]){
-        unsigned int count=0;for(const char*p=value;*p;count++)(void)utf8_next(&p);
-        unsigned int shown=count>18?18:count;int gap=32;width=(int)(shown-1)*gap+20;
-        for(unsigned int n=0;n<shown;n++)vector_circle(a,CW/2-width/2+10+(int)n*gap,middle,10,10,TEXT);
+        width=secret_dots(a,value,CW/2,middle,32,10,18,focused&&value==a->fs_prompt&&a->prompt_cursor==strlen(a->fs_prompt));
     }else if(value[0]){
         raw_text(true);width=text_width(value,2);centered(a,(Rect){r.x+24,y+48,r.w-48,72},2,TEXT,value);raw_text(false);
         if(width>r.w-48)width=r.w-48;
@@ -2310,9 +2339,11 @@ static void render_backup_name_prompt(App*a){
 /* The prompts of a new system's account and of Wi-Fi: their own kinds, not everything after them
    (2026-11-13: the archive's path, a later kind, opened as the account page). */
 static bool account_prompt_kind(int kind){return (kind>=J_SYS_ACCOUNT_USER&&kind<=J_SYS_WIFI_PASS)||kind==J_WIFI_SSID||kind==J_WIFI_PASS;}
+static void render_backup_password_prompt(App*a);
 static void render_file_prompt(App*a){
     if(lock_kind(a->fs_prompt_kind)){render_lock_prompt(a);return;}
     if(a->fs_prompt_kind==J_PKG_QUERY){render_package_prompt(a);return;}
+    if(a->fs_prompt_kind==J_BACKUP_PASSWORD){render_backup_password_prompt(a);return;}
     if(a->fs_prompt_kind==J_ROOT_SUPERKEY){render_superkey_prompt(a);return;}
     if(a->fs_prompt_kind==J_BACKUP_NAME){render_backup_name_prompt(a);return;}
     if(account_prompt_kind(a->fs_prompt_kind)){render_account_prompt(a);return;}
@@ -2818,6 +2849,7 @@ static bool write_selection(App*a,FileRequest*q){
     if(!ok){unlink(q->text_file);q->text_file[0]=0;files_problem(a,"SELECTION_STAGE_FAILED","Could not prepare the selection in RAM.",FILE_BROWSER);}
     return ok;
 }
+static void backup_password_args(App*a,char**args,int*n,bool creating);
 static bool start_files_request(App*a,const FileRequest*request){
     if(a->job.pid||a->preview)return false;
     if(!a->filesystem_helper[0]){files_problem(a,"FILES_UNAVAILABLE","The filesystem helper is not configured.",FILE_VOLUMES);return false;}
@@ -2846,8 +2878,8 @@ static bool start_files_request(App*a,const FileRequest*request){
     else if(q.kind==J_FS_DELETE_MANY){args[n++]="--path";args[n++]=q.path;args[n++]="--selection-file";args[n++]=q.text_file;args[n++]="--confirm";}
     else if(q.kind==J_ARCHIVE_PACK){args[n++]="--path";args[n++]=q.path;args[n++]="--selection-file";args[n++]=q.text_file;
         args[n++]="--destination-volume";args[n++]=q.destination_volume;args[n++]="--expected-destination-volume-token";args[n++]=q.destination_token;
-        args[n++]="--destination";args[n++]=q.destination;args[n++]="--confirm";}
-    else if(q.kind==J_ARCHIVE_UNPACK){args[n++]="--path";args[n++]=q.path;args[n++]="--confirm";}
+        args[n++]="--destination";args[n++]=q.destination;args[n++]="--confirm";backup_password_args(a,args,&n,true);}
+    else if(q.kind==J_ARCHIVE_UNPACK){args[n++]="--path";args[n++]=q.path;args[n++]="--confirm";backup_password_args(a,args,&n,false);}
     else if(q.kind>=J_FS_LIST){
         args[n++]="--path";args[n++]=q.path;
         if(q.kind==J_FS_LIST){args[n++]="--offset";args[n++]=offset;args[n++]="--limit";args[n++]=limit;}
@@ -3449,6 +3481,41 @@ static void complete_theme_job(App*a,const Json*j,int kind,bool ok){
     screen(a,!interface&&!from_terminal?TERMINAL_THEME:back);
 }
 static void theme_file_chosen(App*a){start_theme_job(a,J_THEME_IMPORT);}
+/* 2026-11-13: copies protected with a password (archive_crypt.py). */
+static bool backup_password_ok(const char*s){size_t n=strlen(s);return n>=6&&n<=128;}
+static bool backup_password_store(App*a,const char*text){
+    if(!private_workdir(a->workdir))return false;
+    if(snprintf(a->backup_password_file,sizeof(a->backup_password_file),"%s/backup-password",a->workdir)>=(int)sizeof(a->backup_password_file))return false;
+    unlink(a->backup_password_file);
+    int fd=open(a->backup_password_file,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0600);if(fd<0){a->backup_password_file[0]=0;return false;}
+    size_t length=strlen(text);bool ok=write(fd,text,length)==(ssize_t)length&&write(fd,"\n",1)==1;
+    if(close(fd)<0)ok=false;
+    if(!ok){unlink(a->backup_password_file);a->backup_password_file[0]=0;return false;}
+    copy(a->backup_password,sizeof(a->backup_password),text);return true;
+}
+/* What a helper is given: the password when one is known; CREATING, whether new copies take it. */
+static void backup_password_args(App*a,char**args,int*n,bool creating){
+    if(!a->backup_password[0]||!a->backup_password_file[0])return;
+    args[(*n)++]="--password-file";args[(*n)++]=a->backup_password_file;
+    if(creating&&a->backup_encrypt)args[(*n)++]="--encrypt";
+}
+static void backup_password_ask(App*a,int retry_kind,bool wrong,enum Screen back){
+    a->pw_retry_kind=retry_kind;a->pw_wrong=wrong;a->pw_return=back;a->fs_prompt_kind=J_BACKUP_PASSWORD;a->secret_show=false;a->secret_typed_at=0;
+    memset(a->fs_prompt,0,sizeof(a->fs_prompt));a->prompt_cursor=0;a->prompt_scroll=0;screen(a,FILE_PROMPT);
+}
+static void render_backup_password_prompt(App*a){
+    heading(a,"Password for copies",a->pw_retry_kind!=J_NONE?"This copy is protected with a password.":"New copies are encrypted with it.",true);
+    account_field(a,236,"PASSWORD",a->fs_prompt,!a->secret_show,true,A_BACKUP_PASSWORD_FIELD);
+    bool ready=backup_password_ok(a->fs_prompt);
+    /* A typing slip in a new password would close the copies for good: it can be looked at. */
+    button(a,(Rect){210,540,300,60},a->secret_show?"Hide":"Show",A_SECRET_SHOW,ui_free(a),false,0);
+    if(a->pw_wrong)wrapped(a,40,394,640,0,RED,"The password does not open this copy. Try again.",2);
+    else wrapped(a,40,394,640,0,a->fs_prompt[0]&&!ready?ORANGE:MUTED,a->pw_retry_kind!=J_NONE?"The password the copy was made with.":
+                 "At least 6 characters. It is kept nowhere and asked again after a restart: without it the copies cannot be opened.",4);
+    render_keyboard(a);
+    button(a,(Rect){28,1370,256,84},"Cancel",A_BACK,ui_free(a),false,0);
+    button(a,(Rect){304,1370,388,84},"Done",A_FS_PROMPT_NEXT,ui_free(a)&&ready,true,0);
+}
 #include "terminal_ui.h"
 #include "source_ui.h"
 #include "systems_ui.h"
@@ -3506,6 +3573,15 @@ static void complete_job(App*a){
     /* The list starts the server check from its completion: that new job owns a->job, so this
        reply is taken off it first. Freeing j->output afterwards dropped the check's own buffer and
        every check then reported that the servers did not answer (2026-11-08, found on the phone). */
+    if(parsed&&!ok&&(ld_job(kind)||copy_job(kind)||kind==J_ARCHIVE_UNPACK||(kind>=J_ID_LIST&&kind<=J_ID_DELETE))){
+        /* 2026-11-13: a copy protected with a password: it is asked for, and the work starts again. */
+        char code[40]="";int error=json_get(&doc,0,"error");if(error>=0&&tok[error].type==J_OBJECT)jstring(&doc,error,"code",code,sizeof(code));
+        if(!strcmp(code,"PASSWORD_REQUIRED")||!strcmp(code,"WRONG_PASSWORD")){
+            enum Screen back=ld_job(kind)?(kind==J_LD_RESTORE?LINUX_DATA_RESTORE:LINUX_DATA):(copy_job(kind)?(kind==J_COPY_LIST?LIST:COPY_DETAIL):(kind==J_ARCHIVE_UNPACK?FILE_INFO:IDENTITY));
+            if(kind==J_ARCHIVE_UNPACK&&a->fs_request.text_file[0])a->fs_request.text_file[0]=0;
+            free(tok);job_reply_done(a,ended);backup_password_ask(a,kind,code[0]=='W',back);return;
+        }
+    }
     if(kind==J_CATALOG||kind==J_CATALOG_CHECK){char*reply=j->output;j->output=NULL;complete_catalog_job(a,parsed?&doc:NULL,ok,kind==J_CATALOG_CHECK);free(tok);free(reply);return;}
     if(kind==J_CHARGER){complete_charger_job(a,parsed?&doc:NULL,ok);free(tok);job_reply_done(a,ended);return;}
     if(images_job(kind)){complete_images_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
@@ -3755,6 +3831,7 @@ static void insert_character(App*a,uint32_t cp){
     if(length+count>=capacity){copy(a->fs_status,sizeof(a->fs_status),"Text limit reached");a->dirty=true;return;}
     if(*cursor>length)*cursor=length;
     memmove(s+*cursor+count,s+*cursor,length-*cursor+1);memcpy(s+*cursor,encoded,count);*cursor+=count;
+    if(a->screen==FILE_PROMPT){a->secret_typed_at=a->now?a->now:milliseconds();a->secret_count=0;for(const char*p=s;*p;a->secret_count++)(void)utf8_next(&p);}
     if(a->screen==FILE_EDIT){a->fs_length=length+count;a->fs_dirty=true;a->fs_caret_follow=true;}else a->prompt_caret_follow=true;a->dirty=true;
 }
 static void erase_character(App*a){
@@ -3874,7 +3951,7 @@ static bool files_action(App*a,int id){
     case A_KB_SHIFT:a->kb_shift=!a->kb_shift;a->dirty=true;return true;
     case A_KB_LANG:a->kb_uk=!a->kb_uk;a->dirty=true;return true;
     case A_KB_SYMBOLS:a->kb_symbols=!a->kb_symbols;a->dirty=true;return true;
-    case A_KB_BACKSPACE:erase_character(a);return true;
+    case A_KB_BACKSPACE:a->secret_typed_at=0;erase_character(a);return true;
     case A_KB_SPACE:insert_character(a,' ');return true;
     case A_KB_ENTER:insert_character(a,'\n');return true;
     default:return false;
@@ -4254,7 +4331,35 @@ static bool manage_action(App*a,int id){
     if(id==A_BACKUP_DELETE){(void)start_job(a,J_BACKUP_DELETE);return true;}
     return false;
 }
+/* The password page: the toggle on the Backup page opens it, and so does a copy that a helper
+   could not open; then the work it interrupted starts again. */
+static bool backup_password_action(App*a,int id){
+    if(id==A_BACKUP_ENCRYPT&&a->screen==BACKUP){
+        if(!ui_free(a))return true;
+        if(a->backup_encrypt){a->backup_encrypt=false;a->dirty=true;}
+        else if(a->backup_password[0]){a->backup_encrypt=true;a->dirty=true;}
+        else backup_password_ask(a,J_NONE,false,BACKUP);
+        return true;
+    }
+    if(id==A_SECRET_SHOW&&a->screen==FILE_PROMPT&&(a->fs_prompt_kind==J_BACKUP_PASSWORD||a->fs_prompt_kind==J_ROOT_SUPERKEY)){a->secret_show=!a->secret_show;a->dirty=true;return true;}
+    if(a->screen!=FILE_PROMPT||a->fs_prompt_kind!=J_BACKUP_PASSWORD)return false;
+    bool done=(id==A_FS_PROMPT_NEXT||id==A_KB_ENTER)&&backup_password_ok(a->fs_prompt);
+    if(id==A_BACKUP_PASSWORD_FIELD||((id==A_FS_PROMPT_NEXT||id==A_KB_ENTER)&&!done))return true;
+    if(id!=A_BACK&&!done)return false; /* The keys of the keyboard. */
+    int retry=a->pw_retry_kind;enum Screen back=a->pw_return;bool stored=done&&backup_password_store(a,a->fs_prompt);
+    memset(a->fs_prompt,0,sizeof(a->fs_prompt));a->prompt_cursor=0;a->fs_prompt_kind=0;a->pw_retry_kind=J_NONE;a->pw_wrong=false;
+    screen(a,back);
+    if(done&&!stored){toast(a,"The password could not be kept");return true;}
+    if(!done)return true;
+    if(retry==J_NONE){a->backup_encrypt=true;a->dirty=true;return true;}
+    if(ld_job(retry))start_ld_job(a,retry);
+    else if(copy_job(retry))start_copy_job(a,retry);
+    else if(retry==J_ARCHIVE_UNPACK)start_files_request(a,&a->fs_request);
+    else if(retry>=J_ID_LIST&&retry<=J_ID_DELETE)start_identity_job(a,retry);
+    return true;
+}
 static void action_run(App*a,int id){
+    if(backup_password_action(a,id))return;
     if(a->screen==POWER_MENU){
         if(id==A_TORCH){haptic(a,1);torch_set(a,!a->torch_on,a->torch_level);return;}
         if(id==A_TORCH_DOWN||id==A_TORCH_UP){haptic(a,1);torch_step(a,id==A_TORCH_UP?1:-1);return;}
@@ -5332,6 +5437,12 @@ static bool preview(App*a,const char*name){
         a->ld_dest_count=1;copy(a->ld_dest[0].id,sizeof(a->ld_dest[0].id),"sdcard-p1");copy(a->ld_dest[0].label,sizeof(a->ld_dest[0].label),"alarm_root");a->ld_dest[0].free=5800000000ULL;
         a->ld_archive_count=1;LdArchive*x=&a->ld_archives[0];copy(x->os,sizeof(x->os),"Arch Linux ARM");copy(x->label,sizeof(x->label),"alarm_root");copy(x->accounts,sizeof(x->accounts),"akisha");x->parts=15u;x->packages=214;x->bytes=912000000ULL;x->created=1794580000ULL;
         a->ld_selected=0;a->ld_restore_parts=15u;a->screen=!strcmp(name,"linux-data")?LINUX_DATA:LINUX_DATA_RESTORE;}
+    else if(!strncmp(name,"secret-",7)){
+        /* The password field at three moments: the character just typed, its dot growing in, all dots. */
+        a->pw_retry_kind=J_NONE;a->pw_return=BACKUP;a->fs_prompt_kind=J_BACKUP_PASSWORD;copy(a->fs_prompt,sizeof(a->fs_prompt),"pass7k");a->prompt_cursor=strlen(a->fs_prompt);a->secret_count=6;a->now=2000000;
+        a->secret_typed_at=!strcmp(name,"secret-reveal")?a->now-200:(!strcmp(name,"secret-pop")?a->now-SECRET_REVEAL_MS-110:0);a->screen=FILE_PROMPT;}
+    else if(!strcmp(name,"backup-password")){a->pw_retry_kind=J_NONE;a->pw_return=BACKUP;a->fs_prompt_kind=J_BACKUP_PASSWORD;copy(a->fs_prompt,sizeof(a->fs_prompt),"my pass 2026");a->prompt_cursor=strlen(a->fs_prompt);a->screen=FILE_PROMPT;}
+    else if(!strcmp(name,"backup-protected")){a->backup_encrypt=true;a->screen=BACKUP;}
     else if(!strcmp(name,"wipe-android")){a->wipe_android=true;a->screen=WIPE_REVIEW;}
     else if(!strncmp(name,"android-log",11)){
         /* What the owner met (kernel), init giving up for another reason (init), and a panic. */
@@ -6087,6 +6198,33 @@ static int test_linux_data(void){
     static const char back[]="{\"ok\":true,\"operation\":\"restore\",\"parts\":[\"home\",\"packages\"],\"into\":{\"id\":\"ubuntu\",\"name\":\"Ubuntu 26.04\"},\"accounts_created\":[\"akisha\"],\"accounts_kept\":[],\"owners_changed\":1,\"packages_installed\":9,\"packages_missing\":3,\"missing\":[\"zsh\"],\"packages_unsupported\":false,\"note\":\"\"}";
     a->ld_restore_parts=9u;assert(json_parse(&j,back,tokens,256)>0);complete_ld_job(a,&j,J_LD_RESTORE,true);
     assert(a->screen==RESULT&&a->successful&&a->result_return==LINUX_DATA&&strstr(a->message,"Ubuntu 26.04")&&strstr(a->message,"akisha")&&strstr(a->message,"zsh")&&!a->ld_known);
+    /* 2026-11-13: copies protected with a password. The toggle asks for it once; a closed archive
+       asks for it and is read again; a helper that could not open a copy has its work started again. */
+    copy(a->workdir,sizeof(a->workdir),"/tmp/a22x-ui-test-password");mkdir(a->workdir,0700);
+    a->screen=BACKUP;render(a);assert(test_button(a,A_BACKUP_ENCRYPT)&&!a->backup_encrypt);
+    assert(test_press(a,A_BACKUP_ENCRYPT,50)&&a->screen==FILE_PROMPT&&a->fs_prompt_kind==J_BACKUP_PASSWORD&&a->pw_retry_kind==J_NONE);
+    /* Typed as dots: the last character is seen for a moment, then its dot springs in; Show uncovers. */
+    assert(!a->secret_show&&!a->secret_typed_at);a->now=5000;insert_character(a,'p');insert_character(a,'w');
+    assert(a->secret_typed_at==5000&&a->secret_count==2&&secret_animating(a));
+    a->now=5000+SECRET_REVEAL_MS/2;render(a);a->now=5000+SECRET_REVEAL_MS+SECRET_POP_MS/3;render(a);assert(secret_animating(a));
+    a->now=5000+SECRET_REVEAL_MS+SECRET_POP_MS+100;render(a);assert(!secret_animating(a));
+    assert(secret_spring(0.f)==0.f&&secret_spring(0.28f)>1.05f&&secret_spring(1.f)==1.f);   /* past its size, then settled */
+    assert(test_press(a,A_SECRET_SHOW,50)&&a->secret_show&&a->screen==FILE_PROMPT&&test_press(a,A_SECRET_SHOW,50)&&!a->secret_show);
+    assert(test_press(a,A_KB_BACKSPACE,50)&&!a->secret_typed_at&&!strcmp(a->fs_prompt,"p"));
+    copy(a->fs_prompt,sizeof(a->fs_prompt),"short");render(a);assert(!test_button(a,A_FS_PROMPT_NEXT)->enabled);
+    copy(a->fs_prompt,sizeof(a->fs_prompt),"secret 77");render(a);assert(test_press(a,A_FS_PROMPT_NEXT,50)&&a->screen==BACKUP&&a->backup_encrypt&&!strcmp(a->backup_password,"secret 77")&&!a->fs_prompt[0]);
+    {char body[64]={0};FILE*f=fopen(a->backup_password_file,"r");assert(f);assert(fgets(body,sizeof(body),f));fclose(f);assert(!strcmp(body,"secret 77\n"));
+     struct stat st;assert(!stat(a->backup_password_file,&st)&&(st.st_mode&0777)==0600);}
+    {char*args[8];int n=0;backup_password_args(a,args,&n,true);assert(n==3&&!strcmp(args[0],"--password-file")&&!strcmp(args[2],"--encrypt"));n=0;backup_password_args(a,args,&n,false);assert(n==2);}
+    render(a);assert(test_press(a,A_BACKUP_ENCRYPT,50)&&!a->backup_encrypt&&a->screen==BACKUP);   /* off: nothing asked */
+    assert(test_press(a,A_BACKUP_ENCRYPT,50)&&a->backup_encrypt&&a->screen==BACKUP);              /* on again: the password is known */
+    static const char closed[]="{\"ok\":true,\"operation\":\"inspect\",\"linux\":false,\"reason\":\"NO_LINUX\",\"destinations\":[],"
+        "\"archives\":[{\"volume\":\"sdcard-p1\",\"volume_token\":\"tok\",\"label\":\"card\",\"path\":\"/A22xDataBackups/x.tar.zst.enc\",\"name\":\"x.tar.zst.enc\",\"bytes\":900,\"created\":1794580000,\"os\":{\"name\":\"archarm\"},\"parts\":[],\"accounts\":[],\"packages\":0,\"encrypted\":true,\"locked\":true,\"wrong_password\":true}]}";
+    assert(json_parse(&j,closed,tokens,256)>0);a->screen=LINUX_DATA;complete_ld_job(a,&j,J_LD_INSPECT,true);
+    assert(a->ld_archive_count==1&&a->ld_archives[0].locked&&a->ld_archives[0].wrong);render(a);
+    assert(test_press(a,A_LD_ARCHIVE+0,50)&&a->screen==FILE_PROMPT&&a->pw_retry_kind==J_LD_INSPECT&&a->pw_wrong);
+    assert(test_press(a,A_BACK,50)&&a->screen==LINUX_DATA&&a->pw_retry_kind==J_NONE&&!strcmp(a->backup_password,"secret 77"));
+    unlink(a->backup_password_file);rmdir(a->workdir);
     free(a->pixels);free(a);return 1;
 }
 static int test_settings_reset(void){
@@ -6618,14 +6756,14 @@ int main(int argc,char**argv){
         if(a->screen==SPLASH&&a->now>=splash_end&&(a->now>=splash_end+4000||!(a->restore_hz||a->display_restoring))){bool fade=a->animate&&a->animation!=ANIM_OFF;if(fade)memcpy(a->tr.from,a->pixels,(size_t)NW*NH*sizeof(uint32_t));if(a->locked)lock_show(a);else screen(a,HOME);
             if(fade){a->tr.kind=TR_FADE;a->tr.duration=TRANSITION_DISSOLVE_MS;a->tr.blur=false;a->tr.armed=true;a->tr.active=false;a->dirty=true;}}
         settings_flush(a);hotplug_tick(a);if(!a->sys_tried&&a->device&&!a->job.pid&&a->screen!=SPLASH)start_sysinfo_job(a);
-        if(a->now<a->lock_shake_until||a->now<a->lock_wait_until)a->dirty=true;
+        if(a->now<a->lock_shake_until||a->now<a->lock_wait_until||(a->screen==FILE_PROMPT&&secret_animating(a)))a->dirty=true;
         if(a->screen==SPLASH){unsigned int wanted=a->now>=splash_end?100u:a->splash_from+(unsigned int)((100u-a->splash_from)*(a->now-splash_start)/(splash_end-splash_start));if(wanted!=a->splash_percent){a->splash_percent=wanted;a->dirty=true;}}
         if(a->lock_frame_pending){a->lock_frame_pending=false;render(a);(void)present(a,&display);}
         held_tick(a,dark);
         {int minute=(int)(time(NULL)/60);if(minute!=a->clock_minute){a->clock_minute=minute;a->dirty=true;}}
         /* A finished hold gets a pulse, so the finger knows it can lift. */
         hold_tick(a);
-        frame_ms=a->pointer_down||a->kinetic.active||a->tr.active||a->tr.armed||(a->job.pid&&job_long(a->job.kind))?(display.drm>0?1u:(a->display_hz==90?11u:16u)):70u;
+        frame_ms=a->pointer_down||a->kinetic.active||a->tr.active||a->tr.armed||(a->screen==FILE_PROMPT&&secret_animating(a))||(a->job.pid&&job_long(a->job.kind))?(display.drm>0?1u:(a->display_hz==90?11u:16u)):70u;
         if(a->dirty&&!(a->display_blank_known&&a->display_blanked)&&a->now-last_frame>=frame_ms){
             uint64_t before=milliseconds();if(a->tr.armed)transition_start(a);if(!a->tr.active||!transition_frame(a,milliseconds()))render(a);if(!present(a,&display)){fprintf(stderr,"[recovery-ui] native frame allocation or projection failed\n");a->exit_code=1;break;}
             if(a->tr.active){uint64_t cost=milliseconds()-before;a->tr.frames++;if(cost>a->tr.worst)a->tr.worst=cost;}

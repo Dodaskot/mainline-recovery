@@ -31,6 +31,7 @@ import sys
 import tarfile
 import time
 
+import archive_crypt as ac
 import file_archive as fa
 import filesystem as fs
 import partition_archive as pa
@@ -219,6 +220,37 @@ def packages_read(root_fd, family):
                     and field.get('Priority') not in ('required', 'important', 'standard')):
                 names.append(field['Package'])
         return sorted(set(names))
+    if family == 'alpine':
+        # apk's own list of what was asked for: /etc/apk/world, a name per line, perhaps with a version.
+        world = read_text(root_fd, 'etc/apk/world')
+        if world is None:
+            return None
+        return sorted({re.split(r'[<>=~@]', line.strip(), maxsplit=1)[0] for line in world.splitlines() if line.strip() and not line.startswith('#')})
+    if family == 'fedora':
+        # dnf5 keeps why each package is there: packages.toml, reason "User" for what was asked for.
+        # (dnf4's history is an SQLite file, which this recovery cannot read.)
+        text = read_text(root_fd, 'usr/lib/sysimage/libdnf5/packages.toml')
+        if text is None:
+            return None
+        try:
+            import tomllib
+            table = tomllib.loads(text).get('packages', {})
+        except (ImportError, ValueError):
+            return None
+        names = set()
+
+        def take(name, value):
+            if isinstance(value, dict) and str(value.get('reason', '')).lower() == 'user':
+                names.add(name)
+        for key, value in table.items() if isinstance(table, dict) else ():
+            if isinstance(value, dict) and 'reason' in value:
+                # "name.arch" as one key
+                take(key.rsplit('.', 1)[0] if '.' in key else key, value)
+            elif isinstance(value, dict):
+                # name.arch written without quotes: a table inside a table
+                for inner in value.values():
+                    take(key, inner)
+        return sorted(names)
     return None
 
 
@@ -319,13 +351,29 @@ def archives(context, mount=False):
         try:
             with fs.PinnedVolume(context, volume['id']) as pin, pin.directory(STORE) as folder:
                 for name in sorted(os.listdir(folder), reverse=True):
-                    if not name.endswith('.tar.zst'):
+                    if not name.endswith(pa.SUFFIXES) or name.startswith('.'):
                         continue
                     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=folder)
+                    locked = None
                     try:
-                        raw, size = pa.footer(fd), os.fstat(fd).st_size
+                        size = os.fstat(fd).st_size
+                        try:
+                            raw = pa.footer(fd)
+                        except pa.ArchiveError as error:
+                            raw, locked = None, error.code
                     finally:
                         os.close(fd)
+                    if locked in ('PASSWORD_REQUIRED', 'WRONG_PASSWORD') and name.startswith('linux-data-'):
+                        # Protected with a password: listed closed, by what its name says.
+                        words = name.split('-')
+                        stamp = re.search(r'-(\d{8})-(\d{6})\.', name)
+                        made = int(time.mktime(time.strptime(stamp.group(1) + stamp.group(2), '%Y%m%d%H%M%S'))) if stamp else 0
+                        found.append({'volume': volume['id'], 'volume_token': volume['volume_token'],
+                                      'label': volume.get('label') or volume['id'], 'path': '/' + STORE + '/' + name, 'name': name,
+                                      'bytes': size, 'created': made, 'os': {'name': words[2] if len(words) > 2 else ''}, 'parts': [],
+                                      'accounts': [], 'packages': 0, 'machine': '', 'encrypted': True, 'locked': True,
+                                      'wrong_password': locked == 'WRONG_PASSWORD'})
+                        continue
                     try:
                         about = json.loads(raw.decode('utf-8')) if raw else None
                     except ValueError:
@@ -336,7 +384,7 @@ def archives(context, mount=False):
                                       'bytes': size, 'created': about.get('created', 0), 'os': about.get('os', {}),
                                       'parts': [p for p in PARTS if p in about.get('parts', [])],
                                       'accounts': about.get('accounts', [])[:8], 'packages': about.get('packages', 0),
-                                      'machine': about.get('machine', '')})
+                                      'machine': about.get('machine', ''), 'encrypted': name.endswith(ac.SUFFIX), 'locked': False})
         except (FileNotFoundError, fs.FilesystemError, OSError):
             continue
     return found[:16]
@@ -410,7 +458,7 @@ def backup(context, parts, dest_volume, dest_token, confirmed, progress):
                 'sizes': sizes}, ensure_ascii=False, separators=(',', ':')).encode()
             extra.insert(0, ('manifest.json', manifest, 0o644))
             stamp = time.strftime('%Y%m%d-%H%M%S', time.localtime(created))
-            name = 'linux-data-%s-%s.tar.zst' % (''.join(c for c in release.get('ID', 'linux') if c.isalnum() or c in '-_')[:24] or 'linux', stamp)
+            name = 'linux-data-%s-%s' % (''.join(c for c in release.get('ID', 'linux') if c.isalnum() or c in '-_')[:24] or 'linux', stamp) + pa.new_suffix()
             with fs.PinnedVolume(context, dest_volume, target_volume['volume_token'], writing=True) as target:
                 room = os.fstatvfs(target.fd)
                 # zstd rarely makes a home larger; an archive that outgrows the room fails and is removed.
@@ -423,11 +471,17 @@ def backup(context, parts, dest_volume, dest_token, confirmed, progress):
                     with contextlib.suppress(FileNotFoundError):
                         os.unlink(part, dir_fd=folder)
                     out = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=folder)
+                    crypt = contextlib.ExitStack()
                     try:
-                        fa.write_archive(out, files, total, lambda done, all_, label: progress('Packing', done, all_, label), extra)
-                        fa.footer(out, manifest)
+                        dest = crypt.enter_context(ac.sink(out, pa.PASSWORD if pa.ENCRYPT else None))
+                        fa.write_archive(dest, files, total, lambda done, all_, label: progress('Packing', done, all_, label), extra)
+                        fa.footer(dest, manifest)
+                        crypt.close()
+                        os.fsync(out)
                         size = os.fstat(out).st_size
-                    except BaseException:
+                    except BaseException as error:
+                        with contextlib.suppress(BaseException):
+                            crypt.__exit__(type(error), error, None)
                         os.close(out)
                         with contextlib.suppress(OSError):
                             os.unlink(part, dir_fd=folder)
@@ -440,7 +494,7 @@ def backup(context, parts, dest_volume, dest_token, confirmed, progress):
                 with contextlib.suppress(OSError):
                     os.close(fd)
     return {'archive': {'volume': dest_volume, 'path': '/' + STORE + '/' + name, 'bytes': size}, 'parts': parts, 'bytes': total,
-            'entries': len(files), 'accounts': len(accounts) if 'accounts' in parts else 0,
+            'entries': len(files), 'encrypted': name.endswith(ac.SUFFIX), 'accounts': len(accounts) if 'accounts' in parts else 0,
             'packages': len(names) if names is not None else 0}
 
 
@@ -453,7 +507,9 @@ def unpack_into(archive_fd, root, parts, progress):
     os.makedirs(staging, 0o700)
     total = os.fstat(archive_fd).st_size
     os.lseek(archive_fd, 0, os.SEEK_SET)
-    proc = subprocess.Popen([pa.zstd_path(), '-q', '-d', '-c'], stdin=archive_fd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    crypt = contextlib.ExitStack()
+    plain = crypt.enter_context(ac.source(archive_fd, pa.PASSWORD))
+    proc = subprocess.Popen([pa.zstd_path(), '-q', '-d', '-c'], stdin=plain, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     finished, count = False, 0
     try:
         with tarfile.open(fileobj=proc.stdout, mode='r|', bufsize=fa.CHUNK) as tar:
@@ -483,6 +539,8 @@ def unpack_into(archive_fd, root, parts, progress):
         proc.stdout.close()
         proc.stderr.close()
         code = proc.wait()
+        with contextlib.suppress(ac.CryptError):
+            crypt.close()
     require(code == 0, 'ARCHIVE_DAMAGED', 'The archive is damaged')
     return staging
 
@@ -504,6 +562,13 @@ def restore(context, volume, token, path, parts, confirmed, progress):
             require(isinstance(about, dict) and about.get('schema') == SCHEMA, 'NOT_A_DATA_BACKUP', 'This file is not a Linux data backup')
             parts = [p for p in parts if p in about.get('parts', [])]
             require(parts, 'NOTHING_SELECTED', 'The backup holds none of the chosen parts')
+            if ac.is_encrypted(archive_fd):
+                # Every byte against its HMAC before one file reaches the system.
+                key = ac.open_key(archive_fd, pa.PASSWORD)
+                try:
+                    ac.verify(archive_fd, key, lambda done, size: progress('Checking the backup', done, size, ''))
+                finally:
+                    key.close()
             with linux_root(context, write=True) as (pin, root, release):
                 staging = unpack_into(archive_fd, root, parts, progress)
                 # The recovery's own script does the work here; the archive's copy is for other devices.
@@ -560,6 +625,7 @@ def parser():
     kind.add_argument('--device', action='store_true')
     kind.add_argument('--fixture')
     commands = p.add_subparsers(dest='operation', required=True, parser_class=fs.Parser)
+    p.add_argument('--password-file')
     commands.add_parser('inspect')
     for name in ('backup', 'restore'):
         command = commands.add_parser(name)
@@ -567,6 +633,7 @@ def parser():
         command.add_argument('--expected-volume-token')
         command.add_argument('--parts', required=True)
         command.add_argument('--confirm', action='store_true')
+        command.add_argument('--encrypt', action='store_true')
         if name == 'restore':
             command.add_argument('--path', required=True)
     return p
@@ -578,6 +645,9 @@ def main(argv=None):
         args = parser().parse_args(argv)
         operation = args.operation
         context = fs.FixtureContext(args.fixture) if args.fixture else fs.DeviceContext()
+        pa.PASSWORD = ac.read_password(args.password_file)
+        pa.ENCRYPT = bool(getattr(args, 'encrypt', False))
+        require(not pa.ENCRYPT or pa.PASSWORD, 'PASSWORD_REQUIRED', 'A protected backup needs a password')
         last = [0.0, '']
 
         def progress(phase, done, total, label):
@@ -610,7 +680,7 @@ def main(argv=None):
         return 0
     except fs.FilesystemError as exc:
         error = {'code': exc.code, 'message': exc.message, 'details': exc.details}
-    except pa.ArchiveError as exc:
+    except (pa.ArchiveError, ac.CryptError) as exc:
         error = {'code': exc.code, 'message': str(exc), 'details': {}}
     except (OSError, subprocess.SubprocessError) as exc:
         error = {'code': 'IO_ERROR', 'message': str(exc), 'details': {}}

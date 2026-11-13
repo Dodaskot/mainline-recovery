@@ -50,9 +50,9 @@ static bool start_identity_job(App*a,int kind){
     if(a->job.pid||a->preview||kind<J_ID_LIST||kind>J_ID_DELETE)return false;
     identity_helper(a,a->id_helper,sizeof(a->id_helper));
     if(!a->id_helper[0]){files_problem(a,"IDENTITY_UNAVAILABLE","The identity backup helper is not configured.",IDENTITY);return false;}
-    char*args[16];int n=0;args[n++]=a->python;args[n++]=a->id_helper;
+    char*args[24];int n=0;args[n++]=a->python;args[n++]=a->id_helper;
     if(a->device)args[n++]="--device";else{args[n++]="--fixture";args[n++]=a->fixture;}
-    if(identity_android(a)){args[n++]="--kind";args[n++]="android";}
+    if(identity_android(a)){args[n++]="--kind";args[n++]="android";backup_password_args(a,args,&n,kind==J_ID_BACKUP);}
     if(identity_android(a)&&kind==J_ID_BACKUP){
         a->id_labels_arg[0]=0;
         for(unsigned int k=0;k<a->id_count;k++)if(!(a->id_off&(1u<<k))){if(a->id_labels_arg[0])append(a->id_labels_arg,sizeof(a->id_labels_arg),",");append(a->id_labels_arg,sizeof(a->id_labels_arg),a->id_labels[k]);}

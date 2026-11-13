@@ -300,6 +300,15 @@ msgstr "Для цього плану потрібна приватна тека 
 msgid "A private runtime directory is required for reviewed plans."
 msgstr "Для планів потрібна приватна робоча тека."
 
+msgid "A protected archive needs a password"
+msgstr "Захищеному архіву потрібен пароль"
+
+msgid "A protected backup needs a password"
+msgstr "Захищеній копії потрібен пароль"
+
+msgid "A protected copy needs a password"
+msgstr "Захищеній копії потрібен пароль"
+
 msgid "A qualified stock profile is not available in this recovery."
 msgstr "У цьому recovery немає перевіреного стокового профілю."
 
@@ -618,6 +627,9 @@ msgstr "Потрібен інший Android. Образи, зроблені дл
 msgid "Another block device uses this card"
 msgstr "Цю картку використовує інший блоковий пристрій"
 
+msgid "another password"
+msgstr "інший пароль"
+
 msgid "Another phone"
 msgstr "Інший телефон"
 
@@ -710,6 +722,9 @@ msgstr "Запитується під час запуску recovery"
 
 msgid "At least 4 characters."
 msgstr "Щонайменше 4 символи."
+
+msgid "At least 6 characters. It is kept nowhere and asked again after a restart: without it the copies cannot be opened."
+msgstr "Щонайменше 6 символів. Він ніде не зберігається й після перезапуску питається знову: без нього копії не відкрити."
 
 msgid "At start"
 msgstr "При запуску"
@@ -1041,8 +1056,8 @@ msgstr "Перевірити ще раз"
 msgid "Check and repair"
 msgstr "Перевірка й виправлення"
 
-msgid "Check and repair: ext4 only"
-msgstr "Перевірка й виправлення: лише ext4"
+msgid "Check and repair: not for this filesystem"
+msgstr "Перевірка й виправлення: не для цієї ФС"
 
 msgid "Check backup integrity"
 msgstr "Перевірка цілісності копії"
@@ -2043,6 +2058,9 @@ msgstr "GSI"
 msgid "GSIs from the internet: choose the Android version and type"
 msgstr "GSI з інтернету: виберіть версію та тип Android"
 
+msgid "Hide"
+msgstr "Сховати"
+
 msgid "history"
 msgstr "історія"
 
@@ -2520,6 +2538,9 @@ msgstr "Дані Linux відновлено"
 msgid "Linux data saved"
 msgstr "Дані Linux збережено"
 
+msgid "Linux data saved, protected with the password"
+msgstr "Дані Linux збережено й захищено паролем"
+
 msgid "Linux from SD or USB stick, switch systems"
 msgstr "Linux із SD чи флешки, перемикання систем"
 
@@ -2792,6 +2813,9 @@ msgstr "Ніколи"
 
 msgid "New account"
 msgstr "Новий обліковий запис"
+
+msgid "New copies are encrypted with it."
+msgstr "Нові копії шифруються ним."
 
 msgid "New files belong to root:root (0644; folders 0755). MTP has limited Linux metadata support. Stop sharing before mounting, editing in recovery, or making an offline snapshot."
 msgstr "Нові файли належать root:root (0644; теки 0755). MTP обмежено підтримує метадані Linux. Зупиніть спільний доступ перед монтуванням, редагуванням у recovery або офлайн-знімком."
@@ -3330,6 +3354,9 @@ msgstr "ПАРОЛЬ"
 msgid "Password"
 msgstr "Пароль"
 
+msgid "Password for copies"
+msgstr "Пароль для копій"
+
 msgid "Password removed"
 msgstr "Пароль вилучено"
 
@@ -3449,6 +3476,12 @@ msgstr "Процесор"
 
 msgid "Profile unavailable"
 msgstr "Профіль недоступний"
+
+msgid "Protect copies with a password"
+msgstr "Захищати копії паролем"
+
+msgid "protected: tap to open"
+msgstr "захищено: торкніться, щоб відкрити"
 
 msgid "Published: %s"
 msgstr "Опубліковано: %s"
@@ -4251,6 +4284,9 @@ msgstr "Shift"
 msgid "Short press Power to turn the screen off or on."
 msgstr "Коротко натисніть кнопку живлення, щоб вимкнути чи увімкнути екран."
 
+msgid "Show"
+msgstr "Показати"
+
 msgid "Sign-in"
 msgstr "Вхід"
 
@@ -4854,6 +4890,12 @@ msgstr "Таблиця DT обірвана"
 msgid "The DT table lies outside the partition"
 msgstr "Таблиця DT лежить поза розділом"
 
+msgid "The encrypted archive is cut short or was changed"
+msgstr "Зашифрований архів обрізано або змінено"
+
+msgid "The encrypted archive was changed or is damaged"
+msgstr "Зашифрований архів змінено або пошкоджено"
+
 msgid "The exact plan, source, backup, targets, journal or safety policy was not confirmed."
 msgstr "Точний план, джерело, копію, цілі, журнал або політику безпеки не підтверджено."
 
@@ -5079,6 +5121,12 @@ msgstr "Інсталятори завершили роботу"
 msgid "The interrupted transaction changed. Review the refreshed Systems screen."
 msgstr "Перервана транзакція змінилася. Перегляньте оновлений екран Систем."
 
+msgid "The kernel cipher returned too little"
+msgstr "Шифр ядра повернув замало даних"
+
+msgid "The kernel cipher took a partial block"
+msgstr "Шифр ядра прийняв неповний блок"
+
 msgid "The kernel could not read the new partition table"
 msgstr "Ядро не змогло прочитати нову таблицю розділів"
 
@@ -5295,8 +5343,23 @@ msgstr "Розділи, що відрізняються, спершу збері
 msgid "The password could not be changed"
 msgstr "Не вдалося змінити пароль"
 
+msgid "The password could not be kept"
+msgstr "Пароль не вдалося запам’ятати"
+
+msgid "The password does not open this backup"
+msgstr "Пароль не відкриває цю копію"
+
+msgid "The password does not open this copy. Try again."
+msgstr "Пароль не відкриває цю копію. Спробуйте ще раз."
+
+msgid "The password is too long"
+msgstr "Пароль задовгий"
+
 msgid "The password is wrong."
 msgstr "Неправильний пароль."
+
+msgid "The password the copy was made with."
+msgstr "Пароль, з яким зроблено копію."
 
 msgid "The password was set in the Android app."
 msgstr "Пароль задано в застосунку Android."
@@ -5688,6 +5751,9 @@ msgstr "Цьому Android потрібне ядро %s або новіше. Я�
 msgid "This backup belongs to another phone. Restoring it would give this phone a foreign identity"
 msgstr "Ця копія належить іншому телефону. Її відновлення дало б цьому телефону чужу ідентичність"
 
+msgid "This backup is protected with a password"
+msgstr "Цю копію захищено паролем"
+
 msgid "This BOOT already has another root: flash the stock BOOT back first (Remove root)"
 msgstr "У цьому BOOT уже є інший root: спершу прошийте стоковий BOOT назад («Прибрати root»)"
 
@@ -5708,6 +5774,9 @@ msgstr "Таке стиснення не підтримується"
 
 msgid "This copy is no longer listed. Go back and read the cards again."
 msgstr "Цієї копії вже немає в списку. Поверніться і прочитайте картки ще раз."
+
+msgid "This copy is protected with a password."
+msgstr "Цю копію захищено паролем."
 
 msgid "This copy needs about %s, and %s has %s free. Free some room there, leave partitions out, or choose another card."
 msgstr "Цій копії потрібно близько %s, а на %s вільно %s. Звільніть там місце, пропустіть частину розділів або виберіть іншу картку."

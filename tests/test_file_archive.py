@@ -120,6 +120,23 @@ class FileArchive(unittest.TestCase):
             fa.unpack(self.ctx, 'sdcard-p1', None, '/damaged.tar.zst', True, self.progress)
         self.assertEqual(caught.exception.code, 'ARCHIVE_DAMAGED')
 
+    def test_an_archive_protected_with_a_password(self):
+        import archive_crypt as ac
+        self.addCleanup(lambda: (setattr(pa, 'PASSWORD', None), setattr(pa, 'ENCRYPT', False)))
+        pa.PASSWORD, pa.ENCRYPT = 'geheim', True
+        done = self.pack(False, ['Документи', 'script.sh'], '/secret.tar.zst')
+        self.assertEqual(done['archive']['path'], '/secret.tar.zst.enc')
+        self.assertTrue((self.sd / 'secret.tar.zst.enc').read_bytes().startswith(b'Salted__'))
+        self.assertEqual(fa.manifest_of(self.ctx, 'sdcard-p1', None, '/secret.tar.zst.enc')['manifest']['entries'], 4)
+        pa.PASSWORD, pa.ENCRYPT = None, False
+        with self.assertRaises(ac.CryptError) as caught:
+            fa.unpack(self.ctx, 'sdcard-p1', None, '/secret.tar.zst.enc', True, self.progress)
+        self.assertEqual(caught.exception.code, 'PASSWORD_REQUIRED')
+        self.assertFalse((self.sd / 'secret').exists())
+        pa.PASSWORD = 'geheim'
+        out = fa.unpack(self.ctx, 'sdcard-p1', None, '/secret.tar.zst.enc', True, self.progress)
+        self.assertEqual((out['folder'], (self.sd / 'secret/Документи/вкладене/нотатка.txt').read_text()), ('/secret', 'привіт\n'))
+
     def test_the_command_line(self):
         selection = self.root / 'selection.json'
         selection.write_text(json.dumps({'all': False, 'names': ['script.sh']}))
