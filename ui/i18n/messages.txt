@@ -114,6 +114,7 @@ A write to %s was cut short and could not be undone: flash it again
 A write to %s was cut short: its old content was put back
 a22x-recovery: the recovery's settings and keys, saved Wi-Fi networks, plans from the Android app and setup scripts.
 About %u min
+About %u s
 About phone
 ACCESS
 Access stays open until the phone locks or restarts. The computer never sees the password.
@@ -1941,7 +1942,6 @@ Ubuntu
 UID %s  /  GID %s
 Unavailable
 unavailable
-Under a minute
 Understood
 unknown
 Unknown device tree token

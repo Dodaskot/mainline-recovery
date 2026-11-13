@@ -1237,7 +1237,10 @@ static bool progress_left(const App*a,char*out,size_t size){
     uint64_t elapsed=a->now>a->progress_mark_at?a->now-a->progress_mark_at:0,done=a->progress_done>a->progress_mark_done?a->progress_done-a->progress_mark_done:0;
     if(!a->progress_total||elapsed<5000||!done||a->progress_done>=a->progress_total)return false;
     uint64_t seconds=(a->progress_total-a->progress_done)*elapsed/done/1000u;
-    if(seconds<60)copy(out,size,tr("Under a minute"));else snprintf(out,size,T("About %u min"),(unsigned int)((seconds+59)/60));
+    /* Under a minute in seconds (2026-11-13, the owner), rounded up to 5 s so the number does not
+       jump with every frame's estimate. */
+    if(seconds<60)snprintf(out,size,T("About %u s"),(unsigned int)((seconds/5+1)*5>60?60:(seconds/5+1)*5));
+    else snprintf(out,size,T("About %u min"),(unsigned int)((seconds+59)/60));
     return true;
 }
 static void render_progress(App*a){

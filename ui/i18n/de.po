@@ -351,6 +351,9 @@ msgstr "a22x-recovery: Einstellungen und Schlüssel des Recovery, gespeicherte W
 msgid "About %u min"
 msgstr "Etwa %u Min."
 
+msgid "About %u s"
+msgstr "Etwa %u s"
+
 msgid "About phone"
 msgstr "Über das Telefon"
 
@@ -5831,9 +5834,6 @@ msgstr "Nicht verfügbar"
 
 msgid "unavailable"
 msgstr "nicht verfügbar"
-
-msgid "Under a minute"
-msgstr "Unter einer Minute"
 
 msgid "Understood"
 msgstr "Verstanden"

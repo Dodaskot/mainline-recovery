@@ -351,6 +351,9 @@ msgstr "a22x-recovery: ajustes y claves del recovery, redes Wi-Fi guardadas, pla
 msgid "About %u min"
 msgstr "Unos %u min"
 
+msgid "About %u s"
+msgstr "Unos %u s"
+
 msgid "About phone"
 msgstr "Acerca del teléfono"
 
@@ -5831,9 +5834,6 @@ msgstr "No disponible"
 
 msgid "unavailable"
 msgstr "no disponible"
-
-msgid "Under a minute"
-msgstr "Menos de un minuto"
 
 msgid "Understood"
 msgstr "Entendido"

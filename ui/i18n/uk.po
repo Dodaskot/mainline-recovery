@@ -351,6 +351,9 @@ msgstr "a22x-recovery: налаштування й ключі recovery, збер
 msgid "About %u min"
 msgstr "Близько %u хв"
 
+msgid "About %u s"
+msgstr "Близько %u с"
+
 msgid "About phone"
 msgstr "Про телефон"
 
@@ -5831,9 +5834,6 @@ msgstr "Недоступно"
 
 msgid "unavailable"
 msgstr "недоступно"
-
-msgid "Under a minute"
-msgstr "Менше хвилини"
 
 msgid "Understood"
 msgstr "Зрозуміло"

@@ -39,6 +39,7 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- Under a minute left, the progress page shows seconds ("About 25 s", rounded up to 5 s).
 - The native ROM installation shows real sizes and speed per partition, not a fraction as bytes.
 - The note after a firmware installation names the kept BOOT "the previous BOOT", Linux or not.
 - **Block-based ROMs installed by the recovery itself** (0.6.217): a ZIP with full block OTA images

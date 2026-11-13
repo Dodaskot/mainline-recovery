@@ -351,6 +351,9 @@ msgstr "a22x-recovery: ustawienia i klucze recovery, zapisane sieci Wi-Fi, plany
 msgid "About %u min"
 msgstr "Około %u min"
 
+msgid "About %u s"
+msgstr "Około %u s"
+
 msgid "About phone"
 msgstr "O telefonie"
 
@@ -5831,9 +5834,6 @@ msgstr "Niedostępne"
 
 msgid "unavailable"
 msgstr "niedostępne"
-
-msgid "Under a minute"
-msgstr "Mniej niż minuta"
 
 msgid "Understood"
 msgstr "Rozumiem"
