@@ -1421,6 +1421,7 @@ Storage wear
 Strong
 Sunday
 super has no room for this system image.
+super is laid out for this ROM first: 
 super/
 SUPERKEY
 SuperKey

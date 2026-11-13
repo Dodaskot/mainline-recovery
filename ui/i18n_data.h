@@ -4,7 +4,7 @@
 #define LANGUAGE_COUNT 6
 static const char*const language_codes[LANGUAGE_COUNT]={"en","uk","de","es","fr","pl"};
 static const char*const language_names[LANGUAGE_COUNT]={"English","Українська","Deutsch","Español","Français","Polski"};
-#define MESSAGE_COUNT 2096
+#define MESSAGE_COUNT 2097
 static const char*const message_ids[MESSAGE_COUNT]={
 "  /  skip-identical",
 " / preview truncated",
@@ -2089,6 +2089,7 @@ static const char*const message_ids[MESSAGE_COUNT]={
 "size in manifest",
 "size unknown",
 "super has no room for this system image.",
+"super is laid out for this ROM first: ",
 "super/",
 "the rest of the card",
 "unavailable",
@@ -4188,6 +4189,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "розмір у маніфесті",
 "розмір невідомий",
 "У super немає місця для цього образу system.",
+"спершу super розмічається під цей ROM: ",
 "super/",
 "решта картки",
 "недоступно",
@@ -6286,6 +6288,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Größe im Manifest",
 "Größe unbekannt",
 "In super ist kein Platz für dieses System-Image.",
+"super wird zuerst für dieses ROM eingeteilt: ",
 "super/",
 "der Rest der Karte",
 "nicht verfügbar",
@@ -8384,6 +8387,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "tamaño en el manifiesto",
 "tamaño desconocido",
 "super no tiene espacio para esta imagen de system.",
+"super se reparte primero para esta ROM: ",
 "super/",
 "el resto de la tarjeta",
 "no disponible",
@@ -10482,6 +10486,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "taille dans le manifeste",
 "taille inconnue",
 "super n’a pas de place pour cette image system.",
+"super est d'abord découpé pour cette ROM : ",
 "super/",
 "le reste de la carte",
 "indisponible",
@@ -12580,6 +12585,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "rozmiar w manifeście",
 "rozmiar nieznany",
 "W super nie ma miejsca na ten obraz system.",
+"super zostanie najpierw podzielony dla tego ROM-u: ",
 "super/",
 "reszta karty",
 "niedostępne",

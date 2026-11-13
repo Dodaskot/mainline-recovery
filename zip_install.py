@@ -666,31 +666,63 @@ def room_child(room, zip_fd, out_fd, kind):
     """The process the installer runs in: new spaces, the room, then update-binary as TWRP calls it."""
     os.setsid()
     os.unshare(os.CLONE_NEWNS | os.CLONE_NEWPID | os.CLONE_NEWIPC | os.CLONE_NEWUTS)
+    # 2026-11-13, a whole ROM on the phone: the installer's own messages went into a pipe, buffered,
+    # and were lost when it ended by a signal; that end was reported as 137 whatever the signal. Its
+    # output goes through a terminal now, line by line, and the way it ended is said.
+    master, slave = os.openpty()
     pid = os.fork()  # the first process of the new process space
     if pid:
         # This process shares the room's mounts and stays outside its root: it stands in for ueventd.
+        os.close(slave)
+        os.set_blocking(master, False)
         st = os.stat(room.found['super']['path'])
         mapper = Mapper(room.root / 'dev/block', room.mapped_before, '%d:%d' % (os.major(st.st_rdev), os.minor(st.st_rdev)))
+
+        def drain():
+            while True:
+                try:
+                    data = os.read(master, 65536)
+                except (BlockingIOError, OSError):
+                    return
+                if not data:
+                    return
+                with contextlib.suppress(OSError):
+                    os.write(2, data)
         while True:
+            drain()
             done, status = os.waitpid(pid, os.WNOHANG)
             if done:
                 break
             with contextlib.suppress(OSError, ValueError):
                 mapper.tend()
             time.sleep(.03)
-        os._exit(os.waitstatus_to_exitcode(status) & 0xff if os.waitstatus_to_exitcode(status) >= 0 else 137)
+        drain()
+        code = os.waitstatus_to_exitcode(status)
+        if code < 0:
+            with contextlib.suppress(OSError):
+                os.write(2, ('room: the installer ended by signal %d (%s)\n' % (-code, signal.Signals(-code).name)).encode())
+        os._exit(code & 0xff if code >= 0 else 128 + (-code & 0x7f))
+    os.close(master)
+    # The terminal takes 1 and 2 at once: its number may be 9, which the screen channel takes below.
+    os.dup2(slave, 1)
+    os.dup2(slave, 2)
+    if slave > 2:
+        os.close(slave)
     try:
         room.build()
         root = room.root
-        with open(root / 'tmp/install.zip', 'wb') as copy:
-            at = 0
-            while True:
-                data = os.pread(zip_fd, 4 << 20, at)
-                if not data:
-                    break
-                copy.write(data)
-                at += len(data)
-        with zipfile.ZipFile(root / 'tmp/install.zip') as archive, open(root / 'tmp/update-binary', 'wb') as out:
+        # 2026-11-13, on the phone: the ZIP was copied into the room's RAM disk of 768 MB, and a whole
+        # ROM (2.5 GB, KKRT) stopped with "No space left on device". The reviewed file itself is
+        # bound into the room, read-only, and checked to be that very file.
+        place = root / 'tmp/install.zip'
+        place.touch(0o444)
+        source = os.readlink('/proc/self/fd/%d' % zip_fd)
+        room.run('mount', '--bind', source, str(place))
+        room.run('mount', '-o', 'remount,bind,ro', str(place))
+        bound, reviewed = os.stat(place), os.fstat(zip_fd)
+        require((bound.st_dev, bound.st_ino, bound.st_size) == (reviewed.st_dev, reviewed.st_ino, reviewed.st_size),
+                'ZIP_CHANGED', 'The ZIP changed after it was reviewed')
+        with zipfile.ZipFile(place) as archive, open(root / 'tmp/update-binary', 'wb') as out:
             out.write(archive.read(INSTALLER))
         (root / 'tmp/update-binary').chmod(0o755)
         os.dup2(out_fd, 9)

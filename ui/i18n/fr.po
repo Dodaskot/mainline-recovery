@@ -4272,6 +4272,9 @@ msgstr "dimanche"
 msgid "super has no room for this system image."
 msgstr "super n’a pas de place pour cette image system."
 
+msgid "super is laid out for this ROM first: "
+msgstr "super est d'abord découpé pour cette ROM : "
+
 msgid "super/"
 msgstr "super/"
 

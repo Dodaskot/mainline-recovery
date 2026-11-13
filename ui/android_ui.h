@@ -617,6 +617,9 @@ static void zip_lines(const Json*j,int list,char*out,size_t size,bool translate,
     for(int i=list+1;i<json_next(j,list);i=json_next(j,i),at++){
         char line[248];if(at+last<count||json_string(j,i,line,sizeof(line))<=0)continue;
         if(out[0])append(out,size,"\n");
+        /* A line with sizes in it: its words are translated, the sizes stay (2026-11-13). */
+        static const char fit[]="super is laid out for this ROM first: ";
+        if(translate&&!strncmp(line,fit,sizeof(fit)-1)){append(out,size,tr(fit));append(out,size,line+sizeof(fit)-1);continue;}
         append(out,size,translate?tr(line):line);
     }
 }

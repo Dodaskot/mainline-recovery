@@ -4272,6 +4272,9 @@ msgstr "niedziela"
 msgid "super has no room for this system image."
 msgstr "W super nie ma miejsca na ten obraz system."
 
+msgid "super is laid out for this ROM first: "
+msgstr "super zostanie najpierw podzielony dla tego ROM-u: "
+
 msgid "super/"
 msgstr "super/"
 
