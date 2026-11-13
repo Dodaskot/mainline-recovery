@@ -1644,11 +1644,11 @@ msgstr "Todas las particiones ya contienen lo mismo que la copia: no se escribi�
 msgid "Everything else on cache is deleted: update packages, logs and temporary files."
 msgstr "Todo lo demás en la caché se elimina: paquetes de actualización, registros y archivos temporales."
 
-msgid "Everything is checked as it is read and read back after writing. A Linux BOOT is kept on cache first. It takes about ten minutes; then restart into Android."
-msgstr "Todo se comprueba al leerlo y se vuelve a leer tras escribirlo. Primero se guarda un BOOT de Linux en cache. Tarda unos diez minutos; después reinicia en Android."
-
 msgid "Everything is checked as it is read and read back after writing. It takes a few minutes; then restart into Android."
 msgstr "Todo se comprueba al leerlo y se vuelve a leer tras escribirlo. Tarda unos minutos; después reinicia en Android."
+
+msgid "Everything is checked as it is read and read back after writing. The BOOT there now is kept on cache first. It takes about ten minutes; then restart into Android."
+msgstr "Todo se comprueba al leerlo y se vuelve a leer tras escribirlo. Primero se guarda en cache el BOOT actual. Tarda unos diez minutos; después reinicia en Android."
 
 msgid "Everything on this card is erased: its partitions, systems and files."
 msgstr "Se borra todo lo que hay en esta tarjeta: particiones, sistemas y archivos."
@@ -4549,7 +4549,7 @@ msgid "The boot image is larger than the partition"
 msgstr "La imagen de arranque es mayor que la partición"
 
 msgid "The BOOT image of this ROM is larger than BOOT"
-msgstr ""
+msgstr "La imagen BOOT de esta ROM es mayor que BOOT"
 
 msgid "The BOOT in the firmware is damaged: its AVB hash does not match"
 msgstr "El BOOT del firmware está dañado: su hash AVB no coincide"
@@ -4953,9 +4953,6 @@ msgstr "La última captura aún se está guardando"
 msgid "The link target was not returned. No target was opened."
 msgstr "No se devolvió el destino del enlace. No se abrió ningún destino."
 
-msgid "The Linux BOOT is kept on cache:"
-msgstr "El BOOT de Linux se guarda en cache:"
-
 msgid "The Linux BOOT of this plan is no longer offered: plan again"
 msgstr "El BOOT de Linux de este plan ya no se ofrece: planifica de nuevo"
 
@@ -5198,6 +5195,9 @@ msgstr "El plan está bloqueado. Lee los bloqueos indicados."
 
 msgid "The plan was discarded"
 msgstr "Se descartó el plan"
+
+msgid "The previous BOOT is kept on cache:"
+msgstr "El BOOT anterior se guarda en cache:"
 
 msgid "The private RAM work directory is unavailable."
 msgstr "El directorio privado de trabajo en RAM no está disponible."
@@ -5466,8 +5466,11 @@ msgstr "No hay espacio para guardar antes el contenido anterior: libera espacio 
 msgid "There is not enough space beside the retained system"
 msgstr "No hay espacio suficiente junto al sistema conservado"
 
-msgid "There is not enough space beside the ZIP to unpack the firmware"
-msgstr "No hay espacio suficiente junto al ZIP para desempaquetar el firmware"
+msgid "There is not enough space beside the ZIP or on userdata to unpack the firmware"
+msgstr "No hay espacio suficiente junto al ZIP ni en userdata para descomprimir el firmware"
+
+msgid "There is not enough space beside the ZIP to unpack the firmware, and userdata is encrypted by Android. Free space beside the ZIP, or format userdata in Wipe (the installation formats it for Android anyway), then choose the ZIP again"
+msgstr "No hay espacio suficiente junto al ZIP para descomprimir el firmware y userdata está cifrado por Android. Libera espacio junto al ZIP o formatea userdata en «Borrar» (la instalación lo formatea para Android de todos modos) y vuelve a elegir el ZIP"
 
 msgid "There is not enough space on the card for this image"
 msgstr "No hay suficiente espacio en la tarjeta para esta imagen"
@@ -5608,7 +5611,7 @@ msgid "This image keeps its system on xfs, which this recovery cannot read"
 msgstr "Esta imagen guarda su sistema en xfs, que este recovery no puede leer"
 
 msgid "This installer is a program"
-msgstr ""
+msgstr "Este instalador es un programa"
 
 msgid "This installer is a program: it can map and rewrite the logical partitions of super by itself"
 msgstr "Este instalador es un programa: puede mapear y reescribir por sí mismo las particiones lógicas de super"
@@ -6261,14 +6264,8 @@ msgstr "Las escrituras no son atómicas. Mantén la alimentación y la microSD c
 msgid "Writing"
 msgstr "Escribiendo"
 
-msgid "Writing "
-msgstr ""
-
 msgid "Writing a partition must be confirmed"
 msgstr "La escritura de una partición debe confirmarse"
-
-msgid "Writing boot"
-msgstr ""
 
 msgid "Writing the Linux BOOT"
 msgstr "Escribiendo el BOOT de Linux"

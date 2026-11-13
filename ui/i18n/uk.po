@@ -1644,11 +1644,11 @@ msgstr "Усі розділи вже містять те саме, що й ко�
 msgid "Everything else on cache is deleted: update packages, logs and temporary files."
 msgstr "Усе інше в кеші видаляється: пакети оновлень, журнали й тимчасові файли."
 
-msgid "Everything is checked as it is read and read back after writing. A Linux BOOT is kept on cache first. It takes about ten minutes; then restart into Android."
-msgstr "Усе перевіряється під час читання і зчитується назад після запису. Спершу Linux BOOT зберігається в кеші. Це триває близько десяти хвилин; потім перезапустіть телефон в Android."
-
 msgid "Everything is checked as it is read and read back after writing. It takes a few minutes; then restart into Android."
 msgstr "Усе перевіряється під час читання і зчитується назад після запису. Це триває кілька хвилин; потім перезапустіть телефон в Android."
+
+msgid "Everything is checked as it is read and read back after writing. The BOOT there now is kept on cache first. It takes about ten minutes; then restart into Android."
+msgstr "Усе перевіряється під час читання й перечитується після запису. Поточний BOOT спершу зберігається в cache. Це триває близько десяти хвилин; потім перезапустіть в Android."
 
 msgid "Everything on this card is erased: its partitions, systems and files."
 msgstr "Усе на цій картці буде стерто: розділи, системи й файли."
@@ -4549,7 +4549,7 @@ msgid "The boot image is larger than the partition"
 msgstr "Образ boot більший за розділ"
 
 msgid "The BOOT image of this ROM is larger than BOOT"
-msgstr ""
+msgstr "Образ BOOT цього ROM більший за розділ BOOT"
 
 msgid "The BOOT in the firmware is damaged: its AVB hash does not match"
 msgstr "BOOT у прошивці пошкоджено: його AVB-хеш не збігається"
@@ -4953,9 +4953,6 @@ msgstr "Попередній знімок екрана ще зберігаєть
 msgid "The link target was not returned. No target was opened."
 msgstr "Ціль посилання не отримано. Нічого не відкрито."
 
-msgid "The Linux BOOT is kept on cache:"
-msgstr "Linux BOOT збережено в кеші:"
-
 msgid "The Linux BOOT of this plan is no longer offered: plan again"
 msgstr "Linux BOOT із цього плану більше не пропонується: сплануйте ще раз"
 
@@ -5198,6 +5195,9 @@ msgstr "План заблоковано. Прочитайте повідомле
 
 msgid "The plan was discarded"
 msgstr "План відхилено"
+
+msgid "The previous BOOT is kept on cache:"
+msgstr "Попередній BOOT збережено в cache:"
 
 msgid "The private RAM work directory is unavailable."
 msgstr "Приватна робоча тека в RAM недоступна."
@@ -5466,8 +5466,11 @@ msgstr "Немає місця, щоб спершу зберегти старий
 msgid "There is not enough space beside the retained system"
 msgstr "Поруч зі збереженою системою недостатньо місця"
 
-msgid "There is not enough space beside the ZIP to unpack the firmware"
-msgstr "Поруч із ZIP замало місця, щоб розпакувати прошивку"
+msgid "There is not enough space beside the ZIP or on userdata to unpack the firmware"
+msgstr "Ні поруч із ZIP, ні на userdata не вистачає місця, щоб розпакувати прошивку"
+
+msgid "There is not enough space beside the ZIP to unpack the firmware, and userdata is encrypted by Android. Free space beside the ZIP, or format userdata in Wipe (the installation formats it for Android anyway), then choose the ZIP again"
+msgstr "Поруч із ZIP не вистачає місця, щоб розпакувати прошивку, а userdata зашифрована Android. Звільніть місце поруч із ZIP або відформатуйте userdata в «Очищенні» (встановлення однаково форматує її для Android), а потім знову виберіть ZIP"
 
 msgid "There is not enough space on the card for this image"
 msgstr "На картці бракує місця для цього образу"
@@ -5608,7 +5611,7 @@ msgid "This image keeps its system on xfs, which this recovery cannot read"
 msgstr "Система в цьому образі лежить на xfs, а цей рекавері не читає xfs"
 
 msgid "This installer is a program"
-msgstr ""
+msgstr "Цей встановлювач — програма"
 
 msgid "This installer is a program: it can map and rewrite the logical partitions of super by itself"
 msgstr "Цей інсталятор — програма: вона може сама відображати й перезаписувати логічні розділи super"
@@ -6261,14 +6264,8 @@ msgstr "Записи не атомарні. Тримайте живлення й
 msgid "Writing"
 msgstr "Запис"
 
-msgid "Writing "
-msgstr ""
-
 msgid "Writing a partition must be confirmed"
 msgstr "Запис розділу треба підтвердити"
-
-msgid "Writing boot"
-msgstr ""
 
 msgid "Writing the Linux BOOT"
 msgstr "Запис Linux BOOT"

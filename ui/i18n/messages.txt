@@ -545,8 +545,8 @@ Estimating the size
 Europe
 Every partition already holds what the copy holds: nothing was written.
 Everything else on cache is deleted: update packages, logs and temporary files.
-Everything is checked as it is read and read back after writing. A Linux BOOT is kept on cache first. It takes about ten minutes; then restart into Android.
 Everything is checked as it is read and read back after writing. It takes a few minutes; then restart into Android.
+Everything is checked as it is read and read back after writing. The BOOT there now is kept on cache first. It takes about ten minutes; then restart into Android.
 Everything on this card is erased: its partitions, systems and files.
 Everything on userdata is replaced by this image
 EXACT WRITE TARGETS
@@ -1648,7 +1648,6 @@ THE KERNEL'S LAST LINES
 The last installation completed with independent readback. Boot behavior still needs a deliberate test.
 The last screenshot is still being saved
 The link target was not returned. No target was opened.
-The Linux BOOT is kept on cache:
 The Linux BOOT of this plan is no longer offered: plan again
 The Linux BOOT on cache changed since planning
 The local terminal helper is not configured.
@@ -1730,6 +1729,7 @@ The plan could not be deleted from cache.
 The plan from the Android app cannot be used.
 The plan is blocked. Read the reported blockers.
 The plan was discarded
+The previous BOOT is kept on cache:
 The private RAM work directory is unavailable.
 The ramdisk does not unpack to its end: the image is damaged or incomplete
 The ramdisk does not unpack: the image is damaged or incomplete
@@ -1819,7 +1819,8 @@ There is no AVB vbmeta header
 There is no AVB vbmeta in the vbmeta partition
 There is no room to keep the old content first: free space on cache or insert a card
 There is not enough space beside the retained system
-There is not enough space beside the ZIP to unpack the firmware
+There is not enough space beside the ZIP or on userdata to unpack the firmware
+There is not enough space beside the ZIP to unpack the firmware, and userdata is encrypted by Android. Free space beside the ZIP, or format userdata in Wipe (the installation formats it for Android anyway), then choose the ZIP again
 There is not enough space on the card for this image
 There is not enough space on userdata for this image
 There was not enough free space on userdata for the packages.
@@ -2084,9 +2085,7 @@ WRITE ORDER
 Write text
 Writes are not atomic. Keep power and microSD connected. If interrupted, inspect installation status and review Resume; do not repeat the old execute command.
 Writing
-Writing 
 Writing a partition must be confirmed
-Writing boot
 Writing the Linux BOOT
 Writing the partition table
 WRITTEN

@@ -85,10 +85,14 @@ static void complete_samsung_job(App*a,const Json*j,int kind,bool ok){
         files_problem(a,code,message,back);return;
     }
     if(kind==J_SAMSUNG_UNPACK){
-        /* The firmware ZIP is unpacked beside it: its AP is reviewed as any firmware folder. */
+        /* The firmware ZIP is unpacked beside it (or on userdata): its AP is reviewed as any firmware folder. */
         char ap[PATH_LEN]={0};jstring(j,0,"ap",ap,sizeof(ap));
         if(!ap[0]){files_problem(a,"SAMSUNG_FIRMWARE_FAILED","The firmware helper did not return a result.",ANDROID_MENU);return;}
         copy(a->samsung_path,sizeof(a->samsung_path),ap);
+        /* Unpacked on userdata when the ZIP's own volume had no room (2026-11-13). */
+        char volume[sizeof(a->samsung_volume)]={0},token[sizeof(a->samsung_token)]={0};
+        jstring(j,0,"volume",volume,sizeof(volume));jstring(j,0,"volume_token",token,sizeof(token));
+        if(volume[0]&&token[0]){copy(a->samsung_volume,sizeof(a->samsung_volume),volume);copy(a->samsung_token,sizeof(a->samsung_token),token);}
         if(!start_samsung_job(a,J_SAMSUNG_INSPECT))files_problem(a,"SAMSUNG_FIRMWARE_UNAVAILABLE","Wait for the current operation to finish.",ANDROID_MENU);
         return;
     }
@@ -133,7 +137,7 @@ static void complete_samsung_job(App*a,const Json*j,int kind,bool ok){
     char saved[192]={0};jstring(j,0,"saved_boot",saved,sizeof(saved));
     a->successful=true;copy(a->status,sizeof(a->status),a->android_gsi?"Android image installed":"Stock Android installed");
     snprintf(a->message,sizeof(a->message),T("%u partitions written and checked. userdata is ready for Android, and this recovery stays. The first start of Android takes several minutes."),written);
-    if(saved[0]){append(a->message,sizeof(a->message),"\n\n");append(a->message,sizeof(a->message),tr("The Linux BOOT is kept on cache:"));append(a->message,sizeof(a->message)," ");append(a->message,sizeof(a->message),saved);}
+    if(saved[0]){append(a->message,sizeof(a->message),"\n\n");append(a->message,sizeof(a->message),tr("The previous BOOT is kept on cache:"));append(a->message,sizeof(a->message)," ");append(a->message,sizeof(a->message),saved);}
     /* userdata is Android's now: no Linux switch or installation is pending on it any more. */
     a->android_installed=true;a->samsung_known=false;a->systems_reboot_blocked=a->install.reboot_blocked=false;
     a->result_return=ANDROID_MENU;screen(a,RESULT);
@@ -488,7 +492,7 @@ static void render_samsung_review(App*a){
         samsung_section(a,&y,"INSTEAD",TEXT,"instead");
         samsung_section(a,&y,"NOT WRITTEN",MUTED,"refused");
         y+=text_tile(a,y,0,MUTED,a->android_gsi?"Everything is checked as it is read and read back after writing. It takes a few minutes; then restart into Android.":
-                   "Everything is checked as it is read and read back after writing. A Linux BOOT is kept on cache first. It takes about ten minutes; then restart into Android.",5)+24;
+                   "Everything is checked as it is read and read back after writing. The BOOT there now is kept on cache first. It takes about ten minutes; then restart into Android.",5)+24;
     }
     a->page_content=y+a->page_scroll-230+16;a->clip_active=false;scroll_indicator(a,(Rect){698,230,5,page_height(a)},a->page_scroll,a->page_content,ORANGE);
     button(a,(Rect){28,1320,664,104},"Hold 5 seconds to install",A_SAMSUNG_CONFIRM,free_ui&&a->samsung_known&&!a->samsung_blockers[0],true,5000);

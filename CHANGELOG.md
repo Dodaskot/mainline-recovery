@@ -33,6 +33,14 @@ BOOT copy also on the phone.
   for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
   the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
   start removes descriptions of saved BOOTs whose image is gone.
+- **Samsung firmware ZIP without room beside it** (0.6.218): when the card holding a samfw.com ZIP
+  has no room for its tars (5.8 GB ZIP, 7.2 GB unpacked, on a 16 GB card), they are unpacked to
+  userdata (A22xFirmware/), which the installation formats for Android at its end anyway. Userdata
+  encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
+  phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
+  written and read back in 5 minutes; stock Android started.
+- The native ROM installation shows real sizes and speed per partition, not a fraction as bytes.
+- The note after a firmware installation names the kept BOOT "the previous BOOT", Linux or not.
 - **Block-based ROMs installed by the recovery itself** (0.6.217): a ZIP with full block OTA images
   (`*.new.dat` or Brotli `*.new.dat.br` with transfer lists) is written by the recovery, image by
   image into its logical partitions laid out for the ROM, each read back, then the ROM's boot.img

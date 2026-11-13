@@ -425,7 +425,7 @@ def native_install(context, room, fd, sizes, found, progress):
                     # screen shows sizes and speed; a script's installer gives only a fraction.
                     done = android_rom.write_block_image(
                         archive, name, node, size,
-                        lambda part, at, total: progress('Writing ' + part, {'label': 'super/' + part, 'size_bytes': total}, at))
+                        lambda part, at, total: progress('Writing', {'label': 'super/' + part, 'size_bytes': total}, at))
                 finally:
                     os.close(node)
                 shown.append('%s: %d MiB written and read back' % (name, done['blocks'] * android_rom.BLOCK >> 20))
@@ -441,7 +441,7 @@ def native_install(context, room, fd, sizes, found, progress):
                 if not this_phone:
                     shown.append('boot.img: not a BOOT of this phone, left out')
                 else:
-                    progress('Writing boot', target, 0)
+                    progress('Writing', target, 0)
                     image = data + bytes(target['size_bytes'] - len(data))
                     writer = context.open_target(target, write=True)
                     try:
