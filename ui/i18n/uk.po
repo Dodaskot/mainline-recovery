@@ -105,6 +105,9 @@ msgstr "5 хв"
 msgid "8 to 63 characters without spaces, with a letter and a digit. It is kept nowhere: remember it."
 msgstr "Від 8 до 63 символів без пробілів, з літерою та цифрою. Він ніде не зберігається: запам’ятайте його."
 
+msgid "A backup can still be restored once one is installed"
+msgstr "Копію можна відновити, щойно систему буде встановлено"
+
 msgid "A backup with this name already exists"
 msgstr "Копія з такою назвою вже є"
 
@@ -177,6 +180,9 @@ msgstr "У налаштуваннях Android замовлено скиданн�
 msgid "A FAT32 card cannot hold a file of 4 GiB or more"
 msgstr "Картка з FAT32 не вміщує файл від 4 ГіБ"
 
+msgid "A file changed while it was archived"
+msgstr "Файл змінився під час архівування"
+
 msgid "A file has no MD5 at its end; every image is still checked as it is read"
 msgstr "У файлі немає MD5 наприкінці; кожен образ однаково перевіряється під час читання"
 
@@ -209,6 +215,9 @@ msgstr "Копія-тека відновлюється цілком."
 
 msgid "A folder copy saves the replaced partitions beside itself first: mount this card with write access in Files."
 msgstr "Копія-тека спершу зберігає поряд із собою розділи, які замінює: змонтуйте цю картку із записом у «Файлах»."
+
+msgid "A folder named as the archive is already here"
+msgstr "Тека з назвою архіву тут уже є"
 
 msgid "A folder of images, made before archives"
 msgstr "Тека з образами, зроблена до появи архівів"
@@ -303,6 +312,9 @@ msgstr "Скидання повертає типові тему, кольори 
 msgid "A running shell was not confirmed. No additional session was started."
 msgstr "Запущену оболонку не підтверджено. Додатковий сеанс не запускався."
 
+msgid "A selected entry is no longer in this folder"
+msgstr "Вибраного запису вже немає в цій теці"
+
 msgid "A setup script can be at most 1 MiB"
 msgstr "Скрипт налаштування може мати щонайбільше 1 МіБ"
 
@@ -371,6 +383,15 @@ msgstr "ОБЛІКОВИЙ ЗАПИС"
 
 msgid "Account"
 msgstr "Обліковий запис"
+
+msgid "Accounts"
+msgstr "Облікові записи"
+
+msgid "Accounts already there: %s"
+msgstr "Облікові записи, що вже були: %s"
+
+msgid "Accounts made: %s"
+msgstr "Створено облікові записи: %s"
 
 msgid "active"
 msgstr "активна"
@@ -471,6 +492,9 @@ msgstr "Дозволений комп'ютер запам'ятовується. 
 msgid "An ARM64 ISO, disk image (raw, qcow2, VHD), Vagrant box or rootfs archive."
 msgstr "ISO, образ диска (raw, qcow2, VHD), Vagrant box або архів rootfs для ARM64."
 
+msgid "An existing destination will not be overwritten"
+msgstr "Наявне призначення не буде перезаписано"
+
 msgid "An image inside a ZIP or a tar, by its name there (a ZIP: system.img or its only image by default)"
 msgstr "Образ усередині ZIP або tar, за його назвою там (у ZIP типово system.img або єдиний образ)"
 
@@ -521,9 +545,6 @@ msgstr "ДАНІ ANDROID БУДЕ СТЕРТО"
 
 msgid "Android did not start"
 msgstr "Android не запустився"
-
-msgid "Android holds userdata: its copy is one archive on a card. A Linux backup needs a Linux system on this phone."
-msgstr "На userdata зараз Android: його копія — один архів на картці. Для копії Linux на телефоні має бути система Linux."
 
 msgid "Android image"
 msgstr "Образ Android"
@@ -785,6 +806,9 @@ msgstr "ДЖЕРЕЛО КОПІЇ"
 
 msgid "Backup verified"
 msgstr "Копію перевірено"
+
+msgid "BACKUPS ON CARDS AND STICKS"
+msgstr "КОПІЇ НА КАРТКАХ І ФЛЕШКАХ"
 
 msgid "Backups will be saved to the USB stick"
 msgstr "Копії зберігатимуться на флешку"
@@ -1788,6 +1812,9 @@ msgstr "Файли (FAT32)"
 msgid "Files / mounts"
 msgstr "Файли / монтування"
 
+msgid "Files of the same name are replaced; nothing else in the system is removed. Accounts that are missing are made with their passwords. Packages are installed over Wi-Fi under the names this system gives them."
+msgstr "Файли з тією самою назвою замінюються; більше нічого в системі не видаляється. Відсутні облікові записи створюються з їхніми паролями. Пакети встановлюються через Wi-Fi під назвами, які їм дає ця система."
+
 msgid "FILES, IN THIS ORDER"
 msgstr "ФАЙЛИ, У ЦЬОМУ ПОРЯДКУ"
 
@@ -2046,6 +2073,9 @@ msgstr "Утримуйте 2 с: доступ читання й запису"
 msgid "Hold 2 seconds to share read-only"
 msgstr "Утримуйте 2 с: доступ лише для читання"
 
+msgid "Hold 2 seconds: back up"
+msgstr "Утримати 2 секунди: зберегти"
+
 msgid "Hold 3 s: delete"
 msgstr "Утримуйте 3 с: видалити"
 
@@ -2090,6 +2120,9 @@ msgstr "Утримуйте 3 с: встановити"
 
 msgid "Hold 3 seconds: reset the settings"
 msgstr "Утримуйте 3 с: скинути налаштування"
+
+msgid "Hold 3 seconds: restore"
+msgstr "Утримати 3 секунди: відновити"
 
 msgid "Hold 3 seconds: restore Android"
 msgstr "Утримуйте 3 с: відновити Android"
@@ -2138,6 +2171,12 @@ msgstr "Утримуйте: розширити на весь розділ"
 
 msgid "Hold: write"
 msgstr "Утримуйте: запис"
+
+msgid "Home folders"
+msgstr "Домашні теки"
+
+msgid "Home, accounts, settings, packages: for another system or device"
+msgstr "Домашні теки, облікові записи, налаштування, пакети: для іншої системи чи пристрою"
 
 msgid "How one page gives way to the next."
 msgstr "Як одна сторінка змінює іншу."
@@ -2189,6 +2228,9 @@ msgstr "Вставте флешку, і вона з'явиться тут сам
 
 msgid "Insert an ext4 microSD, then tap Mount microSD."
 msgstr "Вставте ext4 microSD і натисніть «Змонтувати microSD»."
+
+msgid "Insert an SD card or attach a USB drive"
+msgstr "Вставте SD-картку або під’єднайте USB-накопичувач"
 
 msgid "Insert an SD card or attach a USB drive, then read again."
 msgstr "Вставте SD-картку або під’єднайте USB-накопичувач і прочитайте ще раз."
@@ -2294,6 +2336,9 @@ msgstr "Внутрішня пам'ять"
 
 msgid "INTERRUPTED SWITCH"
 msgstr "ПЕРЕРВАНЕ ПЕРЕМИКАННЯ"
+
+msgid "INTO"
+msgstr "КУДИ"
 
 msgid "It can read and change everything here."
 msgstr "Він зможе читати й змінювати все на телефоні."
@@ -2460,14 +2505,20 @@ msgstr "КОПІЯ LINUX"
 msgid "Linux backup"
 msgstr "Копія Linux"
 
-msgid "Linux backup saves allocated ext4 blocks with compression. The next screen reviews userdata before normal unmount."
-msgstr "Копія Linux зберігає зайняті блоки ext4 зі стисненням. На наступному екрані перед звичайним розмонтуванням буде показано userdata."
-
 msgid "Linux BOOT"
 msgstr "Linux BOOT"
 
 msgid "Linux boot + rootfs"
 msgstr "Linux boot + rootfs"
+
+msgid "Linux data"
+msgstr "Дані Linux"
+
+msgid "Linux data restored"
+msgstr "Дані Linux відновлено"
+
+msgid "Linux data saved"
+msgstr "Дані Linux збережено"
 
 msgid "Linux from SD or USB stick, switch systems"
 msgstr "Linux із SD чи флешки, перемикання систем"
@@ -2847,6 +2898,9 @@ msgstr "У BOOT не знайдено ядра"
 msgid "No link text returned"
 msgstr "Текст посилання не отримано"
 
+msgid "No Linux system on userdata"
+msgstr "На userdata немає системи Linux"
+
 msgid "No Linux: userdata holds Android"
 msgstr "Linux немає: на userdata лежить Android"
 
@@ -3012,6 +3066,9 @@ msgstr "Не записується: невідомий для Recovery"
 msgid "Nothing"
 msgstr "Нічого"
 
+msgid "Nothing has been changed yet."
+msgstr "Ще нічого не змінено."
+
 msgid "Nothing has been erased yet."
 msgstr "Поки що нічого не стерто."
 
@@ -3035,6 +3092,9 @@ msgstr "НІЧОГО НЕ СТИРАЄТЬСЯ"
 
 msgid "Nothing is replaced: the new system becomes the only one on userdata."
 msgstr "Нічого не замінюється: нова система стане єдиною на userdata."
+
+msgid "Nothing is selected"
+msgstr "Нічого не вибрано"
 
 msgid "November"
 msgstr "листопада"
@@ -3198,8 +3258,17 @@ msgstr "Тихий океан"
 msgid "PACKAGE NAME"
 msgstr "НАЗВА ПАКЕТА"
 
+msgid "Packages"
+msgstr "Пакети"
+
 msgid "Packages come over the recovery's Wi-Fi: this takes 10-30 minutes. Keep the phone powered."
 msgstr "Пакети йдуть через Wi-Fi recovery: це триває 10–30 хвилин. Тримайте телефон увімкненим."
+
+msgid "Packages need Wi-Fi in the recovery: connect, then restore Packages alone."
+msgstr "Пакетам потрібен Wi-Fi у recovery: під’єднайтеся, а потім відновіть лише «Пакети»."
+
+msgid "Packages there: %u; not in this system: %u"
+msgstr "Пакетів на місці: %u; немає в цій системі: %u"
 
 msgid "Packages, the account and the desktop are set up as you choose on the next pages."
 msgstr "Пакети, обліковий запис і робочий стіл налаштуються так, як ви виберете на наступних сторінках."
@@ -3498,6 +3567,9 @@ msgstr "Читання даних телефона..."
 msgid "Reading the saved images..."
 msgstr "Читаю збережені образи..."
 
+msgid "Reading the system on userdata..."
+msgstr "Читання системи на userdata..."
+
 msgid "Reading USB status..."
 msgstr "Читання стану USB..."
 
@@ -3762,8 +3834,14 @@ msgstr "Відновлення з образу"
 msgid "Restore identity"
 msgstr "Відновлення ідентичності"
 
+msgid "Restore Linux data"
+msgstr "Відновити дані Linux"
+
 msgid "Restore the previous root filesystem using the saved transaction. Shared /home remains in place."
 msgstr "Відновити попередню кореневу ФС за збереженою транзакцією. Спільний /home лишається на місці."
+
+msgid "Restored into %s."
+msgstr "Відновлено в %s."
 
 msgid "Restoring BOOT"
 msgstr "Відновлення BOOT"
@@ -4434,6 +4512,9 @@ msgstr "Торкніться «Новий користувач», щоб вве�
 msgid "Tap outside to close"
 msgstr "Торкніться поза меню, щоб закрити"
 
+msgid "Tap Refresh to read the system on userdata."
+msgstr "Торкніться «Оновити», щоб прочитати систему на userdata."
+
 msgid "Tap Search to turn Wi-Fi on."
 msgstr "Натисніть «Шукати», щоб увімкнути Wi-Fi."
 
@@ -4536,11 +4617,20 @@ msgstr "В архіві немає маніфесту наприкінці: ві
 msgid "The archive holds a file its manifest does not list"
 msgstr "В архіві є файл, якого немає в його маніфесті"
 
+msgid "The archive holds an entry that would land outside its folder"
+msgstr "В архіві є запис, що потрапив би поза його теку"
+
+msgid "The archive holds an entry that would land outside the system"
+msgstr "В архіві є запис, що потрапив би поза систему"
+
 msgid "The archive holds no image this recovery can flash."
 msgstr "В архіві немає образу, який цей recovery може прошити."
 
 msgid "The archive holds something that is not a plain file"
 msgstr "В архіві є щось, що не є звичайним файлом"
+
+msgid "The archive is %s, %s.\n\nIt restores into any Linux installed here from this page, and on another device with the restore.sh inside it."
+msgstr "Архів: %s, %s.\n\nВін відновлюється в будь-який Linux, встановлений тут, з цієї сторінки, а на іншому пристрої — скриптом restore.sh усередині нього."
 
 msgid "The archive is checked before the snapshot is marked complete. Moving outside the button cancels the hold."
 msgstr "Архів перевіряється, перш ніж знімок позначається завершеним. Рух за межі кнопки скасовує утримання."
@@ -4553,6 +4643,9 @@ msgstr "Архів не є звичайним файлом"
 
 msgid "The archive lacks a file its manifest lists"
 msgstr "В архіві бракує файла, який є в його маніфесті"
+
+msgid "The archive name must end in .tar.zst"
+msgstr "Назва архіву має закінчуватися на .tar.zst"
 
 msgid "The archive was not read to its end"
 msgstr "Архів не прочитано до кінця"
@@ -4589,6 +4682,9 @@ msgstr "Копія не збігається з поточним станом Li
 
 msgid "The backup file ended early"
 msgstr "Файл копії закінчився завчасно"
+
+msgid "The backup holds none of the chosen parts"
+msgstr "У копії немає жодної з вибраних частин"
 
 msgid "The backup matches the current Linux state."
 msgstr "Копія збігається з поточним станом Linux."
@@ -5028,6 +5124,9 @@ msgstr "Linux BOOT із цього плану більше не пропонує
 msgid "The Linux BOOT on cache changed since planning"
 msgstr "Linux BOOT у cache змінився після планування"
 
+msgid "The Linux data helper did not return a result."
+msgstr "Помічник даних Linux не повернув результату."
+
 msgid "The local terminal helper is not configured."
 msgstr "Помічник локального термінала не налаштовано."
 
@@ -5126,6 +5225,9 @@ msgstr "Операцію зупинено."
 
 msgid "The package has no such image"
 msgstr "У пакеті немає такого образу"
+
+msgid "The package list of this system cannot be read here. Leave Packages out"
+msgstr "Список пакетів цієї системи тут не читається. Зніміть «Пакети»"
 
 msgid "The package servers could not be reached."
 msgstr "Не вдалося зв’язатися з серверами пакетів."
@@ -5316,6 +5418,9 @@ msgstr "Запитаний USB-експорт чи зупинку не підт�
 msgid "the rest of the card"
 msgstr "решта картки"
 
+msgid "The restore inside the system did not finish"
+msgstr "Відновлення всередині системи не завершилося"
+
 msgid "The result of the write could not be confirmed."
 msgstr "Результат запису не вдалося підтвердити."
 
@@ -5396,6 +5501,9 @@ msgstr "Потрібен розмір перевіреного образу"
 
 msgid "The sizes for Linux and swap are out of range"
 msgstr "Розміри для Linux і підкачки поза межами"
+
+msgid "The staging folder of the system is a link"
+msgstr "Проміжна тека системи є посиланням"
 
 msgid "The starting root is recovery RAM. Mount Linux in Files first, then use /mnt/volumes/userdata. The microSD backup mount is /mnt/backup."
 msgstr "Початковий корінь — RAM recovery. Спершу змонтуйте Linux у Файлах, а потім використовуйте /mnt/volumes/userdata. Копії на microSD монтуються в /mnt/backup."
@@ -5529,6 +5637,9 @@ msgstr "Немає заголовка AVB vbmeta"
 msgid "There is no AVB vbmeta in the vbmeta partition"
 msgstr "У розділі vbmeta немає AVB vbmeta"
 
+msgid "There is no Linux system on userdata"
+msgstr "На userdata немає системи Linux"
+
 msgid "There is no room to keep the old content first: free space on cache or insert a card"
 msgstr "Немає місця, щоб спершу зберегти старий вміст: звільніть місце на cache або вставте картку"
 
@@ -5540,6 +5651,9 @@ msgstr "Ні поруч із ZIP, ні на userdata не вистачає мі�
 
 msgid "There is not enough space beside the ZIP to unpack the firmware, and userdata is encrypted by Android. Free space beside the ZIP, or format userdata in Wipe (the installation formats it for Android anyway), then choose the ZIP again"
 msgstr "Поруч із ZIP не вистачає місця, щоб розпакувати прошивку, а userdata зашифрована Android. Звільніть місце поруч із ZIP або відформатуйте userdata в «Очищенні» (встановлення однаково форматує її для Android), а потім знову виберіть ZIP"
+
+msgid "There is not enough space for the archive"
+msgstr "Для архіву не вистачає місця"
 
 msgid "There is not enough space on the card for this image"
 msgstr "На картці бракує місця для цього образу"
@@ -5628,11 +5742,17 @@ msgstr "Це не образ DTBO"
 msgid "This file is not a filesystem image for userdata"
 msgstr "Цей файл не є образом файлової системи для userdata"
 
+msgid "This file is not a Linux data backup"
+msgstr "Цей файл не є копією даних Linux"
+
 msgid "This file is not a recognised system image. Supported: ISO, raw or img disk images, qcow2, VHD, Vagrant box and tar archives, also compressed with xz, zstd, gzip or bzip2."
 msgstr "Цей файл не схожий на образ системи. Підтримуються ISO, образи дисків raw чи img, qcow2, VHD, Vagrant box і архіви tar, також стиснені xz, zstd, gzip або bzip2."
 
 msgid "This file is not a super image"
 msgstr "Це не образ super"
+
+msgid "This file is not a tar archive"
+msgstr "Цей файл не є архівом tar"
 
 msgid "This file is not a vbmeta image"
 msgstr "Це не образ vbmeta"
@@ -5805,14 +5925,23 @@ msgstr "Ця система не може прочитати збережени�
 msgid "This system was set up for another kernel and firmware. Install it again, or remove it"
 msgstr "Цю систему встановлено для іншого ядра й прошивок. Встановіть її знову або видаліть"
 
+msgid "This system's package manager is not known here: the packages were not installed."
+msgstr "Менеджер пакетів цієї системи тут невідомий: пакети не встановлено."
+
 msgid "This uses a normal unmount. Busy filesystems are refused. The backup destination stays mounted and userdata remains offline until you choose to mount it again in Files."
 msgstr "Використовується звичайне розмонтування. Зайняті ФС відхиляються. Місце для копій лишається змонтованим, а userdata — розмонтованим, поки ви знову не змонтуєте його у Файлах."
+
+msgid "This volume cannot be written"
+msgstr "На цей том не можна писати"
 
 msgid "This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4, or leave super out"
 msgstr "Цей том не вміщує такого великого файла: межа FAT32 — 4 ГіБ. Візьміть exFAT чи ext4 або пропустіть super"
 
 msgid "This volume is available for reading only."
 msgstr "Цей том доступний лише для читання."
+
+msgid "This volume is in use read-only"
+msgstr "Цей том використовується лише для читання"
 
 msgid "This volume is no longer available. Return to Files and refresh the list."
 msgstr "Цей том більше недоступний. Поверніться до Файлів і оновіть список."
@@ -5841,11 +5970,17 @@ msgstr "Часовий пояс"
 msgid "TO"
 msgstr "КУДИ"
 
+msgid "To: %.100s  /  %s free"
+msgstr "Куди: %.100s  /  вільно %s"
+
 msgid "To: %.170s"
 msgstr "Куди: %.170s"
 
 msgid "Too many attempts. Try again in %u s"
 msgstr "Забагато спроб. Спробуйте за %u с"
+
+msgid "Too many files are selected at once"
+msgstr "Вибрано забагато файлів одразу"
 
 msgid "Touch panel"
 msgstr "Сенсорна панель"
@@ -6362,6 +6497,9 @@ msgstr "Тепер флешку можна вийняти"
 
 msgid "Your accounts and /home settings stay available."
 msgstr "Ваші облікові записи та налаштування /home лишаються."
+
+msgid "Your own files and settings, without the system."
+msgstr "Ваші файли й налаштування, без системи."
 
 msgid "ZIP with an installer"
 msgstr "ZIP з інсталятором"

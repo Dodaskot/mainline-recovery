@@ -60,6 +60,8 @@ if [ -f "$KERNEL_DIR/wifi-modules.tar.xz" ]; then
     add opt/a22x-recovery/identity_backup.py "$S/identity_backup.py"
     add opt/a22x-recovery/partition_archive.py "$S/partition_archive.py"
     add opt/a22x-recovery/file_archive.py "$S/file_archive.py"
+    add opt/a22x-recovery/linux_data.py "$S/linux_data.py"
+    add opt/a22x-recovery/linux_data_restore.sh "$S/linux_data_restore.sh"
     add opt/a22x-recovery/screenshot.py "$S/screenshot.py"
     ADD+=(--replace "opt/a22x-recovery/ssh_service.py=$S/ssh_service.py")
     add opt/a22x-recovery/keys/archlinuxarm.asc "$S/keys/archlinuxarm.asc"

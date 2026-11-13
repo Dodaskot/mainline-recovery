@@ -3537,7 +3537,7 @@ def chroot_processes(root):
                 continue
 
 
-def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT, home=None):
+def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT, home=None, command=None):
     """Run the first-start script in ROOT with proc, a read-only sys, a /dev without block
     devices, a fresh /run and the recovery's resolver. Everything is undone afterwards, also
     on failure or cancel. Returns the script's exit status (None: it could not start)."""
@@ -3617,7 +3617,8 @@ def chroot_script(root, on_line, timeout=PROVISION_TIMEOUT, home=None):
             # The recovery's own umask (077) made files of the new system root-only: phoc could not
             # read /etc/phrog/phoc.ini and the login screen never came (2026-11-08, Fedora).
             os.umask(0o022)
-        process = subprocess.Popen(['/bin/sh', PROVISION_SCRIPT], env=PROVISION_ENV, stdin=subprocess.DEVNULL,
+        # COMMAND (2026-11-13, linux_data.py): another program run the same way, as a package list.
+        process = subprocess.Popen(command or ['/bin/sh', PROVISION_SCRIPT], env=PROVISION_ENV, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, preexec_fn=enter,
                                    start_new_session=True)
         import threading

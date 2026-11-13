@@ -1,0 +1,585 @@
+#!/usr/bin/python3
+# SPDX-License-Identifier: MIT
+"""The data of a Linux system, without the system (2026-11-13).
+
+The owner's scenario: keep what is one's own (home folders, accounts, settings, the list of
+packages), erase the phone, install another distribution or take another ARM device, and put it all
+back. This is not a system installed beside another with a shared /home (Systems does that): the
+archive lies on a card or a stick and belongs to no system.
+
+    A22xDataBackups/linux-data-ID-DATE.tar.zst
+        manifest.json  restore.sh  accounts.tsv  packages.txt  aliases.tsv  source-family
+        home/...  root-home/...  settings/etc/...  settings/var/lib/...
+    and after zstd's stream the manifest again in a skippable frame (partition_archive's footer).
+
+Each part is chosen by itself, for the backup and again for the restore. The restore is done by
+restore.sh from the archive, run inside the installed system (chroot); the same script restores the
+archive on any other Linux, without this recovery: sudo sh restore.sh ARCHIVE.
+
+Nothing tied to this phone's hardware is taken: no kernel modules, no firmware, no fstab.
+"""
+import argparse
+import contextlib
+import json
+import os
+from pathlib import Path
+import shutil
+import stat
+import subprocess
+import sys
+import tarfile
+import time
+
+import file_archive as fa
+import filesystem as fs
+import partition_archive as pa
+from filesystem import fail
+
+SCHEMA = 'a22x.linux-data.v1'
+STORE = 'A22xDataBackups'
+PARTS = ('home', 'accounts', 'settings', 'packages')
+STAGING = 'var/tmp/a22x-restore'
+SCRIPT = Path(__file__).with_name('linux_data_restore.sh')
+SETTINGS = ('etc/hostname', 'etc/locale.conf', 'etc/default/locale', 'etc/vconsole.conf', 'etc/timezone', 'etc/localtime',
+            'etc/NetworkManager/system-connections', 'var/lib/iwd', 'var/lib/bluetooth')
+SSH_KEYS = 'etc/ssh'
+# arch|debian|fedora: the same program under the names the families give it.
+ALIASES = """openssh|openssh-server|openssh-server
+networkmanager|network-manager|NetworkManager
+firefox|firefox-esr|firefox
+python|python3|python3
+python-pip|python3-pip|python3-pip
+base-devel|build-essential|-
+vim|vim|vim-enhanced
+bluez-utils|bluez|bluez
+alsa-utils|alsa-utils|alsa-utils
+noto-fonts|fonts-noto|google-noto-sans-fonts
+ttf-dejavu|fonts-dejavu|dejavu-sans-fonts
+man-db|man-db|man-db
+iw|iw|iw
+wpa_supplicant|wpasupplicant|wpa_supplicant
+gnome-console|gnome-console|gnome-console
+qt5-wayland|qtwayland5|qt5-qtwayland
+qt6-wayland|qt6-wayland|qt6-qtwayland
+xdg-user-dirs|xdg-user-dirs|xdg-user-dirs
+pipewire-pulse|pipewire-pulse|pipewire-pulseaudio
+imagemagick|imagemagick|ImageMagick
+p7zip|p7zip-full|p7zip
+"""
+
+
+def require(condition, code, message, **details):
+    if not condition:
+        fail(code, message, **details)
+
+
+def os_release(root_fd):
+    for path in ('etc/os-release', 'usr/lib/os-release'):
+        try:
+            fd = open_inside(root_fd, path)
+        except OSError:
+            continue
+        with os.fdopen(fd, 'r', errors='replace') as f:
+            found = {}
+            for line in f.read(1 << 16).splitlines():
+                key, eq, value = line.partition('=')
+                if eq:
+                    found[key.strip()] = value.strip().strip('"\'')
+            return found
+    return None
+
+
+def family_of(release):
+    words = (release.get('ID', '') + ' ' + release.get('ID_LIKE', '')).lower().split()
+    for family, signs in (('arch', ('arch', 'archarm', 'manjaro')), ('debian', ('debian', 'ubuntu')),
+                          ('fedora', ('fedora', 'rhel', 'centos')), ('suse', ('suse', 'opensuse')),
+                          ('alpine', ('alpine', 'postmarketos'))):
+        if any(w in signs or w.startswith(s) for w in words for s in signs):
+            return family
+    return 'unknown'
+
+
+def open_dir(root_fd, relative):
+    """RELATIVE below ROOT_FD as a directory, no link followed on the way."""
+    fd = os.dup(root_fd)
+    try:
+        for part in fs.path_parts(relative):
+            nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def open_inside(root_fd, relative):
+    folder, _, name = relative.rpartition('/')
+    parent = open_dir(root_fd, folder)
+    try:
+        return os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=parent)
+    finally:
+        os.close(parent)
+
+
+def read_text(root_fd, relative, limit=64 << 20):
+    try:
+        fd = open_inside(root_fd, relative)
+    except OSError:
+        return None
+    with os.fdopen(fd, 'rb') as f:
+        return f.read(limit).decode('utf-8', 'replace')
+
+
+def accounts_of(root_fd):
+    """The people of the system: UID 1000 and up, with password hash, admin right and other groups."""
+    passwd = read_text(root_fd, 'etc/passwd')
+    require(passwd is not None, 'NO_LINUX', 'There is no Linux system on userdata')
+    hashes = {}
+    for line in (read_text(root_fd, 'etc/shadow') or '').splitlines():
+        parts = line.split(':')
+        if len(parts) > 1:
+            hashes[parts[0]] = parts[1]
+    groups = {}
+    for line in (read_text(root_fd, 'etc/group') or '').splitlines():
+        parts = line.split(':')
+        if len(parts) > 3:
+            for member in parts[3].split(','):
+                if member:
+                    groups.setdefault(member, []).append(parts[0])
+    found = []
+    for line in passwd.splitlines():
+        parts = line.split(':')
+        if len(parts) == 7 and parts[2].isdecimal() and 1000 <= int(parts[2]) < 60000 and '|' not in line:
+            mine = groups.get(parts[0], [])
+            found.append({'name': parts[0], 'uid': int(parts[2]), 'gid': int(parts[3]), 'home': parts[5], 'shell': parts[6],
+                          'admin': any(g in ('wheel', 'sudo') for g in mine), 'hash': hashes.get(parts[0], '!'),
+                          'groups': [g for g in mine if g not in ('wheel', 'sudo')]})
+    return found
+
+
+def accounts_table(accounts):
+    return ''.join('|'.join((a['name'], str(a['uid']), str(a['gid']), a['home'], a['shell'], '1' if a['admin'] else '0',
+                             a['hash'] or '-', ','.join(a['groups']) or '-')) + '\n' for a in accounts).encode()
+
+
+def packages_of(root_fd, family):
+    """The packages the owner asked for, by name, as the package manager's own records say; None when
+    this recovery cannot read them."""
+    if family == 'arch':
+        try:
+            local = open_dir(root_fd, 'var/lib/pacman/local')
+        except OSError:
+            return None
+        names = []
+        try:
+            for entry in sorted(os.listdir(local)):
+                try:
+                    fd = os.open(entry + '/desc', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=local)
+                except OSError:
+                    continue
+                with os.fdopen(fd, 'r', errors='replace') as f:
+                    lines = f.read(1 << 20).split('\n')
+                field = {lines[i]: lines[i + 1] for i in range(len(lines) - 1) if lines[i].startswith('%')}
+                if field.get('%NAME%') and field.get('%REASON%', '0') == '0':
+                    names.append(field['%NAME%'])
+        finally:
+            os.close(local)
+        return names
+    if family == 'debian':
+        status = read_text(root_fd, 'var/lib/dpkg/status')
+        if status is None:
+            return None
+        auto = set()
+        for block in (read_text(root_fd, 'var/lib/apt/extended_states') or '').split('\n\n'):
+            if 'auto-installed: 1' in block.lower():
+                for line in block.splitlines():
+                    if line.lower().startswith('package: '):
+                        auto.add(line[9:].strip())
+        names = []
+        for block in status.split('\n\n'):
+            field = dict(line.split(': ', 1) for line in block.splitlines() if ': ' in line and not line.startswith(' '))
+            if (field.get('Status') == 'install ok installed' and field.get('Package') not in auto
+                    and field.get('Priority') not in ('required', 'important', 'standard')):
+                names.append(field['Package'])
+        return sorted(set(names))
+    return None
+
+
+def chroot_lines(root, command, timeout=3600):
+    """COMMAND inside the system at ROOT, as its first-start setup is run; (status, lines)."""
+    import distro
+    lines = []
+    status = distro.chroot_script(Path(root), lambda line: lines.append(line.rstrip('\n')), timeout=timeout, command=command)
+    return status, lines
+
+
+@contextlib.contextmanager
+def linux_root(context, write=False):
+    """userdata with a Linux system at its top: (pin, the root's path). Mounted when it is not, for
+    reading unless WRITE, and left as it was found."""
+    volume = context.volume('userdata')
+    require(volume.get('fs_type') == 'ext4' and not volume.get('fscrypt_feature') and volume.get('mountable'), 'NO_LINUX',
+            'There is no Linux system on userdata')
+    owned = not volume['mounted']
+    reopened = False
+    if owned:
+        context.mount('userdata', 'rw' if write else 'ro', True, volume['volume_token'])
+    elif write and volume['read_only']:
+        require(volume.get('mount_owner') == 'filesystem', 'VOLUME_READ_ONLY', 'userdata is in use read-only')
+        context.mount('userdata', 'rw', True, volume['volume_token'])
+        reopened = True
+    try:
+        with fs.PinnedVolume(context, 'userdata', writing=write) as pin:
+            release = os_release(pin.fd)
+            require(release is not None and read_text(pin.fd, 'etc/passwd') is not None, 'NO_LINUX',
+                    'There is no Linux system on userdata')
+            yield pin, os.readlink('/proc/self/fd/%d' % pin.fd), release
+    finally:
+        with contextlib.suppress(fs.FilesystemError, OSError):
+            now = context.volume('userdata')
+            if owned and now['mounted']:
+                context.unmount('userdata', now['volume_token'])
+            elif reopened:
+                context.mount('userdata', 'ro', True, now['volume_token'])
+
+
+def collect(pin, parts, accounts):
+    """(entries for file_archive.write_archive, fds to close, bytes of each part)."""
+    entries, sizes = [], {}
+    device = pin.stat.st_dev
+
+    def add(parent_fd, name, arcname):
+        before = len(entries)
+        try:
+            fa.walk(parent_fd, name, device, arcname, entries)
+        except FileNotFoundError:
+            return 0
+        return sum(e[2].st_size for e in entries[before:] if e[1] is not None and stat.S_ISREG(e[2].st_mode))
+
+    if 'home' in parts:
+        sizes['home'] = add(pin.fd, 'home', 'home') + add(pin.fd, 'root', 'root-home')
+    if 'settings' in parts:
+        total = 0
+        for path in SETTINGS:
+            folder, _, name = path.rpartition('/')
+            try:
+                parent = open_dir(pin.fd, folder)
+            except OSError:
+                continue
+            entries.append((parent, None, None, None))
+            total += add(parent, name, 'settings/' + path)
+        with contextlib.suppress(OSError):
+            ssh = open_dir(pin.fd, SSH_KEYS)
+            entries.append((ssh, None, None, None))
+            for name in sorted(os.listdir(ssh)):
+                if name.startswith('ssh_host_') and 'key' in name:
+                    total += add(ssh, name, 'settings/' + SSH_KEYS + '/' + name)
+        sizes['settings'] = total
+    # What can be fetched again is left out: every account's cache.
+    caches = tuple(a['home'].strip('/') + '/.cache/' for a in accounts) + ('root-home/.cache/',)
+    files = [e for e in entries if e[1] is not None and not (e[3] + '/').startswith(caches)]
+    return files, [e[0] for e in entries if e[1] is None], sizes
+
+
+def externals(context, mount=False):
+    """SD cards and sticks; with MOUNT, one that is not mounted is mounted read-only to be looked at."""
+    found = []
+    for volume in context.volumes():
+        if not volume['id'].startswith(('sdcard', 'usb')) or not volume.get('mountable'):
+            continue
+        if mount and not volume['mounted']:
+            with contextlib.suppress(fs.FilesystemError, OSError):
+                context.mount(volume['id'], 'ro', False, volume['volume_token'])
+                volume = context.volume(volume['id'])
+        if volume['mounted']:
+            found.append(volume)
+    return found
+
+
+def archives(context, mount=False):
+    found = []
+    for volume in externals(context, mount):
+        try:
+            with fs.PinnedVolume(context, volume['id']) as pin, pin.directory(STORE) as folder:
+                for name in sorted(os.listdir(folder), reverse=True):
+                    if not name.endswith('.tar.zst'):
+                        continue
+                    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=folder)
+                    try:
+                        raw, size = pa.footer(fd), os.fstat(fd).st_size
+                    finally:
+                        os.close(fd)
+                    try:
+                        about = json.loads(raw.decode('utf-8')) if raw else None
+                    except ValueError:
+                        about = None
+                    if isinstance(about, dict) and about.get('schema') == SCHEMA:
+                        found.append({'volume': volume['id'], 'volume_token': volume['volume_token'],
+                                      'label': volume.get('label') or volume['id'], 'path': '/' + STORE + '/' + name, 'name': name,
+                                      'bytes': size, 'created': about.get('created', 0), 'os': about.get('os', {}),
+                                      'parts': [p for p in PARTS if p in about.get('parts', [])],
+                                      'accounts': about.get('accounts', [])[:8], 'packages': about.get('packages', 0),
+                                      'machine': about.get('machine', '')})
+        except (FileNotFoundError, fs.FilesystemError, OSError):
+            continue
+    return found[:16]
+
+
+def inspect(context):
+    result = {'linux': False, 'reason': '', 'archives': archives(context, mount=True), 'destinations': []}
+    for volume in externals(context):
+        if volume.get('write_supported'):
+            with contextlib.suppress(OSError):
+                room = os.statvfs(volume['mountpoint'])
+                result['destinations'].append({'volume': volume['id'], 'label': volume.get('label') or volume['id'],
+                                               'free_bytes': room.f_bavail * room.f_frsize})
+    try:
+        with linux_root(context) as (pin, _, release):
+            accounts = accounts_of(pin.fd)
+            files, opened, sizes = collect(pin, ('home', 'settings'), accounts)
+            for fd in opened:
+                os.close(fd)
+            family = family_of(release)
+            names = packages_of(pin.fd, family)
+            result.update(linux=True, os={'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', ''),
+                                          'family': family},
+                          accounts=[a['name'] for a in accounts],
+                          parts={'home': sizes.get('home', 0), 'settings': sizes.get('settings', 0), 'accounts': len(accounts),
+                                 'packages': len(names) if names is not None else -1})
+    except fs.FilesystemError as error:
+        result['reason'] = error.code
+    return result
+
+
+def writable(context, ident, token):
+    volume = context.volume(ident, token)
+    require(volume.get('write_supported'), 'VOLUME_READ_ONLY', 'This volume cannot be written')
+    if not volume['mounted'] or volume['read_only']:
+        require(not volume['mounted'] or volume.get('mount_owner') == 'filesystem', 'VOLUME_READ_ONLY', 'This volume is in use read-only')
+        context.mount(ident, 'rw', True, volume['volume_token'])
+    return context.volume(ident)
+
+
+def backup(context, parts, dest_volume, dest_token, confirmed, progress):
+    context.confirm(confirmed)
+    parts = [p for p in PARTS if p in parts]
+    require(parts, 'NOTHING_SELECTED', 'Nothing is selected')
+    target_volume = writable(context, dest_volume, dest_token)
+    with linux_root(context) as (pin, _, release):
+        accounts = accounts_of(pin.fd)
+        family = family_of(release)
+        files, opened, sizes = collect(pin, parts, accounts)
+        try:
+            extra, names = [], None
+            if 'packages' in parts:
+                names = packages_of(pin.fd, family)
+                require(names is not None, 'PACKAGES_UNREADABLE',
+                        'The package list of this system cannot be read here. Leave Packages out')
+                extra.append(('packages.txt', ('\n'.join(names) + '\n').encode(), 0o644))
+                extra.append(('aliases.tsv', ALIASES.encode(), 0o644))
+            if 'accounts' in parts or 'home' in parts:
+                # With the homes alone the table still says whose they were; without hashes then.
+                table = accounts if 'accounts' in parts else [dict(a, hash='-') for a in accounts]
+                extra.append(('accounts.tsv', accounts_table(table), 0o600))
+            extra.append(('source-family', (family + '\n').encode(), 0o644))
+            extra.append(('restore.sh', SCRIPT.read_bytes(), 0o755))
+            total = sum(e[2].st_size for e in files if stat.S_ISREG(e[2].st_mode))
+            created = int(time.time())
+            manifest = json.dumps({
+                'schema': SCHEMA, 'created': created, 'machine': os.uname().machine, 'parts': parts,
+                'os': {'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', ''), 'family': family},
+                'accounts': [a['name'] for a in accounts] if ('accounts' in parts or 'home' in parts) else [],
+                'packages': len(names) if names is not None else 0, 'bytes': total, 'entries': len(files),
+                'sizes': sizes}, ensure_ascii=False, separators=(',', ':')).encode()
+            extra.insert(0, ('manifest.json', manifest, 0o644))
+            stamp = time.strftime('%Y%m%d-%H%M%S', time.localtime(created))
+            name = 'linux-data-%s-%s.tar.zst' % (''.join(c for c in release.get('ID', 'linux') if c.isalnum() or c in '-_')[:24] or 'linux', stamp)
+            with fs.PinnedVolume(context, dest_volume, target_volume['volume_token'], writing=True) as target:
+                room = os.fstatvfs(target.fd)
+                # zstd rarely makes a home larger; an archive that outgrows the room fails and is removed.
+                require(room.f_bavail * room.f_frsize > min(total, total // 3 + (64 << 20)), 'INSUFFICIENT_SPACE',
+                        'There is not enough space for the archive', required_bytes=total, available_bytes=room.f_bavail * room.f_frsize)
+                with contextlib.suppress(FileExistsError):
+                    os.mkdir(STORE, 0o700, dir_fd=target.fd)
+                with target.directory(STORE) as folder:
+                    part = '.part-' + name
+                    with contextlib.suppress(FileNotFoundError):
+                        os.unlink(part, dir_fd=folder)
+                    out = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=folder)
+                    try:
+                        fa.write_archive(out, files, total, lambda done, all_, label: progress('Packing', done, all_, label), extra)
+                        fa.footer(out, manifest)
+                        size = os.fstat(out).st_size
+                    except BaseException:
+                        os.close(out)
+                        with contextlib.suppress(OSError):
+                            os.unlink(part, dir_fd=folder)
+                        raise
+                    os.close(out)
+                    os.rename(part, name, src_dir_fd=folder, dst_dir_fd=folder)
+                    os.fsync(folder)
+        finally:
+            for fd in opened:
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+    return {'archive': {'volume': dest_volume, 'path': '/' + STORE + '/' + name, 'bytes': size}, 'parts': parts, 'bytes': total,
+            'entries': len(files), 'accounts': len(accounts) if 'accounts' in parts else 0,
+            'packages': len(names) if names is not None else 0}
+
+
+def unpack_into(archive_fd, root, parts, progress):
+    """Home folders straight to their place in ROOT, the rest into the staging folder there."""
+    staging = Path(root) / STAGING
+    if staging.is_symlink() or staging.exists():
+        require(not staging.is_symlink(), 'ARCHIVE_UNSAFE', 'The staging folder of the system is a link')
+        shutil.rmtree(staging)
+    os.makedirs(staging, 0o700)
+    total = os.fstat(archive_fd).st_size
+    os.lseek(archive_fd, 0, os.SEEK_SET)
+    proc = subprocess.Popen([pa.zstd_path(), '-q', '-d', '-c'], stdin=archive_fd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    finished, count = False, 0
+    try:
+        with tarfile.open(fileobj=proc.stdout, mode='r|', bufsize=fa.CHUNK) as tar:
+            for member in tar:
+                name = member.name
+                if name == 'home' or name.startswith('home/'):
+                    if 'home' in parts:
+                        tar.extract(member, root, numeric_owner=True, filter='tar')
+                elif name == 'root-home' or name.startswith('root-home/'):
+                    if 'home' in parts:
+                        tar.extract(member.replace(name='root' + name[9:], deep=False), root, numeric_owner=True, filter='tar')
+                else:
+                    tar.extract(member, staging, numeric_owner=True, filter='tar')
+                count += 1
+                if count % 64 == 0:
+                    progress('Unpacking', os.lseek(archive_fd, 0, os.SEEK_CUR), total, name)
+        finished = True
+        while proc.stdout.read(fa.CHUNK):
+            pass
+    except tarfile.FilterError as error:
+        fail('ARCHIVE_UNSAFE', 'The archive holds an entry that would land outside the system', reason=str(error)[:200])
+    except (tarfile.TarError, EOFError) as error:
+        fail('ARCHIVE_DAMAGED', 'The archive is damaged', reason=str(error)[:200])
+    finally:
+        if not finished and proc.poll() is None:
+            proc.kill()
+        proc.stdout.close()
+        proc.stderr.close()
+        code = proc.wait()
+    require(code == 0, 'ARCHIVE_DAMAGED', 'The archive is damaged')
+    return staging
+
+
+def restore(context, volume, token, path, parts, confirmed, progress):
+    context.confirm(confirmed)
+    parts = [p for p in PARTS if p in parts]
+    require(parts, 'NOTHING_SELECTED', 'Nothing is selected')
+    clean = fs.clean_path(path)
+    folder, _, name = clean.rpartition('/')
+    with fs.PinnedVolume(context, volume, token) as source, source.directory(folder) as directory:
+        archive_fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
+        try:
+            raw = pa.footer(archive_fd)
+            try:
+                about = json.loads(raw.decode('utf-8')) if raw else None
+            except ValueError:
+                about = None
+            require(isinstance(about, dict) and about.get('schema') == SCHEMA, 'NOT_A_DATA_BACKUP', 'This file is not a Linux data backup')
+            parts = [p for p in parts if p in about.get('parts', [])]
+            require(parts, 'NOTHING_SELECTED', 'The backup holds none of the chosen parts')
+            with linux_root(context, write=True) as (pin, root, release):
+                staging = unpack_into(archive_fd, root, parts, progress)
+                lines, status, note = [], None, ''
+                try:
+                    run_parts = list(parts)
+                    if 'packages' in run_parts and context.mode == 'device':
+                        import distro
+                        if not distro.recovery_online():
+                            run_parts.remove('packages')
+                            note = 'Packages need Wi-Fi in the recovery: connect, then restore Packages alone.'
+                    progress('Restoring', 0, 1, '')
+                    command = ['/bin/sh', '/' + STAGING + '/restore.sh', '--staged', '/' + STAGING, '--home-done', '--parts', ','.join(run_parts)]
+                    if context.mode == 'device':
+                        status, lines = chroot_lines(root, command)
+                    else:
+                        # A fixture has no system to enter: the script works on the folder, with the
+                        # test's stand-ins for the system's programs.
+                        env = dict(os.environ, A22X_ROOT=root, A22X_FAKE_ROOT='1')
+                        if os.environ.get('A22X_LINUX_DATA_PATH'):
+                            env['PATH'] = os.environ['A22X_LINUX_DATA_PATH'] + ':' + env.get('PATH', '')
+                        done = subprocess.run(['/bin/sh', str(staging / 'restore.sh'), '--staged', str(staging), '--home-done',
+                                               '--parts', ','.join(run_parts)], env=env, capture_output=True, text=True)
+                        status, lines = done.returncode, (done.stdout + done.stderr).splitlines()
+                finally:
+                    shutil.rmtree(staging, ignore_errors=True)
+                os.sync()
+        finally:
+            os.close(archive_fd)
+    said = [line[6:] for line in lines if line.startswith('a22x: ')]
+    require(status == 0 and 'done' in said, 'RESTORE_FAILED', 'The restore inside the system did not finish',
+            exit=status, log=[line[:200] for line in lines[-12:]])
+    packages = next((s.split()[1:] for s in said if s.startswith('packages ') and len(s.split()) == 3), None)
+    return {'parts': parts, 'into': {'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', '')},
+            'accounts_created': [s.split()[1] for s in said if s.startswith('account ') and s.endswith(' created')],
+            'accounts_kept': [s.split()[1] for s in said if s.startswith('account ') and s.endswith(' kept')],
+            'owners_changed': sum(1 for s in said if s.startswith('owner ')),
+            'packages_installed': int(packages[0]) if packages else 0, 'packages_missing': int(packages[1]) if packages else 0,
+            'missing': [s[8:] for s in said if s.startswith('missing ')][:40],
+            'packages_unsupported': 'packages unsupported' in said, 'note': note}
+
+
+def parser():
+    p = fs.Parser(description=__doc__)
+    kind = p.add_mutually_exclusive_group(required=True)
+    kind.add_argument('--device', action='store_true')
+    kind.add_argument('--fixture')
+    commands = p.add_subparsers(dest='operation', required=True, parser_class=fs.Parser)
+    commands.add_parser('inspect')
+    for name in ('backup', 'restore'):
+        command = commands.add_parser(name)
+        command.add_argument('--volume', required=True)
+        command.add_argument('--expected-volume-token')
+        command.add_argument('--parts', required=True)
+        command.add_argument('--confirm', action='store_true')
+        if name == 'restore':
+            command.add_argument('--path', required=True)
+    return p
+
+
+def main(argv=None):
+    operation = 'unknown'
+    try:
+        args = parser().parse_args(argv)
+        operation = args.operation
+        context = fs.FixtureContext(args.fixture) if args.fixture else fs.DeviceContext()
+        last = [0.0, '']
+
+        def progress(phase, done, total, label):
+            now = time.monotonic()
+            if phase != last[1] or now - last[0] >= 0.2 or done >= total:
+                last[:] = [now, phase]
+                print(json.dumps({'event': 'progress', 'operation': 'linux-data-' + operation, 'phase': phase,
+                                  'partition': label[-100:], 'bytes_done': done, 'bytes_total': max(total, 1)},
+                                 separators=(',', ':')), file=sys.stderr, flush=True)
+        with context.operation_lock():
+            if operation == 'inspect':
+                value = inspect(context)
+            elif operation == 'backup':
+                value = backup(context, args.parts.split(','), args.volume, args.expected_volume_token, args.confirm, progress)
+            else:
+                value = restore(context, args.volume, args.expected_volume_token, args.path, args.parts.split(','), args.confirm, progress)
+        print(json.dumps({**value, 'ok': True, 'operation': operation, 'mode': context.mode}, ensure_ascii=True, separators=(',', ':')))
+        return 0
+    except fs.FilesystemError as exc:
+        error = {'code': exc.code, 'message': exc.message, 'details': exc.details}
+    except pa.ArchiveError as exc:
+        error = {'code': exc.code, 'message': str(exc), 'details': {}}
+    except (OSError, subprocess.SubprocessError) as exc:
+        error = {'code': 'IO_ERROR', 'message': str(exc), 'details': {}}
+    print(json.dumps({'ok': False, 'operation': operation, 'error': error}, ensure_ascii=True, separators=(',', ':')))
+    return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

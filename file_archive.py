@@ -21,6 +21,7 @@ that folder, no set-user-id bits; an existing folder is never written into.
 import argparse
 import contextlib
 import errno
+import io
 import json
 import os
 import stat
@@ -177,12 +178,17 @@ class Pipe:
         return len(data)
 
 
-def write_archive(out, files, total, progress):
+def write_archive(out, files, total, progress, extra=()):
+    """FILES as walk() lists them, after EXTRA: (archive name, bytes, mode) made in memory."""
     proc = subprocess.Popen([pa.zstd_path(), '-q', '-%d' % pa.LEVEL, '-T0', '-c'], stdin=subprocess.PIPE, stdout=out,
                             stderr=subprocess.PIPE, bufsize=0)
     done = 0
     try:
         with tarfile.open(fileobj=Pipe(proc.stdin.fileno()), mode='w|', format=tarfile.PAX_FORMAT, bufsize=CHUNK) as tar:
+            for name, data, mode in extra:
+                item = tarfile.TarInfo(name)
+                item.size, item.mode, item.mtime = len(data), mode, int(time.time())
+                tar.addfile(item, io.BytesIO(data))
             for directory, name, info, arcname in files:
                 item = tar_info(directory, name, info, arcname)
                 if item is None:
@@ -272,7 +278,7 @@ def unpack(context, volume, token, path, confirmed, progress):
             try:
                 os.mkdir(stem, 0o755, dir_fd=directory)
             except FileExistsError:
-                fail('DESTINATION_EXISTS', 'A folder with the archive\'s name is already here', folder=stem)
+                fail('DESTINATION_EXISTS', 'A folder named as the archive is already here', folder=stem)
             target = os.open(stem, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
             try:
                 pin.check_fd(target)

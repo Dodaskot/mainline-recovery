@@ -105,6 +105,9 @@ msgstr "5 Min."
 msgid "8 to 63 characters without spaces, with a letter and a digit. It is kept nowhere: remember it."
 msgstr "8 bis 63 Zeichen ohne Leerzeichen, mit einem Buchstaben und einer Ziffer. Er wird nirgends gespeichert: Merke ihn dir."
 
+msgid "A backup can still be restored once one is installed"
+msgstr "Eine Sicherung lässt sich wiederherstellen, sobald eines installiert ist"
+
 msgid "A backup with this name already exists"
 msgstr "Eine Sicherung mit diesem Namen gibt es schon"
 
@@ -177,6 +180,9 @@ msgstr "In Androids Einstellungen wurde ein Zurücksetzen auf Werkseinstellungen
 msgid "A FAT32 card cannot hold a file of 4 GiB or more"
 msgstr "Eine FAT32-Karte kann keine Datei ab 4 GiB aufnehmen"
 
+msgid "A file changed while it was archived"
+msgstr "Eine Datei hat sich beim Archivieren geändert"
+
 msgid "A file has no MD5 at its end; every image is still checked as it is read"
 msgstr "Eine Datei hat am Ende keine MD5; jedes Image wird trotzdem beim Lesen geprüft"
 
@@ -209,6 +215,9 @@ msgstr "Eine Ordner-Kopie wird als Ganzes wiederhergestellt."
 
 msgid "A folder copy saves the replaced partitions beside itself first: mount this card with write access in Files."
 msgstr "Eine Ordner-Kopie sichert zuerst die ersetzten Partitionen neben sich: Hängen Sie diese Karte in »Dateien« beschreibbar ein."
+
+msgid "A folder named as the archive is already here"
+msgstr "Ein Ordner mit dem Namen des Archivs ist schon hier"
 
 msgid "A folder of images, made before archives"
 msgstr "Ein Ordner mit Abbildern, vor den Archiven erstellt"
@@ -303,6 +312,9 @@ msgstr "Das Zurücksetzen stellt Design, Terminalfarben, Animation, Navigation, 
 msgid "A running shell was not confirmed. No additional session was started."
 msgstr "Eine laufende Shell wurde nicht bestätigt. Es wurde keine weitere Sitzung gestartet."
 
+msgid "A selected entry is no longer in this folder"
+msgstr "Ein ausgewählter Eintrag ist nicht mehr in diesem Ordner"
+
 msgid "A setup script can be at most 1 MiB"
 msgstr "Ein Einrichtungsskript darf höchstens 1 MiB groß sein"
 
@@ -371,6 +383,15 @@ msgstr "KONTO"
 
 msgid "Account"
 msgstr "Konto"
+
+msgid "Accounts"
+msgstr "Konten"
+
+msgid "Accounts already there: %s"
+msgstr "Konten schon vorhanden: %s"
+
+msgid "Accounts made: %s"
+msgstr "Konten angelegt: %s"
 
 msgid "active"
 msgstr "aktiv"
@@ -471,6 +492,9 @@ msgstr "Ein erlaubter Computer wird gespeichert. Hat das Recovery ein Passwort, 
 msgid "An ARM64 ISO, disk image (raw, qcow2, VHD), Vagrant box or rootfs archive."
 msgstr "Ein ARM64-ISO, Disk-Image (raw, qcow2, VHD), eine Vagrant-Box oder ein Rootfs-Archiv."
 
+msgid "An existing destination will not be overwritten"
+msgstr "Ein vorhandenes Ziel wird nicht überschrieben"
+
 msgid "An image inside a ZIP or a tar, by its name there (a ZIP: system.img or its only image by default)"
 msgstr "Ein Image in einem ZIP oder tar, nach seinem Namen dort (ZIP: standardmäßig system.img oder sein einziges Image)"
 
@@ -521,9 +545,6 @@ msgstr "ANDROID-DATEN WERDEN GELÖSCHT"
 
 msgid "Android did not start"
 msgstr "Android ist nicht gestartet"
-
-msgid "Android holds userdata: its copy is one archive on a card. A Linux backup needs a Linux system on this phone."
-msgstr "Auf userdata liegt Android: Seine Kopie ist ein Archiv auf einer Karte. Eine Linux-Sicherung braucht ein Linux-System auf diesem Telefon."
 
 msgid "Android image"
 msgstr "Android-Image"
@@ -785,6 +806,9 @@ msgstr "SICHERUNGSQUELLE"
 
 msgid "Backup verified"
 msgstr "Sicherung geprüft"
+
+msgid "BACKUPS ON CARDS AND STICKS"
+msgstr "SICHERUNGEN AUF KARTEN UND STICKS"
 
 msgid "Backups will be saved to the USB stick"
 msgstr "Sicherungen gehen auf den USB-Stick"
@@ -1788,6 +1812,9 @@ msgstr "Dateien (FAT32)"
 msgid "Files / mounts"
 msgstr "Dateien / Einhängen"
 
+msgid "Files of the same name are replaced; nothing else in the system is removed. Accounts that are missing are made with their passwords. Packages are installed over Wi-Fi under the names this system gives them."
+msgstr "Dateien gleichen Namens werden ersetzt; sonst wird im System nichts entfernt. Fehlende Konten werden mit ihren Passwörtern angelegt. Pakete werden über WLAN unter den Namen installiert, die dieses System ihnen gibt."
+
 msgid "FILES, IN THIS ORDER"
 msgstr "DATEIEN, IN DIESER REIHENFOLGE"
 
@@ -2046,6 +2073,9 @@ msgstr "2 Sekunden halten: Lesen/Schreiben"
 msgid "Hold 2 seconds to share read-only"
 msgstr "2 Sekunden halten: nur lesen"
 
+msgid "Hold 2 seconds: back up"
+msgstr "2 Sekunden halten: sichern"
+
 msgid "Hold 3 s: delete"
 msgstr "3 s halten: löschen"
 
@@ -2090,6 +2120,9 @@ msgstr "3 Sekunden halten: installieren"
 
 msgid "Hold 3 seconds: reset the settings"
 msgstr "3 Sekunden halten: Einstellungen zurücksetzen"
+
+msgid "Hold 3 seconds: restore"
+msgstr "3 Sekunden halten: wiederherstellen"
 
 msgid "Hold 3 seconds: restore Android"
 msgstr "3 Sekunden halten: Android wiederherstellen"
@@ -2138,6 +2171,12 @@ msgstr "Halten: auf die ganze Partition vergrößern"
 
 msgid "Hold: write"
 msgstr "Halten: schreiben"
+
+msgid "Home folders"
+msgstr "Home-Ordner"
+
+msgid "Home, accounts, settings, packages: for another system or device"
+msgstr "Home, Konten, Einstellungen, Pakete: für ein anderes System oder Gerät"
 
 msgid "How one page gives way to the next."
 msgstr "Wie eine Seite der nächsten weicht."
@@ -2189,6 +2228,9 @@ msgstr "Stecke einen USB-Stick ein, er erscheint hier von selbst."
 
 msgid "Insert an ext4 microSD, then tap Mount microSD."
 msgstr "Legen Sie eine ext4-microSD ein und tippen Sie dann auf »microSD einhängen«."
+
+msgid "Insert an SD card or attach a USB drive"
+msgstr "SD-Karte einlegen oder USB-Laufwerk anschließen"
 
 msgid "Insert an SD card or attach a USB drive, then read again."
 msgstr "SD-Karte einlegen oder USB-Laufwerk anschließen, dann erneut lesen."
@@ -2294,6 +2336,9 @@ msgstr "Interner Speicher"
 
 msgid "INTERRUPTED SWITCH"
 msgstr "UNTERBROCHENER WECHSEL"
+
+msgid "INTO"
+msgstr "NACH"
 
 msgid "It can read and change everything here."
 msgstr "Er kann hier alles lesen und ändern."
@@ -2460,14 +2505,20 @@ msgstr "LINUX-SICHERUNG"
 msgid "Linux backup"
 msgstr "Linux-Sicherung"
 
-msgid "Linux backup saves allocated ext4 blocks with compression. The next screen reviews userdata before normal unmount."
-msgstr "Die Linux-Sicherung speichert belegte ext4-Blöcke komprimiert. Der nächste Bildschirm prüft Userdata vor dem normalen Aushängen."
-
 msgid "Linux BOOT"
 msgstr "Linux-BOOT"
 
 msgid "Linux boot + rootfs"
 msgstr "Linux Boot + Rootfs"
+
+msgid "Linux data"
+msgstr "Linux-Daten"
+
+msgid "Linux data restored"
+msgstr "Linux-Daten wiederhergestellt"
+
+msgid "Linux data saved"
+msgstr "Linux-Daten gesichert"
 
 msgid "Linux from SD or USB stick, switch systems"
 msgstr "Linux von SD oder USB-Stick, Systemwechsel"
@@ -2847,6 +2898,9 @@ msgstr "Im BOOT wurde kein Kernel gefunden"
 msgid "No link text returned"
 msgstr "Kein Linktext erhalten"
 
+msgid "No Linux system on userdata"
+msgstr "Kein Linux-System auf userdata"
+
 msgid "No Linux: userdata holds Android"
 msgstr "Kein Linux: Auf userdata liegt Android"
 
@@ -3012,6 +3066,9 @@ msgstr "Nicht geschrieben: dem Recovery unbekannt"
 msgid "Nothing"
 msgstr "Nichts"
 
+msgid "Nothing has been changed yet."
+msgstr "Es wurde noch nichts geändert."
+
 msgid "Nothing has been erased yet."
 msgstr "Bisher wurde nichts gelöscht."
 
@@ -3035,6 +3092,9 @@ msgstr "NICHTS WIRD GELÖSCHT"
 
 msgid "Nothing is replaced: the new system becomes the only one on userdata."
 msgstr "Nichts wird ersetzt: das neue System wird das einzige auf Userdata."
+
+msgid "Nothing is selected"
+msgstr "Nichts ausgewählt"
 
 msgid "November"
 msgstr "November"
@@ -3198,8 +3258,17 @@ msgstr "Pazifik"
 msgid "PACKAGE NAME"
 msgstr "PAKETNAME"
 
+msgid "Packages"
+msgstr "Pakete"
+
 msgid "Packages come over the recovery's Wi-Fi: this takes 10-30 minutes. Keep the phone powered."
 msgstr "Pakete kommen über das WLAN des Recovery: das dauert 10–30 Minuten. Telefon eingeschaltet lassen."
+
+msgid "Packages need Wi-Fi in the recovery: connect, then restore Packages alone."
+msgstr "Pakete brauchen WLAN im Recovery: verbinden, dann nur »Pakete« wiederherstellen."
+
+msgid "Packages there: %u; not in this system: %u"
+msgstr "Pakete vorhanden: %u; nicht in diesem System: %u"
 
 msgid "Packages, the account and the desktop are set up as you choose on the next pages."
 msgstr "Pakete, Konto und Desktop werden so eingerichtet, wie Sie es auf den nächsten Seiten wählen."
@@ -3498,6 +3567,9 @@ msgstr "Telefon wird gelesen..."
 msgid "Reading the saved images..."
 msgstr "Gespeicherte Abbilder werden gelesen..."
 
+msgid "Reading the system on userdata..."
+msgstr "System auf userdata wird gelesen..."
+
 msgid "Reading USB status..."
 msgstr "USB-Status wird gelesen..."
 
@@ -3762,8 +3834,14 @@ msgstr "Aus einem Image wiederherstellen"
 msgid "Restore identity"
 msgstr "Identität wiederherstellen"
 
+msgid "Restore Linux data"
+msgstr "Linux-Daten wiederherstellen"
+
 msgid "Restore the previous root filesystem using the saved transaction. Shared /home remains in place."
 msgstr "Vorheriges Root-Dateisystem mit der gespeicherten Transaktion wiederherstellen. Gemeinsames /home bleibt an seinem Platz."
+
+msgid "Restored into %s."
+msgstr "Wiederhergestellt in %s."
 
 msgid "Restoring BOOT"
 msgstr "BOOT wird wiederhergestellt"
@@ -4434,6 +4512,9 @@ msgstr "Tippen Sie auf »Neuer Benutzer«, um das Passwort einzugeben."
 msgid "Tap outside to close"
 msgstr "Zum Schließen außerhalb tippen"
 
+msgid "Tap Refresh to read the system on userdata."
+msgstr "Auf »Aktualisieren« tippen, um das System auf userdata zu lesen."
+
 msgid "Tap Search to turn Wi-Fi on."
 msgstr "Tippen Sie auf »Suchen«, um WLAN einzuschalten."
 
@@ -4536,11 +4617,20 @@ msgstr "Das Archiv hat kein Manifest am Ende: Es ist unvollständig oder keine h
 msgid "The archive holds a file its manifest does not list"
 msgstr "Das Archiv enthält eine Datei, die sein Manifest nicht aufführt"
 
+msgid "The archive holds an entry that would land outside its folder"
+msgstr "Das Archiv enthält einen Eintrag, der außerhalb seines Ordners landen würde"
+
+msgid "The archive holds an entry that would land outside the system"
+msgstr "Das Archiv enthält einen Eintrag, der außerhalb des Systems landen würde"
+
 msgid "The archive holds no image this recovery can flash."
 msgstr "Das Archiv enthält kein Image, das dieses Recovery flashen kann."
 
 msgid "The archive holds something that is not a plain file"
 msgstr "Das Archiv enthält etwas, das keine gewöhnliche Datei ist"
+
+msgid "The archive is %s, %s.\n\nIt restores into any Linux installed here from this page, and on another device with the restore.sh inside it."
+msgstr "Das Archiv ist %s, %s.\n\nEs lässt sich von dieser Seite in jedes hier installierte Linux wiederherstellen, auf einem anderen Gerät mit dem restore.sh darin."
 
 msgid "The archive is checked before the snapshot is marked complete. Moving outside the button cancels the hold."
 msgstr "Das Archiv wird geprüft, bevor der Snapshot als vollständig gilt. Wegziehen von der Taste bricht das Halten ab."
@@ -4553,6 +4643,9 @@ msgstr "Das Archiv ist keine gewöhnliche Datei"
 
 msgid "The archive lacks a file its manifest lists"
 msgstr "Dem Archiv fehlt eine Datei, die sein Manifest aufführt"
+
+msgid "The archive name must end in .tar.zst"
+msgstr "Der Archivname muss auf .tar.zst enden"
 
 msgid "The archive was not read to its end"
 msgstr "Das Archiv wurde nicht bis zum Ende gelesen"
@@ -4589,6 +4682,9 @@ msgstr "Die Sicherung entspricht nicht dem aktuellen Linux-Zustand."
 
 msgid "The backup file ended early"
 msgstr "Die Sicherungsdatei endete vorzeitig"
+
+msgid "The backup holds none of the chosen parts"
+msgstr "Die Sicherung enthält keinen der gewählten Teile"
 
 msgid "The backup matches the current Linux state."
 msgstr "Die Sicherung entspricht dem aktuellen Linux-Zustand."
@@ -5028,6 +5124,9 @@ msgstr "Das Linux-BOOT dieses Plans wird nicht mehr angeboten: neu planen"
 msgid "The Linux BOOT on cache changed since planning"
 msgstr "Das Linux-BOOT auf cache hat sich seit der Planung geändert"
 
+msgid "The Linux data helper did not return a result."
+msgstr "Der Linux-Daten-Helfer hat kein Ergebnis geliefert."
+
 msgid "The local terminal helper is not configured."
 msgstr "Das Hilfsprogramm für das lokale Terminal ist nicht konfiguriert."
 
@@ -5126,6 +5225,9 @@ msgstr "Der Vorgang wurde gestoppt."
 
 msgid "The package has no such image"
 msgstr "Das Paket enthält kein solches Image"
+
+msgid "The package list of this system cannot be read here. Leave Packages out"
+msgstr "Die Paketliste dieses Systems lässt sich hier nicht lesen. »Pakete« abwählen"
 
 msgid "The package servers could not be reached."
 msgstr "Die Paketserver waren nicht erreichbar."
@@ -5316,6 +5418,9 @@ msgstr "Der angeforderte USB-Export oder Stopp wurde nicht bestätigt. Prüfen u
 msgid "the rest of the card"
 msgstr "der Rest der Karte"
 
+msgid "The restore inside the system did not finish"
+msgstr "Die Wiederherstellung im System wurde nicht fertig"
+
 msgid "The result of the write could not be confirmed."
 msgstr "Das Ergebnis des Schreibens konnte nicht bestätigt werden."
 
@@ -5396,6 +5501,9 @@ msgstr "Die Größe des geprüften Abbilds wird benötigt"
 
 msgid "The sizes for Linux and swap are out of range"
 msgstr "Die Größen für Linux und Swap liegen außerhalb des Bereichs"
+
+msgid "The staging folder of the system is a link"
+msgstr "Der Zwischenordner des Systems ist ein Link"
 
 msgid "The starting root is recovery RAM. Mount Linux in Files first, then use /mnt/volumes/userdata. The microSD backup mount is /mnt/backup."
 msgstr "Startverzeichnis ist das Recovery-RAM. Hängen Sie Linux zuerst unter Dateien ein und nutzen Sie dann /mnt/volumes/userdata. Die microSD-Sicherung ist unter /mnt/backup eingehängt."
@@ -5529,6 +5637,9 @@ msgstr "Es gibt keinen AVB-vbmeta-Header"
 msgid "There is no AVB vbmeta in the vbmeta partition"
 msgstr "In der vbmeta-Partition ist kein AVB-vbmeta"
 
+msgid "There is no Linux system on userdata"
+msgstr "Auf userdata ist kein Linux-System"
+
 msgid "There is no room to keep the old content first: free space on cache or insert a card"
 msgstr "Kein Platz, um den alten Inhalt zuerst zu sichern: Platz auf cache freigeben oder eine Karte einlegen"
 
@@ -5540,6 +5651,9 @@ msgstr "Weder neben dem ZIP noch auf userdata ist genug Platz, um die Firmware z
 
 msgid "There is not enough space beside the ZIP to unpack the firmware, and userdata is encrypted by Android. Free space beside the ZIP, or format userdata in Wipe (the installation formats it for Android anyway), then choose the ZIP again"
 msgstr "Neben dem ZIP ist nicht genug Platz, um die Firmware zu entpacken, und userdata ist von Android verschlüsselt. Schaffe Platz neben dem ZIP oder formatiere userdata unter »Löschen« (die Installation formatiert es ohnehin für Android) und wähle das ZIP dann erneut"
+
+msgid "There is not enough space for the archive"
+msgstr "Für das Archiv ist nicht genug Platz"
 
 msgid "There is not enough space on the card for this image"
 msgstr "Auf der Karte ist nicht genug Platz für dieses Image"
@@ -5628,11 +5742,17 @@ msgstr "Das ist kein DTBO-Image"
 msgid "This file is not a filesystem image for userdata"
 msgstr "Diese Datei ist kein Dateisystem-Image für Userdata"
 
+msgid "This file is not a Linux data backup"
+msgstr "Diese Datei ist keine Linux-Daten-Sicherung"
+
 msgid "This file is not a recognised system image. Supported: ISO, raw or img disk images, qcow2, VHD, Vagrant box and tar archives, also compressed with xz, zstd, gzip or bzip2."
 msgstr "Diese Datei ist kein erkanntes Systemabbild. Unterstützt werden ISO, Datenträgerabbilder (raw, img), qcow2, VHD, Vagrant-Boxen und tar-Archive, auch komprimiert mit xz, zstd, gzip oder bzip2."
 
 msgid "This file is not a super image"
 msgstr "Das ist kein super-Image"
+
+msgid "This file is not a tar archive"
+msgstr "Diese Datei ist kein tar-Archiv"
 
 msgid "This file is not a vbmeta image"
 msgstr "Das ist kein vbmeta-Image"
@@ -5805,14 +5925,23 @@ msgstr "Dieses System kann das gespeicherte Passwort dieses Kontos nicht lesen. 
 msgid "This system was set up for another kernel and firmware. Install it again, or remove it"
 msgstr "Dieses System wurde für einen anderen Kernel und andere Firmware eingerichtet. Neu installieren oder entfernen"
 
+msgid "This system's package manager is not known here: the packages were not installed."
+msgstr "Der Paketmanager dieses Systems ist hier nicht bekannt: Die Pakete wurden nicht installiert."
+
 msgid "This uses a normal unmount. Busy filesystems are refused. The backup destination stays mounted and userdata remains offline until you choose to mount it again in Files."
 msgstr "Hier wird normal ausgehängt. Belegte Dateisysteme werden abgelehnt. Das Sicherungsziel bleibt eingehängt und Userdata offline, bis Sie es unter Dateien wieder einhängen."
+
+msgid "This volume cannot be written"
+msgstr "Dieses Volume kann nicht beschrieben werden"
 
 msgid "This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4, or leave super out"
 msgstr "Dieser Datenträger fasst keine so große Datei: FAT32 endet bei 4 GiB. Nehmen Sie exFAT oder ext4, oder lassen Sie super weg"
 
 msgid "This volume is available for reading only."
 msgstr "Dieses Volume ist nur zum Lesen verfügbar."
+
+msgid "This volume is in use read-only"
+msgstr "Dieses Volume wird schreibgeschützt verwendet"
 
 msgid "This volume is no longer available. Return to Files and refresh the list."
 msgstr "Dieses Volume ist nicht mehr verfügbar. Gehen Sie zu Dateien zurück und aktualisieren Sie die Liste."
@@ -5841,11 +5970,17 @@ msgstr "Zeitzone"
 msgid "TO"
 msgstr "NACH"
 
+msgid "To: %.100s  /  %s free"
+msgstr "Nach: %.100s  /  %s frei"
+
 msgid "To: %.170s"
 msgstr "Nach: %.170s"
 
 msgid "Too many attempts. Try again in %u s"
 msgstr "Zu viele Versuche. Erneut in %u s"
+
+msgid "Too many files are selected at once"
+msgstr "Zu viele Dateien auf einmal ausgewählt"
 
 msgid "Touch panel"
 msgstr "Touchpanel"
@@ -6362,6 +6497,9 @@ msgstr "Der USB-Stick kann jetzt entfernt werden"
 
 msgid "Your accounts and /home settings stay available."
 msgstr "Ihre Konten und /home-Einstellungen bleiben verfügbar."
+
+msgid "Your own files and settings, without the system."
+msgstr "Deine eigenen Dateien und Einstellungen, ohne das System."
 
 msgid "ZIP with an installer"
 msgstr "ZIP mit Installer"

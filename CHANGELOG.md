@@ -39,6 +39,14 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **Linux data** (0.6.226, Backup > Linux data): what is one's own in a Linux system, without the
+  system: home folders, accounts (with passwords and admin right), settings (host name, language,
+  time zone, Wi-Fi and Bluetooth, SSH host keys) and the list of packages, each chosen by itself,
+  into one archive on a card or stick (A22xDataBackups). It restores into whatever Linux is
+  installed next: missing accounts are made, homes go to the account of the same name, packages
+  are installed under the names the new distribution gives them and the ones it lacks are named.
+  The archive carries its own restore.sh, so it restores on any other Linux device as well
+  (`sudo sh restore.sh ARCHIVE`). Not yet run on the phone.
 - **Files and folders into an archive, and out again** (0.6.225): in Files, a long press, the
   entries chosen, "Archive" puts them into A22xArchives/FOLDER-DATE.tar.zst on an SD card or a stick
   (tap the destination to change it); owners, permissions, times and links are kept. "Extract here"
