@@ -25,6 +25,11 @@ Done by touch on the phone unless said otherwise.
 | 1100 folders packed into an archive under a limit of 256 open files | 236 | packed |
 | Linux data offers a card that is only inserted as the place to save to | 236 | offered, and let go afterwards |
 | The Brotli decoder with bytes after the end of the stream | 236 | refused |
+| A USB stick (OTG) as the backup store: a copy of the recovery made on it; Safely remove (done by the owner, read from the recovery's log) | 236 | copy saved and verified (`/A22xBackups/recovery-20261113-204907-359` on the stick); eject done. USB files cannot share the stick itself: the one port is then a host |
+| Start: a cut write resumed first, the restart check next, cache tidied after it | 237 | in that order; tidying reads the copies' descriptions |
+| vbmeta read for root through the checked loop | 237 | read: verification off on this phone |
+| The sound profile entry in the image's platform files | 237 | a link to the phone's UCM folder |
+| A screenshot while nothing holds the operation lock | 237 | saved on the card |
 | Stock firmware A226BXXSBDZC3 installed from its ZIP on the card | 218 | unpacked, MD5-checked, written and read back; stock Android started |
 | LineageOS 20 for A226B installed by its own `update-binary` | 221 | installed; started after the offered reset of Android's data |
 | An AnyKernel3 kernel ZIP (BakaSU + SUSFS) | 220 | installed; Android started after the data reset |
@@ -36,8 +41,7 @@ Done by touch on the phone unless said otherwise.
 ### Not proven on the phone yet
 
 - A **128 GB** SM-A226B: the sizes follow Samsung's PIT and are tested on the computer only.
-- A USB stick as the backup store, Safely remove, and check and repair on a real F2FS or FAT
-  volume (pending: the phone's one port is needed for the stick).
+- Check and repair on a real F2FS or FAT volume (done on scratch filesystems on the phone only).
 - Android opening its data after a restore from a copy.
 - The Android app on a phone (its scripts were run in the recovery against test devices).
 

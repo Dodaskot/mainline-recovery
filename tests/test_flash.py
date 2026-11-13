@@ -639,7 +639,10 @@ class Settings(unittest.TestCase):
         @contextlib.contextmanager
         def present(context, label, mode):
             yield found
-        with mock.patch.object(self.settings.fs, 'DeviceContext', Context), mock.patch.object(self.settings, 'operation_lock', lock), \
+        class Found(Context):
+            def volume(self, label):
+                return {'mounted': False, 'mountable': True, 'volume_token': 't'}
+        with mock.patch.object(self.settings.fs, 'DeviceContext', Found), mock.patch.object(self.settings, 'operation_lock', lock), \
                 mock.patch.object(self.settings, 'volume_root', present):
             self.assertEqual(self.real_read_disk(), {})
 

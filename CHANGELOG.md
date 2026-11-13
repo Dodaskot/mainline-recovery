@@ -18,7 +18,8 @@ The first release for every SM-A226B, after 0.6.206. In short:
 - **Android**: Samsung firmware straight from its ZIP; LineageOS 20, AnyKernel3 and block-based ROMs;
   an offer to reset Android's data after a ZIP changed BOOT.
 - **Code reviews** of the access gate and adb, flashing and installation, `distro.py` and
-  `filesystem.py`, Linux backups, and of everything new since 0.6.206: every finding fixed.
+  `filesystem.py`, Linux backups, `platform/` with settings and saved BOOTs, and of everything new
+  since 0.6.206: every finding fixed.
 
 In detail, newest first:
 
@@ -57,6 +58,22 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **Fixes from the review of `platform/`, settings and saved BOOTs** (1.0.0), 15 findings:
+  - **the password**: a cache that failed to mount was passed over like one without settings, and
+    userdata without them opened the phone without its password; it now stays locked;
+  - **root**: a vbmeta that could not be read counted as verification off, and a patched BOOT went
+    in while it was on (Android then cannot open its data); it now stops. A reset of Android's data
+    done in Wipe or by an installation counts as the one root needs;
+  - **sound** in installed systems: the phone's ALSA profile entry is a link again (in the public
+    sources it had become a plain file, and PipeWire found no speaker or microphone);
+  - the first start of a system no longer leaves `policy-rc.d` behind (apt never started a service
+    afterwards), keeps the resolver link across a retry, and makes launcher shims only where
+    programs live (a launcher in a home could have root write into /etc);
+  - a screenshot mounts a volume only under the operation lock; a BOOT kept on cache is written
+    under a temporary name, so a cut write leaves nothing behind; cache is tidied from the copies'
+    descriptions instead of reading every image, after the restart check at the start;
+  - a damaged 7z says so instead of a traceback; Samsung's boot.img.lz4 is unpacked with a size and
+    time limit; whole partitions are read in a loop that refuses a short read.
 - **The 128 GB SM-A226B** (1.0.0): the recovery took the size of the eMMC and of userdata from
   the 64 GB phone and refused a 128 GB one before any installation. Samsung's PIT for this model
   gives every partition before userdata a fixed place and userdata the rest of the device, so

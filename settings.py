@@ -149,6 +149,15 @@ def read_disk():
     opened = False
     with operation_lock(context.lock_path, context.mode):
         for label in VOLUMES:
+            # 2026-11-13 review: a cache that failed to mount (EIO, busy) was passed over like an empty
+            # one, and userdata without settings then opened the phone without its password. Only a
+            # volume that is not there, or holds no filesystem to look into, is passed over now.
+            try:
+                volume = context.volume(label)
+            except fs.FilesystemError:
+                continue
+            if not volume.get('mountable') and not volume.get('mounted'):
+                continue
             try:
                 with volume_root(context, label, 'ro') as root:
                     opened = True
@@ -170,8 +179,8 @@ def read_disk():
                             raise Damaged('The settings on %s are damaged' % label, label) from error
             except (Damaged, Unreadable):
                 raise
-            except (OSError, ValueError, fs.FilesystemError):
-                continue
+            except (OSError, ValueError, fs.FilesystemError) as error:
+                raise Unreadable('The settings volume %s cannot be read now' % label) from error
     if not opened:
         raise OSError('No settings volume could be read')
     return {}

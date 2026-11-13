@@ -4629,6 +4629,9 @@ msgstr "L’archive 7z s’arrête trop tôt"
 msgid "The 7z archive holds too many files"
 msgstr "L’archive 7z contient trop de fichiers"
 
+msgid "The 7z archive is damaged"
+msgstr "L'archive 7z est endommagée"
+
 msgid "The 7z archive is incomplete"
 msgstr "L’archive 7z est incomplète"
 
@@ -4844,6 +4847,12 @@ msgstr "Le texte UTF-8 complet et le hachage du fichier n'ont pas été renvoyé
 
 msgid "The compressed file is damaged"
 msgstr "Le fichier compressé est endommagé"
+
+msgid "The compressed file takes too long to unpack"
+msgstr "Le fichier compressé met trop de temps à se décompresser"
+
+msgid "The compressed file unpacks larger than a BOOT can be"
+msgstr "Le fichier compressé se décompresse plus grand que ne peut l’être un BOOT"
 
 msgid "The copy changed after it was listed"
 msgstr "La copie a changé après son affichage dans la liste"
@@ -5639,6 +5648,9 @@ msgstr "Les blocs vbmeta se trouvent hors de l’image"
 
 msgid "The vbmeta hash does not match its contents"
 msgstr "Le hachage vbmeta ne correspond pas à son contenu"
+
+msgid "The vbmeta partition cannot be read as an AVB image, so whether verification is off is not known"
+msgstr "La partition vbmeta ne peut pas être lue comme image AVB : on ne sait donc pas si la vérification est désactivée"
 
 msgid "The volume has too little free space for the backup"
 msgstr "Le volume a trop peu d’espace libre pour la sauvegarde"

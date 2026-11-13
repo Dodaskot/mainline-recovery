@@ -22,8 +22,11 @@ class FakeContext:
     def __init__(self, root, calls):
         self.root, self.calls = root, calls
 
+    mountable = {'cache': True, 'userdata': True}
+
     def volume(self, label):
-        return {'mounted': False, 'volume_token': 't-' + label, 'fs_type': 'ext4' if label == 'userdata' else 'ext4'}
+        return {'mounted': False, 'volume_token': 't-' + label, 'fs_type': 'ext4',
+                'mountable': self.mountable[label]}
 
     def unmount(self, label, token=None):
         self.calls.append(('unmount', label))
@@ -95,6 +98,18 @@ class Damaged(unittest.TestCase):
         self.readable = {'cache': False, 'userdata': False}
         with self.assertRaises(OSError):
             settings.read_disk()
+
+    def test_a_cache_that_fails_to_mount_is_not_taken_for_one_without_settings(self):
+        # 2026-11-13 review: cache with the password failed to mount, userdata had no settings, and
+        # the phone opened without its password.
+        self.write('cache', json.dumps(GOOD))
+        self.readable = {'cache': False, 'userdata': True}
+        with self.assertRaises(settings.Unreadable):
+            settings.read_disk()
+        # A cache without any filesystem holds no settings: userdata is asked.
+        with mock.patch.dict(FakeContext.mountable, {'cache': False}):
+            self.write('userdata', json.dumps({'theme': 'x'}))
+            self.assertEqual(settings.read_disk(), {'theme': 'x'})
 
     def test_a_damaged_copy_in_ram_is_read_again_from_the_disk(self):
         (self.root / 'ram.json').write_text('[1, 2')

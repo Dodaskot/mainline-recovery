@@ -1540,6 +1540,7 @@ Text login
 Text saved. Reading the stored file.
 The 7z archive ended early
 The 7z archive holds too many files
+The 7z archive is damaged
 The 7z archive is incomplete
 The 7z has no such image
 The 7z header is damaged
@@ -1612,6 +1613,8 @@ The command running in the terminal will be stopped.
 The complete file must be loaded before saving.
 The complete UTF-8 text and file hash were not returned. Editing is disabled.
 The compressed file is damaged
+The compressed file takes too long to unpack
+The compressed file unpacks larger than a BOOT can be
 The copy changed after it was listed
 The copy helper did not return a result.
 The current content will be saved to %s first.
@@ -1877,6 +1880,7 @@ The USB file transfer helper is not configured.
 The USB stick could not be opened for writing.
 The vbmeta blocks lie outside the image
 The vbmeta hash does not match its contents
+The vbmeta partition cannot be read as an AVB image, so whether verification is off is not known
 The volume has too little free space for the backup
 The volume ran out of space while the archive was written
 The whole image of all of them

@@ -12,6 +12,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -317,6 +318,22 @@ class MetadataReset(unittest.TestCase):
         start = source.rindex('def reset_android')
         reset = source[start:source.index('def check_offline', start)]
         self.assertLess(reset.index('RESET_MAKE_METADATA'), reset.index('RESET_MAKE_F2FS'))
+
+
+class Lz4Bounded(unittest.TestCase):
+    """2026-11-13 review: boot.img.lz4 was unpacked whole into RAM before its size was checked."""
+    @unittest.skipUnless(shutil.which('lz4'), 'lz4 is needed')
+    def test_a_stream_that_unpacks_too_large_is_refused(self):
+        import samsung_firmware as sf
+        bomb = subprocess.run(['lz4', '-c'], input=bytes(100 << 20), stdout=subprocess.PIPE, check=True).stdout
+        with mock.patch.object(sf.flash, 'LZ4', shutil.which('lz4')):
+            with self.assertRaises(sf.fs.FilesystemError) as caught:
+                sf.lz4_bounded(bomb, 8 << 20)
+            self.assertEqual(caught.exception.code, 'INVALID_COMPRESSED_IMAGE')
+            small = subprocess.run(['lz4', '-c'], input=b'boot' * 1000, stdout=subprocess.PIPE, check=True).stdout
+            self.assertEqual(sf.lz4_bounded(small, 8 << 20), b'boot' * 1000)
+            with self.assertRaises(sf.fs.FilesystemError):
+                sf.lz4_bounded(b'not lz4 at all', 8 << 20)
 
 
 if __name__ == '__main__':

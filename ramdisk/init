@@ -205,12 +205,6 @@ while true; do
         /bin/busybox timeout 300 /usr/bin/python3 /opt/a22x-recovery/flash.py --device resume \
             > /run/a22x-recovery/flash-resume.json 2>/dev/null || true
     fi
-    # Cache tidied at every start (2026-11-12): older copies of recovery and BOOT go; the stock BOOT,
-    # the newest copies, settings, keys and Wi-Fi stay (saved_boot.py tidy_cache).
-    if [ ! -e /run/a22x-recovery/cache-tidy.json ] && [ -f /opt/a22x-recovery/saved_boot.py ]; then
-        /bin/busybox timeout 120 /usr/bin/python3 /opt/a22x-recovery/saved_boot.py --device tidy \
-            > /run/a22x-recovery/cache-tidy.json 2>/dev/null || true
-    fi
     # How Android's last start ended, from the memory its kernel's log outlives a restart in
     # (2026-11-12): read once, in the background, so the interface does not wait for it.
     if [ ! -e /run/a22x-recovery/android-last.json ] && [ -f /opt/a22x-recovery/android_log.py ]; then
@@ -227,6 +221,14 @@ while true; do
             *'"retry":"normal"'*) auto_rc=200; msg "the restart into the system came back to recovery; restarting once more" ;;
             *'"retry":"download"'*) auto_rc=203; msg "the restart into Download came back to recovery; restarting once more" ;;
         esac
+    fi
+    # Cache tidied at every start (2026-11-12): older copies of recovery and BOOT go; the stock BOOT,
+    # the newest copies, settings, keys and Wi-Fi stay (saved_boot.py tidy_cache). After the check
+    # above, whose window is a minute from the restart (2026-11-13 review), and not before a restart
+    # once more: the next start tidies.
+    if [ -z "${auto_rc:-}" ] && [ ! -e /run/a22x-recovery/cache-tidy.json ] && [ -f /opt/a22x-recovery/saved_boot.py ]; then
+        /bin/busybox timeout 120 /usr/bin/python3 /opt/a22x-recovery/saved_boot.py --device tidy \
+            > /run/a22x-recovery/cache-tidy.json 2>/dev/null || true
     fi
     # Remembered Wi-Fi networks: recovery joins the strongest one in the background, once per start.
     # Not before a restart once more: joining holds the operation lock the checks below need.

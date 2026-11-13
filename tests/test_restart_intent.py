@@ -142,6 +142,14 @@ class InitWiring(unittest.TestCase):
 class TorchOff(unittest.TestCase):
     """torch_off from /init, run in a shell on a folder of LEDs: the flashlight goes dark before the
     power action (2026-11-11), and no other LED is touched."""
+    def test_the_restart_check_comes_before_the_tidying_of_cache(self):
+        # 2026-11-13 review: tidying (up to 120 s) came first and could push the check past its minute.
+        text = (ROOT / 'ramdisk/init').read_text()
+        resume, check, tidy = (text.index(x) for x in ('flash.py --device resume', 'restart_intent.py check', 'saved_boot.py --device tidy'))
+        self.assertLess(resume, check)
+        self.assertLess(check, tidy)
+        self.assertIn('[ -z "${auto_rc:-}" ] && [ ! -e /run/a22x-recovery/cache-tidy.json ]', text)
+
     def test_only_the_flash_led_goes_dark_before_the_power_action(self):
         import subprocess
         import tempfile

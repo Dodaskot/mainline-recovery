@@ -424,13 +424,38 @@ def ap_member(context, volume, token, path, wanted, limit):
             fail('TAR_MEMBER_MISSING', 'The package has no such image', member=wanted)
 
 
+def lz4_bounded(packed, limit, seconds=60):
+    """PACKED decoded by lz4, at most LIMIT bytes and SECONDS long (2026-11-13 review: a damaged or
+    hostile boot.img.lz4 could fill the recovery's RAM with gigabytes before its size was checked)."""
+    import tempfile
+    with tempfile.TemporaryFile() as source:
+        source.write(packed)
+        source.seek(0)
+        proc = subprocess.Popen((flash.LZ4, '-dc'), stdin=source, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        out, deadline = bytearray(), time.monotonic() + seconds
+        try:
+            while True:
+                require(time.monotonic() < deadline, 'INVALID_COMPRESSED_IMAGE', 'The compressed file takes too long to unpack')
+                data = proc.stdout.read(1 << 20)
+                if not data:
+                    break
+                out.extend(data)
+                require(len(out) <= limit, 'INVALID_COMPRESSED_IMAGE', 'The compressed file unpacks larger than a BOOT can be')
+            code = proc.wait(timeout=max(1, deadline - time.monotonic()))
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            proc.stdout.close()
+    require(code == 0 and len(out) > 0, 'INVALID_COMPRESSED_IMAGE', 'The compressed file is damaged')
+    return bytes(out)
+
+
 def extract_boot(context, volume, token, path, progress):
     """Samsung's BOOT taken out of the firmware and kept on cache: the way back from a custom kernel."""
     packed, source, build = ap_member(context, volume, token, path, 'boot.img.lz4', BOOT_LZ4_LIMIT)
     progress('Unpacking', {'label': 'boot', 'size_bytes': len(packed)}, 0)
-    done = subprocess.run((flash.LZ4, '-dc'), input=packed, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    require(done.returncode == 0 and 0 < len(done.stdout) <= BOOT_LIMIT, 'INVALID_COMPRESSED_IMAGE', 'The compressed file is damaged')
-    image = done.stdout
+    image = lz4_bounded(packed, BOOT_LIMIT)
     try:
         info = bootimage.inspect_boot(image)
     except bootimage.ImageError as error:
@@ -467,11 +492,7 @@ def protected_state(context, volume, token, write, progress):
                                  member=write['member'], image_bytes=None, confirm=True)
     image = flash.check(context, args, progress)['image']['sha256']
     target = context.target(write['target'])
-    fd = context.open_target(target)
-    try:
-        now = os.pread(fd, target['size_bytes'], 0)
-    finally:
-        os.close(fd)
+    now = install.target_bytes(context, target)  # 2026-11-13 review: a short read is refused
     if hashlib.sha256(now).hexdigest() == image:
         return 'same'
     if write['target'] == 'vbmeta' and now[:4] == b'AVB0' and struct.unpack_from('>I', now, 120)[0] & 2:
@@ -552,6 +573,14 @@ def android_data(context, progress):
         cleared = bcb.clear_wipe_request(context)
     except OSError:
         cleared = False
+    # 2026-11-13 review: the vbmeta prepared for root, now in its partition, asks for this very reset
+    # until its copy goes; left there, root asked to erase the freshly set up data once more.
+    import root
+    import saved_boot
+    with contextlib.suppress(OSError, fs.FilesystemError):
+        prepared = root.prepared_in_place(context)
+        if prepared:
+            saved_boot.remove_from_cache(context, prepared)
     os.sync()
     return {'cache_removed': wiped['removed'], 'userdata': 'android', 'metadata': 'erased', 'request_cleared': cleared}
 

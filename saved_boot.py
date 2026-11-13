@@ -73,11 +73,8 @@ def keep_recovery_spot(data):
 def keep_recovery(context, target):
     """The keep-recovery mark written into the Android BOOT on TARGET and read back; the partition's
     SHA-256 afterwards. Nothing for a Linux BOOT (Android does not start) or a BOOT without the tail."""
-    fd = context.open_target(target)
-    try:
-        data = os.pread(fd, target['size_bytes'], 0)
-    finally:
-        os.close(fd)
+    import install
+    data = install.target_bytes(context, target)  # 2026-11-13 review: a short read is refused
     found = keep_recovery_spot(data)
     if found is None:
         return None
@@ -90,11 +87,7 @@ def keep_recovery(context, target):
             os.fsync(fd)
         finally:
             os.close(fd)
-        fd = context.open_target(target)
-        try:
-            data = os.pread(fd, target['size_bytes'], 0)
-        finally:
-            os.close(fd)
+        data = install.target_bytes(context, target)
         if data[spot:spot + len(KEEP_RECOVERY_MARK)] != KEEP_RECOVERY_MARK:
             fs.fail('KEEP_RECOVERY_FAILED', 'The mark that keeps this recovery did not stay in BOOT')
     return {'offset': spot, 'already': marked, 'sha256': hashlib.sha256(data).hexdigest()}
@@ -176,6 +169,9 @@ def keep_current_boot(context, progress, new_sha256=None):
     return {'kept': path, 'kind': kind, 'release': release}
 
 
+PART = '.part-'  # an image still being written (save_on_cache)
+
+
 def content_key(data):
     """SHA-256 of a kept BOOT as the image itself: the keep-recovery mark, where it is, counts as zeros."""
     spot = len(data) - KEEP_RECOVERY_FROM_END
@@ -190,30 +186,37 @@ def tidy_folder(folder):
     are removed but one: the one taken out of the firmware (stock-), else the oldest. Copies that
     differ are all kept. Returns {name: content key} of what stays."""
     entries = []
-    for name in sorted(os.listdir(folder)):
-        if not name.endswith('.img') or name + '.json' not in os.listdir(folder):
+    listed = set(os.listdir(folder))
+    for name in sorted(listed):
+        if not name.endswith('.img') or name + '.json' not in listed:
             continue
         try:
-            fd = fs.open_regular(name, dir_fd=folder)
-            try:
-                size = os.fstat(fd).st_size
-                data, at = bytearray(), 0
-                while at < size:
-                    part = os.pread(fd, min(4 << 20, size - at), at)
-                    if not part:
-                        break
-                    data.extend(part)
-                    at += len(part)
-            finally:
-                os.close(fd)
             meta_fd = fs.open_regular(name + '.json', dir_fd=folder)
             try:
-                saved = int(json.loads(os.pread(meta_fd, 65536, 0).decode('utf-8')).get('saved', 0) or 0)
+                meta = json.loads(os.pread(meta_fd, 65536, 0).decode('utf-8'))
             finally:
                 os.close(meta_fd)
+            saved = int(meta.get('saved', 0) or 0)
+            # 2026-11-13 review: every image was read whole at each save and start; a copy saved
+            # since keeps its content key in its description.
+            key = meta.get('content') if isinstance(meta.get('content'), str) and len(meta['content']) == 64 else None
+            if key is None:
+                fd = fs.open_regular(name, dir_fd=folder)
+                try:
+                    size = os.fstat(fd).st_size
+                    data, at = bytearray(), 0
+                    while at < size:
+                        part = os.pread(fd, min(4 << 20, size - at), at)
+                        if not part:
+                            break
+                        data.extend(part)
+                        at += len(part)
+                finally:
+                    os.close(fd)
+                key = content_key(bytes(data))
         except (OSError, ValueError, AttributeError, fs.FilesystemError):
             continue
-        entries.append((content_key(bytes(data)), not name.startswith('stock-'), saved, name))
+        entries.append((key, not name.startswith('stock-'), saved, name))
     kept = {}
     for key, _, _, name in sorted(entries):
         if key in kept.values():
@@ -259,9 +262,13 @@ def prune_rollbacks(folder, keep=None):
 def prune_orphans(folder):
     """A description (NAME.img.json, NAME.img.sha256) whose image is gone says a BOOT is kept that
     is not (2026-11-12, on the phone: two such pairs from the app; the app then took the BOOT for
-    kept already). They go."""
+    kept already). They go, and so does an image whose write was cut short (PART)."""
     names = set(os.listdir(folder))
     for name in names:
+        if name.startswith(PART):
+            with contextlib.suppress(OSError):
+                os.unlink(name, dir_fd=folder)
+            continue
         for suffix in ('.json', '.sha256'):
             if name.endswith('.img' + suffix) and name[:-len(suffix)] not in names:
                 with contextlib.suppress(OSError):
@@ -500,7 +507,8 @@ def save_on_cache(context, name, image, meta, progress, keep_mounted=False, fold
                 if folder_name == SAVED_BOOT:
                     # The same BOOT is not kept twice: the copy there is the way back already.
                     kept = tidy_folder(folder)
-                    twin = next((other for other, key in kept.items() if key == content_key(image)), None)
+                    mine = content_key(image)
+                    twin = next((other for other, key in kept.items() if key == mine), None)
                     if twin:
                         return '/' + folder_name + '/' + twin
                     room = os.fstatvfs(pin.fd)
@@ -510,24 +518,39 @@ def save_on_cache(context, name, image, meta, progress, keep_mounted=False, fold
                     make_room(pin)
                     room = os.fstatvfs(pin.fd)
                 require(room.f_bavail * room.f_frsize > end + (8 << 20), 'CACHE_FULL', 'Cache has no room to keep this BOOT')
-                out = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=folder)
+                # 2026-11-13 review: a write cut short (ENOSPC, EIO, power) left NAME.img without its
+                # description, seen by nothing that tidies cache. The image is written under a name
+                # prune_orphans removes, described, and only then given its own name.
+                part = PART + name
+                with contextlib.suppress(FileNotFoundError):
+                    os.unlink(part, dir_fd=folder)
+                out = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=folder)
                 try:
-                    view, at = memoryview(image), 0
-                    while at < end:
-                        at += os.write(out, view[at:at + (1 << 20)])
-                        progress('Saving BOOT', {'label': 'boot', 'size_bytes': end}, at)
-                    os.fsync(out)
-                finally:
-                    os.close(out)
-                notes = {'schema': 'a22x.saved-boot.v1', **meta, 'sha256': digest, 'bytes': end, 'saved': int(time.time())}
-                for suffix, text in (('.json', json.dumps(notes, indent=1) + '\n'), ('.sha256', digest + '  ' + name + '\n')):
-                    side = os.open(name + suffix, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600,
-                                   dir_fd=folder)
                     try:
-                        os.write(side, text.encode())
-                        os.fsync(side)
+                        view, at = memoryview(image), 0
+                        while at < end:
+                            at += os.write(out, view[at:at + (1 << 20)])
+                            progress('Saving BOOT', {'label': 'boot', 'size_bytes': end}, at)
+                        os.fsync(out)
                     finally:
-                        os.close(side)
+                        os.close(out)
+                    notes = {'schema': 'a22x.saved-boot.v1', **meta, 'sha256': digest, 'bytes': end, 'saved': int(time.time()),
+                             'content': content_key(image)}
+                    for suffix, text in (('.json', json.dumps(notes, indent=1) + '\n'), ('.sha256', digest + '  ' + name + '\n')):
+                        side = os.open(name + suffix, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600,
+                                       dir_fd=folder)
+                        try:
+                            os.write(side, text.encode())
+                            os.fsync(side)
+                        finally:
+                            os.close(side)
+                    os.rename(part, name, src_dir_fd=folder, dst_dir_fd=folder)
+                    os.fsync(folder)
+                except BaseException:
+                    for leftover in (part, name + '.json', name + '.sha256'):
+                        with contextlib.suppress(OSError):
+                            os.unlink(leftover, dir_fd=folder)
+                    raise
             finally:
                 os.close(folder)
             os.sync()
