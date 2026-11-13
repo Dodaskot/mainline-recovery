@@ -208,7 +208,17 @@ def avb_footer(data):
     major, _, original, offset, size = struct.unpack_from('>IIQQQ', data, len(data) - 60)
     require(major == 1 and original <= offset and offset + size <= len(data) - 64, 'AVB_FOOTER_INVALID',
             'The AVB footer points outside the partition')
-    meta = vbmeta(data[offset:offset + size])
+    try:
+        meta = vbmeta(data[offset:offset + size])
+    except ImageError as error:
+        if error.code != 'VBMETA_DAMAGED':
+            raise
+        # 2026-11-13, LineageOS 20 for A226B: a BOOT changed after avbtool signed it (its vbmeta
+        # hash and its hash descriptor both differ). Samsung's unlocked bootloader starts it; it is
+        # read as an image changed after signing (avb state 'mismatch'), its kernel and ramdisk
+        # still checked by decoding them, not refused as no BOOT at all.
+        meta = vbmeta(data[offset:offset + size], verify=False)
+        meta['signature'] = 'mismatch'
     return {'original_size': original, 'vbmeta': meta}
 
 

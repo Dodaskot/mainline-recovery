@@ -39,6 +39,15 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **A ROM's BOOT changed after it was signed** (0.6.221): LineageOS 20 for A226B ships a boot.img
+  whose AVB hash no longer fits its contents. The recovery took it for no BOOT of this phone: no
+  keep-recovery mark, no format advice, and the restart into the system was refused ("no bootable
+  system on userdata"). Such a BOOT is now read as changed after signing; its kernel and ramdisk
+  are still checked by decoding them, and the vbmeta partition itself stays strictly checked.
+- **A ZIP's own installer shows its progress in percent** (0.6.221), not as "200 B / 1000 B", and
+  no speed is made up from it.
+- **LineageOS 20 for A226B installed by its own update-binary** (edify, raw images into
+  system, vendor, odm, product and boot): the whole ROM in 80 seconds, `script succeeded`.
 - **After a ZIP changed Android's BOOT** (0.6.220): on this Samsung Android starts with a changed
   BOOT (a kernel, Magisk or APatch) only after its data is formatted. The result page says so,
   offers "Format data for Android" in place of the restart, and a restart asked for before is not

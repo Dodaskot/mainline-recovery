@@ -1243,6 +1243,7 @@ static bool progress_left(const App*a,char*out,size_t size){
     else snprintf(out,size,T("About %u min"),(unsigned int)((seconds+59)/60));
     return true;
 }
+static bool progress_fraction(const App*a){return !strcmp(a->progress_part,"zip")&&a->progress_total==1000;}
 static void render_progress(App*a){
     heading(a,"Working",NULL,false);
     char elapsed[32];progress_elapsed(a,elapsed,sizeof(elapsed));
@@ -1283,7 +1284,7 @@ static void render_progress(App*a){
         vector_arc(a,cx,cy,radius,width,top+turn*(float)(a->now%1600u)/1600.f,1.6f,ORANGE);icon(a,A_OS,cx-36,cy-36,72,ORANGE);
     }
     centered(a,(Rect){48,hero.y+346,624,56},2,TEXT,a->progress_phase[0]?phase_label(a,a->progress_phase):"Waiting for backend");
-    if(a->progress_part[0]){
+    if(a->progress_part[0]&&!progress_fraction(a)){
         int w=text_width(a->progress_part,0)+56;if(w>600)w=600;Rect chip={cx-w/2,hero.y+410,w,44};rounded(a,chip,22,PANEL2);
         raw_text(true);if(text_width(a->progress_part,0)<=w-24)centered(a,chip,0,MUTED,a->progress_part);else ellipsis(a,chip.x+16,chip.y+8,chip.w-32,0,MUTED,a->progress_part);raw_text(false);
     }
@@ -1292,6 +1293,9 @@ static void render_progress(App*a){
         char done[48],total[48],bytes[112],speed[48],left[64];human_bytes(a->progress_done>a->progress_total?a->progress_total:a->progress_done,done,sizeof(done));
         human_bytes(a->progress_total,total,sizeof(total));snprintf(bytes,sizeof(bytes),"%s / %s",done,total);
         bool fast=progress_speed(a,speed,sizeof(speed)),known=progress_left(a,left,sizeof(left));
+        /* A ZIP's own installer tells only how far it is (2026-11-13: "200 B / 1000 B" on the
+           phone): the share in percent, and no speed made from it. */
+        if(progress_fraction(a)){snprintf(bytes,sizeof(bytes),"%u %%",(unsigned int)((a->progress_done>a->progress_total?a->progress_total:a->progress_done)*100/a->progress_total));fast=false;}
         stat_tile(a,(Rect){28,y,324,112},"DONE",bytes,TEXT);stat_tile(a,(Rect){368,y,324,112},"SPEED",fast?speed:"—",fast?TEXT:MUTED);y+=128;
         stat_tile(a,(Rect){28,y,324,112},"ELAPSED",elapsed,TEXT);stat_tile(a,(Rect){368,y,324,112},"LEFT",known?left:"—",known?ORANGE:MUTED);y+=128;
     }else{stat_tile(a,(Rect){28,y,664,112},"ELAPSED",elapsed,TEXT);y+=128;}
@@ -5083,6 +5087,7 @@ static bool preview(App*a,const char*name){
             copy(a->progress_phase,sizeof(a->progress_phase),!strcmp(name,"progress-cancel")?"image-download":"Unpacking");
             if(!strcmp(name,"progress-cancel")){copy(a->progress_part,sizeof(a->progress_part),"lineage-22.2-20250621-UNOFFICIAL-gsi_arm64_vN.img.gz");a->progress_total=1086466161ULL;a->progress_done=402000000ULL;a->progress_mark_at=a->now-95000u;a->progress_mark_done=0;}}
     }
+    else if(!strcmp(name,"progress-zip")){a->screen=PROGRESS;a->job.pid=1;a->job.kind=J_ZIP_RUN;a->now=2000000;a->job_started=a->now-40000u;copy(a->progress_phase,sizeof(a->progress_phase),"[2/5] Flashing vendor...");copy(a->progress_part,sizeof(a->progress_part),"zip");a->progress_done=200;a->progress_total=1000;a->progress_mark_at=a->now-40000u;a->progress_mark_done=0;}
     else if(!strcmp(name,"progress")){a->screen=PROGRESS;a->job.pid=1;a->job.kind=J_BACKUP_PLAN;copy(a->progress_phase,sizeof(a->progress_phase),"compact-compress");copy(a->progress_part,sizeof(a->progress_part),"userdata");a->progress_done=14926253014ULL;a->progress_total=24103593114ULL;a->now=720000;a->progress_mark_at=1;a->progress_mark_done=0;}
     else if(!strcmp(name,"theme"))a->screen=THEME;
     else if(!strcmp(name,"language"))a->screen=LANGUAGE;
