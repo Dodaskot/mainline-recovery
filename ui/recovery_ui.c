@@ -137,14 +137,14 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
     A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_RESET,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
-    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE };
+    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE,A_FS_SEL_ARCHIVE,A_FS_EXTRACT };
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
     J_FS_STAT,J_FS_CHMOD,J_FS_CHOWN,J_FS_RESOLVE,J_FS_COPY_TREE,J_FS_FORMAT,J_FS_CHECK,J_FS_RESIZE,J_TOOLS_STATUS,J_TOOLS_EXPORT,J_DISPLAY_STATUS,J_DISPLAY_SET,J_WIPE_PLAN,J_WIPE,J_USB_STATUS,J_USB_START,J_USB_STOP,
     J_TERM_STATUS,J_TERM_START,J_TERM_READ,J_TERM_WRITE,J_TERM_RESIZE,J_TERM_STOP,J_SYS_STATUS,J_SYS_IMPORT_PLAN,J_SYS_SWITCH_PLAN,J_SYS_IMPORT,J_SYS_SWITCH,J_SYS_RECOVER,J_SYS_REMOVE,
     J_INSTALL_STATUS,J_INSTALL_BOOT_PLAN,J_INSTALL_STOCK_PLAN,J_INSTALL_RESUME_PLAN,J_INSTALL_EXECUTE,J_FLASH_TARGETS,J_FLASH_CHECK,J_FLASH_WRITE,J_FLASH_MEMBERS,J_USB_SYNC,J_USB_BACKUP,J_USB_EJECT,J_SYS_ACCOUNT_USER,J_SYS_ACCOUNT_PASS,J_SYS_WIFI_SSID,J_SYS_WIFI_PASS,J_LOCK_ENTER,J_LOCK_SET,J_LOCK_OLD,J_LOCK_CONFIRM,J_LOCK_ACCESS,J_SYSINFO,J_THEME_IMPORT,J_THEME_REMOVE,J_THEME_RESTORE,
     J_WIFI_STATUS,J_WIFI_SCAN,J_WIFI_CONNECT,J_WIFI_DISCONNECT,J_WIFI_FORGET,J_WIFI_SSID,J_WIFI_PASS,J_CATALOG,J_CATALOG_CHECK,J_PKG_SEARCH,J_PKG_QUERY,J_ID_LIST,J_ID_BACKUP,J_ID_BACKUPS,J_ID_RESTORE,J_ID_DELETE,J_CHARGER,J_IMAGES,J_IMAGES_DOWNLOAD,J_IMAGES_DELETE,J_APLAN_SHOW,J_APLAN_PREPARE,J_APLAN_FORGET,J_WIPE_CACHE,J_SAMSUNG_INSPECT,J_SAMSUNG_INSTALL,J_ANDROID_RESET,J_STOCK_BOOT,J_SAMSUNG_UNPACK,J_ROOT_LIST,J_ROOT_INSTALL,J_ROOT_PREPARE,J_ZIP_INSPECT,J_ZIP_RUN,J_BACKUP_RENAME,J_BACKUP_DELETE,J_CARD_LIST,J_CARD_APPLY,
-    J_COPY_LIST,J_COPY_VERIFY,J_COPY_RESTORE,J_COPY_DELETE,J_ROM_KIND,J_UPDATES_CHECK,J_UPDATES_FETCH,J_FS_DELETE_MANY,
+    J_COPY_LIST,J_COPY_VERIFY,J_COPY_RESTORE,J_COPY_DELETE,J_ROM_KIND,J_UPDATES_CHECK,J_UPDATES_FETCH,J_FS_DELETE_MANY,J_ARCHIVE_PACK,J_ARCHIVE_UNPACK,
     J_ROOT_SUPERKEY /* a prompt, not a job: APatch's SuperKey */,J_BACKUP_NAME /* a prompt: the new name of a backup */ };
 enum ScrollSurface { SCROLL_NONE,SCROLL_FOLDER,SCROLL_VOLUMES,SCROLL_TEXT,SCROLL_PROMPT,SCROLL_TERMINAL,SCROLL_SYSTEMS,SCROLL_TOOLS,SCROLL_INSTALL_REVIEW,SCROLL_INSTALL_PENDING,SCROLL_PAGE };
 enum DisplayCommand { DC_NONE,DC_STATUS,DC_BRIGHTNESS,DC_BLANK,DC_WAKE,DC_TOGGLE };
@@ -1803,7 +1803,7 @@ static void reset_browser(App*a){a->fs_select=a->fs_select_all=false;a->fs_sel_c
 static const char*files_operation_title(int kind){
     switch(kind){case J_FS_MOUNT:return "Enable writes";case J_FS_WRITE:return "Save text";case J_FS_MKDIR:return "New folder";
     case J_FS_RENAME:return "Rename";case J_FS_COPY:return "Copy file";case J_FS_COPY_TREE:return "Copy folder";
-    case J_FS_CHMOD:return "Permissions";case J_FS_CHOWN:return "Owner and group";case J_FS_DELETE:return "Delete";case J_FS_DELETE_MANY:return "Delete selected";case J_FS_CHECK:return "Check and repair";case J_FS_RESIZE:return "Grow to fill";default:return "File operation";}
+    case J_FS_CHMOD:return "Permissions";case J_FS_CHOWN:return "Owner and group";case J_FS_DELETE:return "Delete";case J_FS_DELETE_MANY:return "Delete selected";case J_ARCHIVE_PACK:return "Archive";case J_ARCHIVE_UNPACK:return "Extract here";case J_FS_CHECK:return "Check and repair";case J_FS_RESIZE:return "Grow to fill";default:return "File operation";}
 }
 static void files_note(App*a,int y){if(a->fs_status[0])ellipsis(a,36,y,648,0,MUTED,a->fs_status);}
 static Rect volume_viewport(void){return(Rect){28,VOLUME_LIST_TOP,664,VOLUME_LIST_BOTTOM-VOLUME_LIST_TOP};}
@@ -1926,6 +1926,7 @@ static void files_long_press(App*a,int n){
     if(!a->fs_select){a->fs_select=true;a->fs_select_all=false;a->fs_sel_count=0;}
     sel_toggle(a,a->files[n].name);
 }
+static int next_writable_volume(App*a,int index);
 static void render_file_browser(App*a){
     FileVolume*v=current_volume(a);char sub[256];snprintf(sub,sizeof(sub),"%.150s  /  %s",v?(v->label[0]?v->label:v->id):tr("Volume"),tr(files_writable(a)?"Writable":"Read-only"));
     if(a->fs_select&&!files_picking(a)){char count[64];snprintf(count,sizeof(count),T("%u selected"),sel_total(a));raw_text(true);heading(a,count,sub,true);raw_text(false);}
@@ -1979,13 +1980,19 @@ static void render_file_browser(App*a){
     else if(a->systems_pick_manifest)button(a,(Rect){28,1358,664,82},"Cancel selection",A_SYS_CANCEL_PICK,ui_free(a),false,0);
     else if(a->flash_pick)button(a,(Rect){28,1358,664,82},"Cancel selection",A_FLASH_CANCEL_PICK,ui_free(a),false,0);
     else if(a->theme_pick)button(a,(Rect){28,1358,664,82},"Cancel selection",A_THEME_CANCEL_PICK,ui_free(a),false,0);
-    else if(selecting){char label[96];snprintf(label,sizeof(label),T("Delete selected (%u)"),sel_total(a));raw_text(true);
-        button(a,(Rect){28,1358,664,82},label,A_FS_SEL_DELETE,ui_free(a)&&files_writable(a)&&sel_total(a)>0,true,0);raw_text(false);}
+    else if(selecting){char label[96],pack[96];snprintf(label,sizeof(label),T("Delete (%u)"),sel_total(a));snprintf(pack,sizeof(pack),T("Archive (%u)"),sel_total(a));raw_text(true);
+        button(a,(Rect){28,1358,320,82},pack,A_FS_SEL_ARCHIVE,ui_free(a)&&sel_total(a)>0&&next_writable_volume(a,-1)>=0,true,0);
+        button(a,(Rect){372,1358,320,82},label,A_FS_SEL_DELETE,ui_free(a)&&files_writable(a)&&sel_total(a)>0,false,0);raw_text(false);}
     else{button(a,(Rect){28,1358,320,82},"New text file",A_FS_NEW_FILE,ui_free(a)&&files_writable(a),true,0);
     button(a,(Rect){372,1358,320,82},"New folder",A_FS_MKDIR,ui_free(a)&&files_writable(a),false,0);}
     files_note(a,1460);
 }
 static bool theme_file_name(const char*name){return theme_file_suffix(name,".a22xtheme");}
+static bool tar_archive_name(const char*name){
+    static const char*const ends[]={".tar.zst",".tar.gz",".tgz",".tar.xz",".tar"};
+    size_t length=strlen(name);for(size_t n=0;n<sizeof(ends)/sizeof(ends[0]);n++){size_t e=strlen(ends[n]);if(length>e&&!strcasecmp(name+length-e,ends[n]))return true;}
+    return false;
+}
 static void render_file_info(App*a){
     if(a->install.pick_source){render_install_source(a);return;}
     if(a->systems_pick_manifest){if(a->systems_pick_script)render_systems_script(a);else render_systems_manifest(a);return;}
@@ -2002,6 +2009,7 @@ static void render_file_info(App*a){
         button(a,(Rect){28,1194,664,88},"Open resolved target",A_FS_FOLLOW,ui_free(a)&&a->fs_link_resolved&&(file_is_regular(&a->fs_resolved)||file_is_directory(&a->fs_resolved)),true,0);
     }else{
         if(theme_file_name(a->fs_selected.name)&&file_is_regular(&a->fs_selected)){button(a,(Rect){28,626,320,88},"Open as text",A_FS_READ,ui_free(a),false,0);button(a,(Rect){372,626,320,88},"Use this theme",A_THEME_USE,ui_free(a),true,0);}
+        else if(file_is_regular(&a->fs_selected)&&tar_archive_name(a->fs_selected.name))button(a,(Rect){28,626,664,88},"Extract here",A_FS_EXTRACT,ui_free(a)&&files_writable(a),true,0);
         else button(a,(Rect){28,626,664,88},file_is_directory(&a->fs_selected)?"Open folder":"Open as text",A_FS_READ,ui_free(a)&&ordinary,true,0);
         button(a,(Rect){28,738,320,88},"Rename",A_FS_RENAME,ui_free(a)&&ordinary&&files_writable(a),false,0);
         button(a,(Rect){372,738,320,88},file_is_directory(&a->fs_selected)?"Copy folder":"Copy file",A_FS_COPY,ui_free(a)&&(file_is_regular(&a->fs_selected)||(file_is_directory(&a->fs_selected)&&a->fs_copy_directories))&&a->fs_selected.token[0],false,0);
@@ -2293,22 +2301,26 @@ static void render_backup_name_prompt(App*a){
     button(a,(Rect){28,1370,256,84},"Cancel",A_BACK,ui_free(a),false,0);
     button(a,(Rect){304,1370,388,84},"Rename",A_FS_PROMPT_NEXT,ui_free(a)&&ready,true,0);
 }
+/* The prompts of a new system's account and of Wi-Fi: their own kinds, not everything after them
+   (2026-11-13: the archive's path, a later kind, opened as the account page). */
+static bool account_prompt_kind(int kind){return (kind>=J_SYS_ACCOUNT_USER&&kind<=J_SYS_WIFI_PASS)||kind==J_WIFI_SSID||kind==J_WIFI_PASS;}
 static void render_file_prompt(App*a){
     if(lock_kind(a->fs_prompt_kind)){render_lock_prompt(a);return;}
     if(a->fs_prompt_kind==J_PKG_QUERY){render_package_prompt(a);return;}
     if(a->fs_prompt_kind==J_ROOT_SUPERKEY){render_superkey_prompt(a);return;}
     if(a->fs_prompt_kind==J_BACKUP_NAME){render_backup_name_prompt(a);return;}
-    if(a->fs_prompt_kind>=J_SYS_ACCOUNT_USER){render_account_prompt(a);return;}
+    if(account_prompt_kind(a->fs_prompt_kind)){render_account_prompt(a);return;}
     const char*title=a->fs_prompt_kind==J_SYS_ACCOUNT_USER?"User name":(a->fs_prompt_kind==J_SYS_ACCOUNT_PASS?"Password":(a->fs_prompt_kind==J_FS_WRITE?"New text file":files_operation_title(a->fs_prompt_kind)));
     bool metadata=a->fs_prompt_kind==J_FS_CHMOD||a->fs_prompt_kind==J_FS_CHOWN;
-    bool copying=a->fs_prompt_kind==J_FS_COPY||a->fs_prompt_kind==J_FS_COPY_TREE;
+    bool copying=a->fs_prompt_kind==J_FS_COPY||a->fs_prompt_kind==J_FS_COPY_TREE||a->fs_prompt_kind==J_ARCHIVE_PACK;
     bool selected=copying||metadata||a->fs_prompt_kind==J_FS_RENAME;
-    heading(a,title,metadata?(a->fs_prompt_kind==J_FS_CHMOD?"Enter the Unix mode as four octal digits.":"Enter numeric UID:GID for this entry."):(a->fs_prompt_kind>=J_SYS_ACCOUNT_USER?"For the new system.":"Enter a path relative to the volume root."),true);
-    bool account=a->fs_prompt_kind>=J_SYS_ACCOUNT_USER;
+    heading(a,title,metadata?(a->fs_prompt_kind==J_FS_CHMOD?"Enter the Unix mode as four octal digits.":"Enter numeric UID:GID for this entry."):(account_prompt_kind(a->fs_prompt_kind)?"For the new system.":"Enter a path relative to the volume root."),true);
+    bool account=account_prompt_kind(a->fs_prompt_kind);
     if(!account){rounded(a,(Rect){28,236,664,142},16,PANEL);
-    text(a,48,254,0,ORANGE,selected?"SELECTED ENTRY":"CURRENT FOLDER");
-    raw_text(true);wrapped(a,48,296,624,0,TEXT,selected?a->fs_selected.path:a->fs_path,2);raw_text(false);}
-    text(a,34,410,0,ORANGE,metadata?(a->fs_prompt_kind==J_FS_CHMOD?"NEW MODE / OCTAL":"NEW OWNER / UID:GID"):(a->fs_prompt_kind>=J_SYS_ACCOUNT_USER?"VALUE":"NEW PATH"));text_viewport(a,(Rect){28,448,664,198},true,true);
+    if(a->fs_prompt_kind==J_ARCHIVE_PACK){char count[64];snprintf(count,sizeof(count),T("%u selected"),sel_total(a));text(a,48,254,0,ORANGE,count);raw_text(true);wrapped(a,48,296,624,0,TEXT,a->fs_path,2);raw_text(false);}
+    else{text(a,48,254,0,ORANGE,selected?"SELECTED ENTRY":"CURRENT FOLDER");
+    raw_text(true);wrapped(a,48,296,624,0,TEXT,selected?a->fs_selected.path:a->fs_path,2);raw_text(false);}}
+    text(a,34,410,0,ORANGE,metadata?(a->fs_prompt_kind==J_FS_CHMOD?"NEW MODE / OCTAL":"NEW OWNER / UID:GID"):(account_prompt_kind(a->fs_prompt_kind)?"VALUE":"NEW PATH"));text_viewport(a,(Rect){28,448,664,198},true,true);
     if(copying){
         FileVolume*v=a->fs_destination_index>=0&&a->fs_destination_index<a->volume_count?&a->volumes[a->fs_destination_index]:NULL;
         char label[240];snprintf(label,sizeof(label),T("To: %.170s"),v?(v->label[0]?v->label:v->id):tr("No writable volume"));
@@ -2317,7 +2329,7 @@ static void render_file_prompt(App*a){
     }else if(!account)wrapped(a,34,700,648,0,MUTED,metadata?(a->fs_prompt_kind==J_FS_CHMOD?"Changes only this entry. No recursive mode changes.":"Changes only this entry. The kernel may clear setuid, setgid or file capabilities when ownership changes."):"Existing names are never overwritten by this action.",4);
     cursor_buttons(a,856);render_keyboard(a);
     button(a,(Rect){28,1370,256,84},"Cancel",A_BACK,ui_free(a),false,0);
-    button(a,(Rect){304,1370,388,84},a->fs_prompt_kind==J_FS_WRITE?"Write text":(a->fs_prompt_kind>=J_SYS_ACCOUNT_USER?"Next":"Review"),A_FS_PROMPT_NEXT,ui_free(a)&&a->fs_prompt[0],true,0);
+    button(a,(Rect){304,1370,388,84},a->fs_prompt_kind==J_FS_WRITE?"Write text":(account_prompt_kind(a->fs_prompt_kind)?"Next":"Review"),A_FS_PROMPT_NEXT,ui_free(a)&&a->fs_prompt[0],true,0);
 }
 static unsigned int path_pages(const char*s,int width,unsigned int lines){
     size_t row=0;unsigned int count=1;while(s[row]){TextRow r=text_row(s,row,width);if(r.next<=row||!s[r.next])break;count++;row=r.next;}return(count+lines-1)/lines;
@@ -2337,18 +2349,21 @@ static void render_file_confirmation(App*a){
     if(q->kind==J_FS_RENAME||q->kind==J_FS_COPY||q->kind==J_FS_COPY_TREE){text(a,40,712,0,ORANGE,"DESTINATION");confirmation_path(a,40,754,640,q->destination,a->fs_confirm_page,6);if(q->kind==J_FS_COPY||q->kind==J_FS_COPY_TREE)ellipsis(a,40,936,640,0,MUTED,q->destination_volume);}
     if(q->kind==J_FS_CHMOD){text(a,40,712,0,ORANGE,"NEW MODE / OCTAL");text(a,40,766,2,TEXT,q->mode);}
     if(q->kind==J_FS_CHOWN){char owner[96];snprintf(owner,sizeof(owner),T("UID %s  /  GID %s"),q->uid,q->gid);text(a,40,712,0,ORANGE,"NEW OWNER");text(a,40,766,1,TEXT,owner);}
-    if(q->kind==J_FS_DELETE_MANY){
+    if(q->kind==J_FS_DELETE_MANY||q->kind==J_ARCHIVE_PACK){
         char count[96];snprintf(count,sizeof(count),T("%u selected"),sel_total(a));text(a,40,712,0,ORANGE,"SELECTED");raw_text(true);text(a,40,756,1,TEXT,count);raw_text(false);
         unsigned int shown=0;int y=812;
         if(!a->fs_select_all)for(unsigned int n=0;n<a->fs_sel_count&&shown<5;n++,shown++,y+=34){raw_text(true);ellipsis(a,40,y,640,0,MUTED,a->fs_sel[n]);raw_text(false);}
         else wrapped(a,40,y,640,0,MUTED,a->fs_sel_count?"Everything in this folder except the entries left out":"Everything in this folder",2);
     }
-    const char*note=q->kind==J_FS_DELETE_MANY?"Deletes the selected files, and the selected folders with everything in them. There is no undo.":
+    if(q->kind==J_ARCHIVE_PACK){text(a,40,1000,0,ORANGE,"ARCHIVE");raw_text(true);ellipsis(a,40,1040,640,0,TEXT,q->destination);ellipsis(a,40,1076,640,0,MUTED,q->destination_volume);raw_text(false);}
+    const char*note=q->kind==J_ARCHIVE_PACK?"Owners, permissions and links are kept. The archive opens in Files on any A22x, or with tar --zstd -xf on a computer.":
+        q->kind==J_ARCHIVE_UNPACK?"Extracts into a new folder beside the archive, named after it. Nothing outside that folder is written.":
+        q->kind==J_FS_DELETE_MANY?"Deletes the selected files, and the selected folders with everything in them. There is no undo.":
         q->kind==J_FS_DELETE?"This deletes the selected file or empty folder. There is no undo.":
         (q->kind==J_FS_WRITE?(q->create?"Create this text file. An existing file will not be overwritten.":"Replace this file only if its contents still match the version you opened."):
         (q->kind==J_FS_MOUNT?"Write access allows changes on this volume. Nothing is formatted.":
         (q->kind==J_FS_CHMOD||q->kind==J_FS_CHOWN?"Change only this exact entry if it still matches the version you inspected. This action is not recursive.":"The destination must be a new name. Existing files will not be replaced.")));
-    wrapped(a,40,1050,640,1,q->kind==J_FS_DELETE||q->kind==J_FS_DELETE_MANY?RED:MUTED,note,4);
+    wrapped(a,40,q->kind==J_ARCHIVE_PACK?1124:1050,640,q->kind==J_ARCHIVE_PACK?0:1,q->kind==J_FS_DELETE||q->kind==J_FS_DELETE_MANY?RED:MUTED,note,q->kind==J_ARCHIVE_PACK?3:4);
     unsigned int pages=confirmation_pages(q);
     if(pages>1){char label[48];snprintf(label,sizeof(label),T("Path %u / %u"),a->fs_confirm_page+1,pages);button(a,(Rect){28,1224,180,64},"Previous",A_FS_CONFIRM_PREV,a->fs_confirm_page>0,false,0);centered(a,(Rect){224,1224,272,64},0,MUTED,label);button(a,(Rect){512,1224,180,64},"Next",A_FS_CONFIRM_NEXT,a->fs_confirm_page+1<pages,false,0);}
     bool erase=q->kind==J_FS_DELETE||q->kind==J_FS_DELETE_MANY;
@@ -2578,6 +2593,8 @@ static void problem(App*a,const char*code,const char*message){
 
 static const char*job_name(int kind){
     if(kind==J_FS_DELETE_MANY)return "files-delete-many";
+    if(kind==J_ARCHIVE_PACK)return "files-archive";
+    if(kind==J_ARCHIVE_UNPACK)return "files-extract";
     if(kind==J_APLAN_SHOW)return "android-plan-show";
     if(kind==J_APLAN_PREPARE)return "android-plan-prepare";
     if(kind==J_APLAN_FORGET)return "android-plan-forget";
@@ -2624,7 +2641,7 @@ static const char*job_name(int kind){
         "install-status","install-boot-plan","install-stock-plan","install-resume-plan","install-execute","flash-targets","flash-check","flash-write","flash-members","usb-sync","usb-backup","usb-eject"};
     return kind>=0&&kind<=J_USB_EJECT?n[kind]:"";
 }
-static bool file_job(int kind){return (kind>=J_FS_INVENTORY&&kind<=J_FS_RESIZE)||kind==J_FS_DELETE_MANY;}
+static bool file_job(int kind){return (kind>=J_FS_INVENTORY&&kind<=J_FS_RESIZE)||kind==J_FS_DELETE_MANY||kind==J_ARCHIVE_PACK||kind==J_ARCHIVE_UNPACK;}
 static bool private_workdir(const char*path){
     struct stat s;if(!path[0]||path[0]!='/')return false;
     if(lstat(path,&s)<0){if(errno!=ENOENT||mkdir(path,0700)<0)return false;if(lstat(path,&s)<0)return false;}
@@ -2754,6 +2771,8 @@ static FileRequest file_request(App*a,int kind){
 static const char*filesystem_verb(int kind){
     const char*verbs[]={"inventory","mount","unmount","list","read","write","mkdir","rename","copy","delete","stat","chmod","chown","resolve","copy-tree","format","check","resize"};
     if(kind==J_FS_DELETE_MANY)return "delete-many";
+    if(kind==J_ARCHIVE_PACK)return "pack";
+    if(kind==J_ARCHIVE_UNPACK)return "unpack";
     return file_job(kind)?verbs[kind-J_FS_INVENTORY]:"";
 }
 static bool write_edit_source(App*a,FileRequest*q){
@@ -2799,9 +2818,16 @@ static bool start_files_request(App*a,const FileRequest*request){
     if((q.kind==J_FS_CHMOD||q.kind==J_FS_CHOWN||q.kind==J_FS_RESOLVE||q.kind==J_FS_COPY_TREE)&&!q.entry_token[0]){files_problem(a,"ENTRY_IDENTITY_MISSING","Inspect the selected entry again before continuing.",FILE_INFO);return false;}
     if(q.kind==J_FS_WRITE&&!write_edit_source(a,&q))return false;
     if(q.kind==J_FS_DELETE_MANY&&!write_selection(a,&q))return false;
+    if(q.kind==J_ARCHIVE_PACK&&!write_selection(a,&q))return false;
     a->fs_request=q;
+    /* Archives (2026-11-13) are made by file_archive.py, beside filesystem.py. */
+    static char archive_helper[PATH_LEN];
+    if(q.kind==J_ARCHIVE_PACK||q.kind==J_ARCHIVE_UNPACK){
+        copy(archive_helper,sizeof(archive_helper),a->filesystem_helper);char*slash=strrchr(archive_helper,'/');
+        if(slash)slash[1]=0;else archive_helper[0]=0;append(archive_helper,sizeof(archive_helper),"file_archive.py");
+    }
     char offset[32],limit[16];snprintf(offset,sizeof(offset),"%u",q.offset);snprintf(limit,sizeof(limit),"%d",FILE_BATCH);char*args[40];int n=0;
-    args[n++]=a->python;args[n++]=a->filesystem_helper;
+    args[n++]=a->python;args[n++]=q.kind==J_ARCHIVE_PACK||q.kind==J_ARCHIVE_UNPACK?archive_helper:a->filesystem_helper;
     if(a->device)args[n++]="--device";else{args[n++]="--fixture";args[n++]=a->fixture;}
     args[n++]=(char*)filesystem_verb(q.kind);
     if(q.kind!=J_FS_INVENTORY){args[n++]="--volume";args[n++]=q.volume;args[n++]="--expected-volume-token";args[n++]=q.volume_token;}
@@ -2809,6 +2835,10 @@ static bool start_files_request(App*a,const FileRequest*request){
     else if(q.kind==J_FS_FORMAT){args[n++]="--fs";args[n++]=q.mode;args[n++]="--confirm";}
     else if(q.kind==J_FS_CHECK||q.kind==J_FS_RESIZE)args[n++]="--confirm";
     else if(q.kind==J_FS_DELETE_MANY){args[n++]="--path";args[n++]=q.path;args[n++]="--selection-file";args[n++]=q.text_file;args[n++]="--confirm";}
+    else if(q.kind==J_ARCHIVE_PACK){args[n++]="--path";args[n++]=q.path;args[n++]="--selection-file";args[n++]=q.text_file;
+        args[n++]="--destination-volume";args[n++]=q.destination_volume;args[n++]="--expected-destination-volume-token";args[n++]=q.destination_token;
+        args[n++]="--destination";args[n++]=q.destination;args[n++]="--confirm";}
+    else if(q.kind==J_ARCHIVE_UNPACK){args[n++]="--path";args[n++]=q.path;args[n++]="--confirm";}
     else if(q.kind>=J_FS_LIST){
         args[n++]="--path";args[n++]=q.path;
         if(q.kind==J_FS_LIST){args[n++]="--offset";args[n++]=offset;args[n++]="--limit";args[n++]=limit;}
@@ -3164,6 +3194,11 @@ static int complete_files_job(App*a,const Json*j,int kind){
         a->fs_inventory_destination=a->usb_mounting?USB_FILES:(kind==J_FS_UNMOUNT&&a->prepare_unmounting?PREPARE_FILESYSTEM:(kind==J_FS_UNMOUNT?FILE_VOLUME:FILE_BROWSER));
         if(a->usb_mounting){a->usb_mounting=false;a->usb_refresh_after=true;}
         reset_browser(a);return J_FS_INVENTORY;
+    }else if(kind==J_ARCHIVE_PACK||kind==J_ARCHIVE_UNPACK){
+        char where[PATH_LEN]={0};
+        if(kind==J_ARCHIVE_PACK){int archive=json_get(j,0,"archive");if(archive>=0)jstring(j,archive,"path",where,sizeof(where));}else jstring(j,0,"folder",where,sizeof(where));
+        snprintf(a->fs_status,sizeof(a->fs_status),kind==J_ARCHIVE_PACK?T("Archive saved: %s"):T("Extracted into %s"),where);
+        reset_browser(a);screen(a,FILE_BROWSER);return J_FS_LIST;
     }else if(kind==J_FS_DELETE_MANY){
         unsigned int done=(unsigned int)json_uint(j,json_get(j,0,"deleted"),0),left=(unsigned int)json_uint(j,json_get(j,0,"failed_count"),0);
         if(left)snprintf(a->fs_status,sizeof(a->fs_status),T("Deleted %u; %u could not be deleted"),done,left);else snprintf(a->fs_status,sizeof(a->fs_status),T("Deleted %u"),done);
@@ -3559,7 +3594,7 @@ static void complete_job(App*a){
         copy(a->message,sizeof(a->message),kind==J_BACKUP?(a->plan_linux_v2?"Backup completed and verified. Userdata remains offline.":"Backup completed and verified."):(kind==J_VERIFY?"The backup passed integrity verification.":(kind==J_WIPE?"Userdata is now an empty ext4 filesystem. Boot and the SD snapshot were preserved.":"The reviewed restore completed and was verified. Userdata remains offline.")));a->plan_can_execute=a->plan_linux_admitted=false;a->token[0]=0;screen(a,RESULT);}
     free(tok);job_reply_done(a,ended);a->dirty=true;
     if(a->backup_relist){a->backup_relist=false;a->list_for_verify=false;if(!start_job(a,J_LIST))screen(a,LIST);return;}
-    if((kind==J_FS_WRITE||kind==J_FS_DELETE_MANY)&&a->fs_request.text_file[0]){unlink(a->fs_request.text_file);a->fs_request.text_file[0]=0;}
+    if((kind==J_FS_WRITE||kind==J_FS_DELETE_MANY||kind==J_ARCHIVE_PACK)&&a->fs_request.text_file[0]){unlink(a->fs_request.text_file);a->fs_request.text_file[0]=0;}
     if(next_files_job!=J_NONE)start_files_job(a,next_files_job);
     else if(kind==J_FS_INVENTORY&&a->id_list_after){a->id_list_after=false;start_identity_job(a,J_ID_LIST);}
     else if(a->systems_refresh_after){a->systems_refresh_after=false;start_systems_job(a,J_SYS_STATUS);}
@@ -3641,6 +3676,14 @@ static void begin_file_prompt(App*a,int kind){
     if(kind==J_FS_RENAME)copy(a->fs_prompt,sizeof(a->fs_prompt),a->fs_selected.path);
     else if(kind==J_FS_CHMOD)copy(a->fs_prompt,sizeof(a->fs_prompt),a->fs_selected.mode);
     else if(kind==J_FS_CHOWN)snprintf(a->fs_prompt,sizeof(a->fs_prompt),"%llu:%llu",(unsigned long long)a->fs_selected.uid,(unsigned long long)a->fs_selected.gid);
+    else if(kind==J_ARCHIVE_PACK){
+        /* 2026-11-13: A22xArchives/FOLDER-DATE.tar.zst, on an SD card or a stick when one is writable. */
+        const char*base=strrchr(a->fs_path,'/');base=base&&base[1]?base+1:(current_volume(a)?current_volume(a)->id:"files");
+        time_t now=time(NULL);struct tm local;localtime_r(&now,&local);char stamp[32];strftime(stamp,sizeof(stamp),"%Y%m%d-%H%M",&local);
+        if(snprintf(a->fs_prompt,sizeof(a->fs_prompt),"/A22xArchives/%.120s-%s.tar.zst",base,stamp)>=(int)sizeof(a->fs_prompt)){files_problem(a,"PATH_TOO_LONG","Choose a shorter destination path.",FILE_BROWSER);return;}
+        int chosen=-1;for(int n=0;n<a->volume_count;n++){FileVolume*v=&a->volumes[n];if(v->mounted&&!v->read_only&&v->write_supported&&(!strncmp(v->id,"sdcard",6)||!strncmp(v->id,"usb",3))){chosen=n;break;}}
+        a->fs_destination_index=chosen>=0?chosen:(files_writable(a)?a->volume_index:next_writable_volume(a,-1));
+    }
     else if(kind==J_FS_COPY||kind==J_FS_COPY_TREE){
         if(snprintf(a->fs_prompt,sizeof(a->fs_prompt),"%s.copy",a->fs_selected.path)>=(int)sizeof(a->fs_prompt)){files_problem(a,"PATH_TOO_LONG","Choose a shorter destination path.",FILE_INFO);return;}
         a->fs_destination_index=files_writable(a)?a->volume_index:next_writable_volume(a,-1);
@@ -3676,8 +3719,12 @@ static void accept_file_prompt(App*a){
     }
     FileRequest q=file_request(a,a->fs_prompt_kind);
     if(q.kind==J_FS_MKDIR)copy(q.path,sizeof(q.path),path);
+    else if(q.kind==J_ARCHIVE_PACK){
+        size_t length=strlen(path);if(length<8||strcmp(path+length-8,".tar.zst"))append(path,sizeof(path),".tar.zst");
+        copy(q.path,sizeof(q.path),a->fs_path);copy(q.destination,sizeof(q.destination),path);
+    }
     else{copy(q.path,sizeof(q.path),a->fs_selected.path);copy(q.destination,sizeof(q.destination),path);}
-    if(q.kind==J_FS_COPY||q.kind==J_FS_COPY_TREE){
+    if(q.kind==J_FS_COPY||q.kind==J_FS_COPY_TREE||q.kind==J_ARCHIVE_PACK){
         if(a->fs_destination_index<0||a->fs_destination_index>=a->volume_count||!a->volumes[a->fs_destination_index].mounted||a->volumes[a->fs_destination_index].read_only||!a->volumes[a->fs_destination_index].write_supported){files_problem(a,"DESTINATION_UNAVAILABLE","Mount a destination volume with write access before copying.",FILE_PROMPT);return;}
         FileVolume*v=&a->volumes[a->fs_destination_index];copy(q.destination_volume,sizeof(q.destination_volume),v->id);copy(q.destination_token,sizeof(q.destination_token),v->token);
         if(q.kind==J_FS_COPY_TREE)copy(q.entry_token,sizeof(q.entry_token),a->fs_selected.token);
@@ -3743,6 +3790,7 @@ static bool files_action(App*a,int id){
         if(id>=A_FS_ENTRY&&id<A_FS_ENTRY+a->file_count){if(ui_free(a))sel_toggle(a,a->files[id-A_FS_ENTRY].name);return true;}
         if(id==A_FS_SEL_ALL){if(ui_free(a)){bool everything=a->fs_select_all&&!a->fs_sel_count;a->fs_select_all=!everything;a->fs_sel_count=0;a->dirty=true;}return true;}
         if(id==A_FS_SEL_CANCEL||id==A_BACK){a->fs_select=a->fs_select_all=false;a->fs_sel_count=0;a->dirty=true;return true;}
+        if(id==A_FS_SEL_ARCHIVE){if(ui_free(a)&&sel_total(a))begin_file_prompt(a,J_ARCHIVE_PACK);return true;}
         if(id==A_FS_SEL_DELETE){
             if(ui_free(a)&&files_writable(a)&&sel_total(a)){FileRequest q=file_request(a,J_FS_DELETE_MANY);copy(q.path,sizeof(q.path),a->fs_path);confirm_file_request(a,q,FILE_BROWSER);}
             return true;
@@ -3798,6 +3846,7 @@ static bool files_action(App*a,int id){
     case A_FS_CHMOD:case A_FS_CHOWN:if(files_writable(a)&&a->fs_selected.metadata_supported&&a->fs_selected.token[0])begin_file_prompt(a,id==A_FS_CHMOD?J_FS_CHMOD:J_FS_CHOWN);return true;
     case A_FS_RESOLVE:if(!strcmp(a->fs_selected.type,"symlink")&&a->fs_selected.token[0]){a->fs_link_resolved=false;start_files_job(a,J_FS_RESOLVE);}return true;
     case A_FS_FOLLOW:if(a->fs_link_resolved){a->fs_selected=a->fs_resolved;a->fs_link_resolved=false;open_selected_file(a);}return true;
+    case A_FS_EXTRACT:if(files_writable(a)&&tar_archive_name(a->fs_selected.name)){FileRequest q=file_request(a,J_ARCHIVE_UNPACK);copy(q.path,sizeof(q.path),a->fs_selected.path);confirm_file_request(a,q,FILE_INFO);}return true;
     case A_FS_DELETE:if(files_writable(a)){FileRequest q=file_request(a,J_FS_DELETE);copy(q.path,sizeof(q.path),a->fs_selected.path);confirm_file_request(a,q,FILE_INFO);}return true;
     case A_FS_PROMPT_NEXT:accept_file_prompt(a);return true;
     case A_FS_DEST_NEXT:a->fs_destination_index=next_writable_volume(a,a->fs_destination_index);a->dirty=true;return true;
@@ -5981,6 +6030,10 @@ static int test_files_select(void){
     {FileRequest q=file_request(a,J_FS_DELETE_MANY);assert(write_selection(a,&q));char body[256]={0};FILE*f=fopen(q.text_file,"r");assert(f);size_t got=fread(body,1,sizeof(body)-1,f);fclose(f);unlink(q.text_file);
      body[got]=0;assert(!strcmp(body,"{\"all\":true,\"names\":[\"c \\\"q\\\".txt\"]}"));}
     rmdir(a->workdir);
+    /* The archive's page is its own, not the account page of a new system (2026-11-13, on the phone). */
+    assert(test_press(a,A_FS_SEL_ARCHIVE,50)&&a->screen==FILE_PROMPT&&a->fs_prompt_kind==J_ARCHIVE_PACK);render(a);
+    assert(test_button(a,A_FS_DEST_NEXT)&&!strncmp(a->fs_prompt,"/A22xArchives/x-",16)&&a->fs_destination_index==0);
+    a->screen=FILE_BROWSER;render(a);
     assert(test_press(a,A_FS_SEL_DELETE,50)&&a->screen==FILE_CONFIRM&&a->fs_pending.kind==J_FS_DELETE_MANY&&!strcmp(a->fs_pending.path,"/x"));
     render(a);Button*hold=test_button(a,A_FS_CONFIRM);assert(hold&&hold->hold_ms==3000);
     /* Back to the folder: Back ends the selection instead of leaving it. */
@@ -6284,11 +6337,26 @@ static bool workflow_files(App*a,const char*what){
     FS_CHECK(test_press(a,A_FS_NEW_FILE,50)&&workflow_type(a,"/UI-файли/один/всередині.txt",true)&&test_press(a,A_FS_PROMPT_NEXT,50)&&workflow_type(a,"x\n",true));
     FS_CHECK(test_press(a,A_FS_SAVE,50)&&test_press(a,A_FS_CONFIRM,2000)&&await_job(a)&&a->successful&&test_press(a,A_BACK,50)&&await_job(a));
     FS_CHECK(a->screen==FILE_BROWSER&&!strcmp(a->fs_path,"/UI-файли")&&a->file_count==2);
+    /* Into an archive on the card (2026-11-13): a long press, select all, Archive; the card is chosen. */
+    {render(a);Button*row=test_button(a,A_FS_ENTRY+0);FS_CHECK(row);int x=row->r.x+20,y=row->r.y+20;uint64_t t=milliseconds();
+     pointer(a,true,x,y,t);a->now=t+FS_LONG_MS+1;hold_tick(a);pointer(a,false,x,y,t+FS_LONG_MS+50);}
+    FS_CHECK(a->fs_select&&test_press(a,A_FS_SEL_ALL,50)&&sel_total(a)==2&&test_press(a,A_FS_SEL_ARCHIVE,50)&&a->screen==FILE_PROMPT&&a->fs_prompt_kind==J_ARCHIVE_PACK);
+    FS_CHECK(!strncmp(a->fs_prompt,"/A22xArchives/UI-файли-",strlen("/A22xArchives/UI-файли-"))&&!strcmp(a->volumes[a->fs_destination_index].id,"sdcard-p1"));
+    FS_CHECK(workflow_type(a,"/A22xArchives/UI-архів",true)&&test_press(a,A_FS_PROMPT_NEXT,50)&&a->screen==FILE_CONFIRM&&!strcmp(a->fs_pending.destination,"/A22xArchives/UI-архів.tar.zst"));
+    FS_CHECK(test_press(a,A_FS_CONFIRM,2000)&&await_job(a)&&a->successful&&a->screen==FILE_BROWSER&&strstr(a->fs_status,"UI-архів.tar.zst")&&!a->fs_select);
     {render(a);Button*row=test_button(a,A_FS_ENTRY+0);FS_CHECK(row);int x=row->r.x+20,y=row->r.y+20;uint64_t t=milliseconds();
      pointer(a,true,x,y,t);a->now=t+FS_LONG_MS+1;hold_tick(a);pointer(a,false,x,y,t+FS_LONG_MS+50);}
     FS_CHECK(a->fs_select&&sel_total(a)==1&&test_press(a,A_FS_SEL_ALL,50)&&sel_total(a)==2);
     FS_CHECK(test_press(a,A_FS_SEL_DELETE,50)&&a->screen==FILE_CONFIRM&&test_press(a,A_FS_CONFIRM,3000)&&await_job(a)&&a->successful);
     FS_CHECK(a->screen==FILE_BROWSER&&!a->file_count&&!a->fs_select&&strstr(a->fs_status,"2"));
+    /* Out of the archive on the card, beside it. */
+    {int card=-1;for(int n=0;n<a->volume_count;n++)if(!strcmp(a->volumes[n].id,"sdcard-p1"))card=n;FS_CHECK(card>=0);
+     a->volume_index=card;copy(a->volume_id,sizeof(a->volume_id),"sdcard-p1");copy(a->fs_path,sizeof(a->fs_path),"/A22xArchives");reset_browser(a);FS_CHECK(start_files_job(a,J_FS_LIST)&&await_job(a)&&a->successful);}
+    entry=workflow_find_entry(a,"UI-архів.tar.zst");FS_CHECK(entry>=0&&test_press(a,A_FS_ENTRY_MENU+entry,50)&&await_job(a)&&a->successful&&a->screen==FILE_INFO);
+    FS_CHECK(test_press(a,A_FS_EXTRACT,50)&&a->screen==FILE_CONFIRM&&a->fs_pending.kind==J_ARCHIVE_UNPACK&&test_press(a,A_FS_CONFIRM,2000)&&await_job(a)&&a->successful);
+    FS_CHECK(a->screen==FILE_BROWSER&&workflow_find_entry(a,"UI-архів")>=0&&strstr(a->fs_status,"/A22xArchives/UI-архів"));
+    {int data=-1;for(int n=0;n<a->volume_count;n++)if(!strcmp(a->volumes[n].id,"userdata"))data=n;FS_CHECK(data>=0);
+     a->volume_index=data;copy(a->volume_id,sizeof(a->volume_id),"userdata");copy(a->fs_path,sizeof(a->fs_path),"/UI-файли");reset_browser(a);FS_CHECK(start_files_job(a,J_FS_LIST)&&await_job(a)&&a->successful);}
     FS_CHECK(test_press(a,A_FS_UP,50)&&await_job(a));entry=workflow_find_entry(a,"UI-файли");FS_CHECK(entry>=0&&test_press(a,A_FS_ENTRY_MENU+entry,50)&&await_job(a)&&a->successful&&test_press(a,A_FS_DELETE,50)&&test_press(a,A_FS_CONFIRM,3000)&&await_job(a)&&a->successful);
     FS_CHECK(test_press(a,A_FS_VOLUME,50)&&test_press(a,A_FS_MOUNT_RO,50)&&await_job(a)&&a->successful&&!files_writable(a));
     FS_CHECK(test_press(a,A_FS_VOLUME,50)&&test_press(a,A_FS_UNMOUNT,50)&&await_job(a)&&a->successful&&current_volume(a)&&!current_volume(a)->mounted);

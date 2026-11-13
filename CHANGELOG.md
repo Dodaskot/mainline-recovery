@@ -39,6 +39,13 @@ BOOT copy also on the phone.
   encrypted by Android cannot take them: the page says to format it in Wipe first. Checked on the
   phone: A226BXXSBDZC3 from the ZIP on the card, unpacked in 2 minutes, MD5-checked, 7 partitions
   written and read back in 5 minutes; stock Android started.
+- **Files and folders into an archive, and out again** (0.6.225): in Files, a long press, the
+  entries chosen, "Archive" puts them into A22xArchives/FOLDER-DATE.tar.zst on an SD card or a stick
+  (tap the destination to change it); owners, permissions, times and links are kept. "Extract here"
+  on such an archive (or any .tar, .tar.gz, .tar.xz) unpacks it into a new folder beside it, never
+  outside that folder. The archive is portable: it opens on another A22x the same way, or with
+  `tar --zstd -xf` on a computer; a short manifest after the zstd stream says what is inside.
+  Checked on the phone: two folders archived on the card and extracted, every file identical.
 - **Several files at once in Files** (0.6.222): a long press on a file or folder selects it;
   taps add and remove more; "Select all" / "Select none"; "Delete selected" deletes the files and
   the folders with everything in them (removed by descriptor: a symlink is removed, never

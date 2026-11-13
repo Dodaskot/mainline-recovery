@@ -636,8 +636,20 @@ msgstr "Arch"
 msgid "Architecture"
 msgstr "Architecture"
 
+msgid "ARCHIVE"
+msgstr "ARCHIVE"
+
+msgid "Archive"
+msgstr "Archiver"
+
 msgid "archive"
 msgstr "archive"
+
+msgid "Archive (%u)"
+msgstr "Archiver (%u)"
+
+msgid "Archive saved: %s"
+msgstr "Archive enregistrée : %s"
 
 msgid "Archive: %s\nSize: %s\nSHA-256: %s"
 msgstr "Archive : %s\nTaille : %s\nSHA-256 : %s"
@@ -1386,14 +1398,14 @@ msgstr "décembre"
 msgid "Delete"
 msgstr "Supprimer"
 
+msgid "Delete (%u)"
+msgstr "Supprimer (%u)"
+
 msgid "Delete a saved system that is not running."
 msgstr "Supprimer un système enregistré qui ne tourne pas."
 
 msgid "Delete selected"
 msgstr "Supprimer la sélection"
-
-msgid "Delete selected (%u)"
-msgstr "Supprimer la sélection (%u)"
 
 msgid "Delete the saved image"
 msgstr "Supprimer l’image enregistrée"
@@ -1718,6 +1730,15 @@ msgstr "Exporter le diagnostic"
 
 msgid "ext4 filesystem image"
 msgstr "Image de système de fichiers ext4"
+
+msgid "Extract here"
+msgstr "Extraire ici"
+
+msgid "Extracted into %s"
+msgstr "Extrait dans %s"
+
+msgid "Extracts into a new folder beside the archive, named after it. Nothing outside that folder is written."
+msgstr "Extrait dans un nouveau dossier à côté de l'archive, portant son nom. Rien n'est écrit en dehors de ce dossier."
 
 msgid "F2FS filesystem image"
 msgstr "Image de système de fichiers F2FS"
@@ -3167,6 +3188,9 @@ msgstr "Propriétaire et groupe"
 
 msgid "Owner updated; actual permissions shown"
 msgstr "Propriétaire mis à jour ; permissions réelles affichées"
+
+msgid "Owners, permissions and links are kept. The archive opens in Files on any A22x, or with tar --zstd -xf on a computer."
+msgstr "Propriétaires, permissions et liens sont conservés. L'archive s'ouvre dans Fichiers sur tout A22x, ou avec tar --zstd -xf sur un ordinateur."
 
 msgid "Pacific"
 msgstr "Pacifique"

@@ -209,7 +209,11 @@ Apps
 April
 Arch
 Architecture
+ARCHIVE
+Archive
 archive
+Archive (%u)
+Archive saved: %s
 Archive: %s\nSize: %s\nSHA-256: %s
 Arctic
 arm64
@@ -459,9 +463,9 @@ Daylight
 Debian
 December
 Delete
+Delete (%u)
 Delete a saved system that is not running.
 Delete selected
-Delete selected (%u)
 Delete the saved image
 Delete this image?
 Deleted
@@ -570,6 +574,9 @@ Exit terminal
 Explicitly select a Linux v2 snapshot for this installation.
 Export diagnostics
 ext4 filesystem image
+Extract here
+Extracted into %s
+Extracts into a new folder beside the archive, named after it. Nothing outside that folder is written.
 F2FS filesystem image
 Fade
 failed
@@ -1053,6 +1060,7 @@ Output sequence or encoding changed. Refresh the shell state; input has been pau
 Owner / group
 Owner and group
 Owner updated; actual permissions shown
+Owners, permissions and links are kept. The archive opens in Files on any A22x, or with tar --zstd -xf on a computer.
 Pacific
 PACKAGE NAME
 Packages come over the recovery's Wi-Fi: this takes 10-30 minutes. Keep the phone powered.

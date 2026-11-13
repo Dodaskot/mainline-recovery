@@ -636,8 +636,20 @@ msgstr "Arch"
 msgid "Architecture"
 msgstr "Архітектура"
 
+msgid "ARCHIVE"
+msgstr "АРХІВ"
+
+msgid "Archive"
+msgstr "Архівувати"
+
 msgid "archive"
 msgstr "архів"
+
+msgid "Archive (%u)"
+msgstr "Архівувати (%u)"
+
+msgid "Archive saved: %s"
+msgstr "Архів збережено: %s"
 
 msgid "Archive: %s\nSize: %s\nSHA-256: %s"
 msgstr "Архів: %s\nРозмір: %s\nSHA-256: %s"
@@ -1386,14 +1398,14 @@ msgstr "грудня"
 msgid "Delete"
 msgstr "Видалити"
 
+msgid "Delete (%u)"
+msgstr "Видалити (%u)"
+
 msgid "Delete a saved system that is not running."
 msgstr "Видалити збережену систему, яка зараз не працює."
 
 msgid "Delete selected"
 msgstr "Видалити вибране"
-
-msgid "Delete selected (%u)"
-msgstr "Видалити вибране (%u)"
 
 msgid "Delete the saved image"
 msgstr "Видалити збережений образ"
@@ -1718,6 +1730,15 @@ msgstr "Експорт діагностики"
 
 msgid "ext4 filesystem image"
 msgstr "Образ ФС ext4"
+
+msgid "Extract here"
+msgstr "Розпакувати сюди"
+
+msgid "Extracted into %s"
+msgstr "Розпаковано в %s"
+
+msgid "Extracts into a new folder beside the archive, named after it. Nothing outside that folder is written."
+msgstr "Розпаковує в нову теку поруч з архівом, названу як він. Поза цією текою нічого не записується."
 
 msgid "F2FS filesystem image"
 msgstr "Образ ФС F2FS"
@@ -3167,6 +3188,9 @@ msgstr "Власник і група"
 
 msgid "Owner updated; actual permissions shown"
 msgstr "Власника оновлено; показано фактичні дозволи"
+
+msgid "Owners, permissions and links are kept. The archive opens in Files on any A22x, or with tar --zstd -xf on a computer."
+msgstr "Власники, права й посилання зберігаються. Архів відкривається у «Файлах» на будь-якому A22x або командою tar --zstd -xf на комп’ютері."
 
 msgid "Pacific"
 msgstr "Тихий океан"
