@@ -583,9 +583,8 @@ def capabilities(context):
     try:
         tools = qualified.toolchain(context)
         qualification = qualified.admission(context, tools=tools)
-        # 2026-11-13 review: a userdata grown to the end of the eMMC is a volume of its own here, but
-        # this workflow was qualified on the stock geometry and refuses it (GEOMETRY_MISMATCH): it is
-        # not offered then, instead of failing after the user chose it.
+        # A geometry this workflow does not admit is not offered, instead of failing after the
+        # user chose it (2026-11-13 review).
         _parts(context)  # on the phone it checks the qualified geometry
         available = True
     except (RecoveryError, OSError, ValueError, KeyError, TypeError) as exc:
@@ -660,8 +659,8 @@ def _open_target(context, part, tools, plan):
     # There is deliberately no call to DeviceContext.open_partition(write=True)
     # and no enable flag on that generic raw/Android API.
     qualified.require_admission(context, _parts(context), tools, plan["qualification"])
-    number, size = qualified.GEOMETRY[part["label"]]
-    if part.get("partition_number") != number or part["size_bytes"] != size:
+    number = qualified.GEOMETRY[part["label"]][0]
+    if part.get("partition_number") != number or part["size_bytes"] not in qualified.admitted_sizes(part["label"]):
         fail("LINUX_TARGET_FORBIDDEN", "Physical target is outside the fixed Linux partition allowlist")
     # 2026-11-13 review, checked on the phone: mke2fs opens its device with O_EXCL itself (its mount
     # check and EXT2_FLAG_EXCLUSIVE), so with this process holding userdata exclusively every wipe
@@ -852,13 +851,13 @@ def _write_raw(archive, target, part, state, guard, progress=None):
 
 def _format_userdata(target, part, tools, lease, plan, state, guard, progress):
     block_size = 4096
-    if part["size_bytes"] % block_size:
-        fail("GEOMETRY_MISMATCH", "Qualified userdata format requires exact 4096-byte block geometry")
+    # A userdata grown to the end of the eMMC ends 3584 bytes into a block: ext4 takes the whole ones.
+    blocks = part["size_bytes"] // block_size
     guard(True)
     fd = target.fileno()
     argv = [tools["paths"]["mkfs.ext4"], "-t", "ext4", "-F", "-q", "-b", str(block_size),
             "-U", plan["new_filesystem_uuid"], "-L", "linux-wiped", "-E",
-            "nodiscard,lazy_itable_init=0,lazy_journal_init=0", f"/proc/self/fd/{fd}", str(part["size_bytes"] // block_size)]
+            "nodiscard,lazy_itable_init=0,lazy_journal_init=0", f"/proc/self/fd/{fd}", str(blocks)]
     state["write_started"] = True
     child = _WriterChild(argv, inherited_fds=(lease, fd), input_pipe=False, mkfs_config=tools["mkfs_config"])
     try:
@@ -870,7 +869,7 @@ def _format_userdata(target, part, tools, lease, plan, state, guard, progress):
     state["fsync_completed"] = True
     probe = _compact().probe_source(fd, part["size_bytes"], progress=progress, tool_paths=tools["paths"], inherited_fds=(lease,))
     if (probe["uuid"] != plan["new_filesystem_uuid"] or probe["block_size"] != block_size
-            or probe["block_count"] * block_size != part["size_bytes"]):
+            or probe["block_count"] != blocks):
         fail("WIPE_READBACK_MISMATCH", "New ext4 UUID or exact filesystem geometry differs from the reviewed format")
     guard(True)
     state.update(readback_verified=True, new_filesystem=probe, secure_erasure=False)
@@ -1030,7 +1029,7 @@ def qualify_to_images(backup_path, output_directory, implementation_record, tool
         fail("INSUFFICIENT_SPACE", "Host lacks room for the restored allocated filesystem blocks", free_bytes=free, required_bytes=required)
     parts = [{"label": entry["label"], "size_bytes": entry["raw_bytes"]} for entry in manifest["entries"]]
     for part in parts:
-        if part["size_bytes"] != qualified.GEOMETRY[part["label"]][1]:
+        if part["size_bytes"] not in qualified.admitted_sizes(part["label"]):
             fail("GEOMETRY_MISMATCH", "Qualification requires the full admitted A226B partition geometry")
     with contextlib.ExitStack() as stack:
         archives = _archives(stack, path, manifest, parts, tools, None)

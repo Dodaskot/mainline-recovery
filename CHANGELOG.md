@@ -33,6 +33,14 @@ BOOT copy also on the phone.
   for writing, and a write with no room for any copy is refused. Checked on the phone: a write of
   the stock BOOT killed after its first MiB was put back to the Magisk BOOT by resume. The tidy at
   start removes descriptions of saved BOOTs whose image is gone.
+- **Linux backup on a grown userdata, and Samsung-style block ROMs** (0.6.213): a userdata grown
+  to the end of the eMMC by a Linux installation is admitted by the Linux backup (on the owner's
+  phone it was refused); restore and wipe need a new qualification capsule. A ROM ZIP whose
+  installer writes block OTA images (transfer lists) gets super laid out for it first, when a
+  partition is too small (a One UI 6 port made from the A06 has a 263 MB odm, this phone 4.3 MB),
+  and the review says how; the installer writes the logical partitions through exact device-mapper
+  mappings (the loop devices before ran to the end of super, so a write past a partition's end
+  overwrote the next ones).
 - **From the review of Linux backups, the display and the clock** (0.6.211): the Linux wipe could
   never format userdata (it held the device exclusively while mke2fs needed it too; reproduced and
   fixed on the phone); Linux snapshots are offered only on the userdata geometry they were qualified

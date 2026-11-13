@@ -67,6 +67,7 @@ import filesystem as fs
 import flash
 import install
 from install import require
+import dm_linear
 import lp_metadata as lp
 import saved_boot
 
@@ -363,6 +364,74 @@ def hashes(context, found):
     return {label: install.target_hash(context, found[label]) for label in WATCHED if label in found}
 
 
+ROOM_MAPPING = 'a22x-zip-'
+ROOM_NODES = Path('/run/a22x-recovery/zip-logical')
+
+
+def package_sizes(fd):
+    """The logical partitions a block-based OTA in the ZIP at FD rewrites whole, with the size its
+    transfer list needs: {name: bytes}. A transfer list that moves or patches old blocks (an
+    incremental update) needs the old layout and gives nothing here."""
+    import android_rom
+    sizes = {}
+    with os.fdopen(os.dup(fd), 'rb') as raw, zipfile.ZipFile(raw) as archive:
+        names = set(archive.namelist())
+        for name in LOGICAL:
+            listing = name + '.transfer.list'
+            if listing not in names or not ({name + '.new.dat', name + '.new.dat.br'} & names):
+                continue
+            info = archive.getinfo(listing)
+            if info.file_size > (4 << 20):
+                continue
+            data = archive.read(listing)
+            commands = {line.split(' ', 1)[0] for line in data.decode('utf-8', 'replace').splitlines()[4:] if line.strip()}
+            if commands <= {'new', 'zero', 'erase'}:
+                sizes[name] = android_rom.transfer_size(data)
+    return sizes
+
+
+def fit_plan(opened, sizes):
+    """2026-11-13, a One UI 6 port for this phone (KKRT, made from the A06): its odm is 263 MB where
+    this phone's is 4.3 MB, and it carries no dynamic_partitions_op_list, so its installer would
+    write past odm's end. Each partition such a package rewrites whole is made exactly its size
+    first, the larger ones before the smaller grow, when one of them is too small:
+    {name: [now, then]}, {} when all fit. Refused when super cannot hold them."""
+    present = {p['name'] for p in opened.metadata['partitions']}
+    missing = sorted(name for name in sizes if name not in present)
+    require(not missing, 'ZIP_SUPER_LAYOUT', 'This ROM writes logical partitions super does not have: ' + ', '.join(missing),
+            missing=missing)
+    now = {name: opened.size_of(opened.partition(name)) for name in sizes}
+    if all(now[name] >= need for name, need in sizes.items()):
+        return {}
+    device = opened.metadata['devices'][0]
+    unit = max(device['alignment'], lp.SECTOR)
+    then = {name: -(-need // unit) * unit for name, need in sizes.items()}
+    groups = opened.metadata['groups']
+    for index, group in enumerate(groups):
+        if not group['maximum_size']:
+            continue
+        used = sum(then.get(p['name'], opened.size_of(p)) for p in opened.metadata['partitions'] if p['group'] == index)
+        require(used <= group['maximum_size'], 'ZIP_SUPER_TOO_SMALL',
+                'super cannot hold the partitions of this ROM: its group %s would need %d MiB of %d' %
+                (group['name'], used >> 20, group['maximum_size'] >> 20), group=group['name'])
+    free = sum(end - start for start, end in opened.free_regions()) * lp.SECTOR
+    grow = sum(max(0, then[n] - now[n]) for n in sizes)
+    shrink = sum(max(0, now[n] - then[n]) for n in sizes)
+    require(free + shrink >= grow, 'ZIP_SUPER_TOO_SMALL', 'super has not enough free space for the partitions of this ROM')
+    return {name: [now[name], then[name]] for name in sizes if now[name] != then[name]}
+
+
+def apply_fit(context, plan):
+    """The layout of FIT_PLAN written: the partitions that shrink first, then those that grow."""
+    _, fd, opened = flash.open_super(context, write=True)
+    try:
+        for name, (now, then) in sorted(plan.items(), key=lambda item: item[1][1] - item[1][0]):
+            opened.resize(name, then)
+    finally:
+        os.fsync(fd)
+        os.close(fd)
+
+
 def logical_extents(context):
     """super's logical partitions that lie in one piece: {name: (offset bytes, size bytes)}."""
     try:
@@ -397,18 +466,62 @@ class Room:
         return done
 
     def attach_logical(self):
-        """super's logical partitions as loop devices over super, so an installer can mount them."""
-        for name, (offset, _) in logical_extents(self.context).items():
-            done = self.run('losetup', '-f', check=False)
-            device = done.stdout.strip()
-            if done.returncode or not device.startswith('/dev/loop'):
+        """super's logical partitions as devices of their own, through the device mapper over their
+        exact extents (2026-11-13: loop devices from a partition's start ran to the end of super, so
+        an installer writing past a partition's end overwrote the ones after it). The mappings are
+        known before the installer starts, so they are not taken for its own."""
+        try:
+            _, fd, opened = flash.open_super(self.context)
+        except (fs.FilesystemError, lp.MetadataError, OSError, KeyError):
+            return
+        try:
+            layout = {}
+            for name in LOGICAL:
+                with contextlib.suppress(lp.MetadataError):
+                    extents = opened.extents_of(opened.partition(name))
+                    if extents and all(e['type'] == lp.TARGET_LINEAR and e['device'] == 0 for e in extents):
+                        layout[name] = [(e['start'], e['sectors']) for e in extents]
+        finally:
+            os.close(fd)
+        st = os.stat(self.found['super']['path'])
+        device = '%d:%d' % (os.major(st.st_rdev), os.minor(st.st_rdev))
+        ROOM_NODES.mkdir(mode=0o700, parents=True, exist_ok=True)
+        for name, extents in layout.items():
+            mapping = ROOM_MAPPING + name
+            with contextlib.suppress(OSError):
+                dm_linear.remove(mapping)  # one left by a run that was cut short
+            try:
+                devno = dm_linear.create(mapping, dm_linear.linear_table(extents, device), read_only=False)
+            except OSError:
                 continue
-            if self.run('losetup', '-o', str(offset), device, self.found['super']['path'], check=False).returncode == 0:
-                self.loops[name] = device
+            major, minor = (int(part) for part in devno.split(':'))
+            node = ROOM_NODES / name
+            with contextlib.suppress(FileNotFoundError):
+                node.unlink()
+            os.mknod(node, 0o600 | stat.S_IFBLK, os.makedev(major, minor))
+            self.loops[name] = str(node)
+            self.mapped_before.add('dm-%d' % minor)
+
+    def written(self):
+        """The logical partitions written through the room's own mappings."""
+        names = []
+        for name in self.loops:
+            with contextlib.suppress(OSError, ValueError):
+                minor = os.minor(os.stat(self.loops[name]).st_rdev)
+                if int(((SYS_BLOCK / ('dm-%d' % minor) / 'stat').read_text().split() + ['0'] * 7)[6]):
+                    names.append(name)
+        return names
 
     def detach(self):
-        for device in self.loops.values():
-            self.run('losetup', '-d', device, check=False)
+        for name, node in self.loops.items():
+            for attempt in range(30):
+                try:
+                    dm_linear.remove(ROOM_MAPPING + name)
+                    break
+                except OSError:
+                    time.sleep(.1)
+            with contextlib.suppress(OSError):
+                os.unlink(node)
         self.loops = {}
 
     def android_properties(self):
@@ -444,7 +557,8 @@ class Room:
         root.mkdir(parents=True, exist_ok=True)
         self.run('mount', '-t', 'tmpfs', '-o', 'mode=0755,size=768m', 'a22x-zip', str(root))
         for name in ('sbin', 'dev/block/by-name', 'dev/block/mapper', 'dev/block/bootdevice', 'proc', 'sys', 'tmp', 'etc', 'system',
-                     'system_root', 'vendor', 'product', 'odm', 'data', 'cache', 'sdcard', 'mnt', 'system/bin'):
+                     'system_root', 'vendor', 'product', 'odm', 'prism', 'optics', 'data', 'cache', 'sdcard', 'mnt',
+                     'system/bin'):  # prism and optics: Samsung ROM scripts mount them there (2026-11-13)
             (root / name).mkdir(parents=True, exist_ok=True)
         shutil.copyfile(fs.BUSYBOX, root / 'sbin/busybox')
         (root / 'sbin/busybox').chmod(0o755)
@@ -682,6 +796,15 @@ def run(context, args, progress):
             before = hashes(context, found)
             guarded = protected_hashes(context)
             layout = layout_hash(context, found) if 'super' in found else None
+            fitted = {}
+            if 'super' in found and context.mode == 'device':
+                _, sfd, opened = flash.open_super(context)
+                try:
+                    fitted = fit_plan(opened, package_sizes(fd))
+                finally:
+                    os.close(sfd)
+                if fitted:
+                    apply_fit(context, fitted)
             read_fd, write_fd = os.pipe()
             room = Room(context, found) if context.mode == 'device' else None
             if room:
@@ -711,6 +834,7 @@ def run(context, args, progress):
                 os.sync()
                 written, left = unmap_after(room.mapped_before) if room else ([], [])
                 if room:
+                    written = list(written) + room.written()
                     room.detach()
         after = hashes(context, found)
         changed = sorted(label for label in after if after[label] != before.get(label))
@@ -729,7 +853,8 @@ def run(context, args, progress):
                     install.record_flash(context, label, marked['sha256'] if label == 'boot' and marked else after[label])
         result = {'zip': about['name'], 'sha256': about['sha256'], 'title': about['title'], 'what': about['what'], 'exit': code,
                   'changed': changed, 'log': shown[-40:], 'kept_boot': kept.get('kept') if kept else None,
-                  'keeps_recovery': bool(marked), 'mappings_left': left}
+                  'keeps_recovery': bool(marked), 'mappings_left': left,
+                  'super_fitted': {name: {'from': now, 'to': then} for name, (now, then) in fitted.items()}}
         now = protected_hashes(context)
         touched = sorted(label for label, digest in guarded.items() if now.get(label) != digest)
         require(not touched, 'PROTECTED_PARTITION_CHANGED',
@@ -752,7 +877,19 @@ def inspect(context, args, progress):
     ensure_mounted(context, args.volume, args.volume_token)
     with flash.source_file(context, args.volume, args.volume_token, args.path) as fd:
         about = describe(fd, Path(args.path).name)
+        sizes = package_sizes(fd)
     about['partitions'] = sorted(targets(context))
+    about['super_fit'] = {}
+    if sizes and context.mode == 'device':
+        _, sfd, opened = flash.open_super(context)
+        try:
+            plan = fit_plan(opened, sizes)
+        finally:
+            os.close(sfd)
+        about['super_fit'] = {name: {'from': now, 'to': then} for name, (now, then) in plan.items()}
+        if plan:
+            about['warnings'].append('super is laid out for this ROM first: ' + ', '.join(
+                '%s %d -> %d MiB' % (name, now >> 20, then >> 20) for name, (now, then) in sorted(plan.items())))
     return about
 
 

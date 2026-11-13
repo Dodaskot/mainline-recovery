@@ -114,14 +114,15 @@ def _control():
         os.close(fd)
 
 
-def create(name, table):
-    """Create NAME with TABLE, read-only, and make the table live (a resume without
-    DM_SUSPEND_FLAG). Returns the new disk's number, "major:minor"."""
+def create(name, table, read_only=True):
+    """Create NAME with TABLE, read-only unless READ_ONLY is false (the ZIP installer's room writes
+    the logical partitions through such mappings, 2026-11-13), and make the table live (a resume
+    without DM_SUSPEND_FLAG). Returns the new disk's number, "major:minor"."""
     body = table_bytes(table)
     with _control() as control:
         _call(control, DEV_CREATE, header(name))
         try:
-            _call(control, TABLE_LOAD, header(name, IOCTL.size + len(body), IOCTL.size, len(table), READONLY_FLAG) + body)
+            _call(control, TABLE_LOAD, header(name, IOCTL.size + len(body), IOCTL.size, len(table), READONLY_FLAG if read_only else 0) + body)
             done = _call(control, DEV_SUSPEND, header(name))
         except BaseException:
             with contextlib.suppress(OSError):

@@ -288,5 +288,64 @@ class DeviceMapper(unittest.TestCase):
         self.assertEqual((request[:12], request[12:16], request[48:55]), (struct.pack('<3I', 4, 0, 0), struct.pack('<I', 312), b'system\0'))
 
 
+class SuperFit(unittest.TestCase):
+    """2026-11-13, a One UI 6 port made from the A06 (KKRT): its block OTA writes an odm of 263 MB
+    where this phone's is 4.3 MB, and carries no dynamic_partitions_op_list. super is laid out for
+    the package before its installer runs, or the run is refused."""
+    MIB = 1 << 20
+
+    def setUp(self):
+        import test_lp_metadata as tl
+        self.tmp = Path(tempfile.mkdtemp(prefix='a22x-fit-', dir=os.environ.get('TMPDIR')))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.super = self.tmp / 'super'
+        tl.make_super(self.super, size=64 * self.MIB, group_max=40 * self.MIB,
+                      parts=(('system', 12 * self.MIB), ('vendor', 4 * self.MIB), ('product', 6 * self.MIB), ('odm', 1 * self.MIB)))
+
+    def package(self, sizes, incremental=()):
+        path = self.tmp / 'rom.zip'
+        with zipfile.ZipFile(path, 'w') as z:
+            z.writestr(zi.INSTALLER, '#!/sbin/sh\n')
+            for name, size in sizes.items():
+                blocks = size // 4096
+                body = ('move 2,0,1 2,1,2\n' if name in incremental else '') + 'new 2,0,%d\n' % blocks
+                z.writestr(name + '.transfer.list', '4\n%d\n0\n0\n%s' % (blocks, body))
+                z.writestr(name + '.new.dat.br', b'x')
+        fd = os.open(path, os.O_RDONLY)
+        self.addCleanup(os.close, fd)
+        return fd
+
+    def opened(self, write=False):
+        import lp_metadata as lp
+        fd = os.open(self.super, os.O_RDWR if write else os.O_RDONLY)
+        self.addCleanup(os.close, fd)
+        return lp.Super(fd)
+
+    def test_a_too_small_partition_is_grown_and_the_others_made_their_size(self):
+        sizes = zi.package_sizes(self.package({'system': 8 * self.MIB, 'vendor': 4 * self.MIB,
+                                               'product': 3 * self.MIB, 'odm': 9 * self.MIB}))
+        self.assertEqual(sizes['odm'], 9 * self.MIB)
+        plan = zi.fit_plan(self.opened(), sizes)
+        self.assertEqual(plan, {'system': [12 * self.MIB, 8 * self.MIB], 'product': [6 * self.MIB, 3 * self.MIB],
+                                'odm': [1 * self.MIB, 9 * self.MIB]})
+        opened = self.opened(write=True)
+        for name, (now, then) in sorted(plan.items(), key=lambda item: item[1][1] - item[1][0]):
+            opened.resize(name, then)
+        self.assertEqual({n: opened.size_of(opened.partition(n)) for n in sizes}, sizes)
+
+    def test_nothing_changes_when_everything_fits(self):
+        sizes = zi.package_sizes(self.package({'system': 8 * self.MIB, 'odm': self.MIB}))
+        self.assertEqual(zi.fit_plan(self.opened(), sizes), {})
+
+    def test_a_package_super_cannot_hold_is_refused(self):
+        sizes = zi.package_sizes(self.package({'system': 30 * self.MIB, 'odm': 9 * self.MIB}))
+        with self.assertRaises(fs.FilesystemError) as caught:
+            zi.fit_plan(self.opened(), sizes)
+        self.assertEqual(caught.exception.code, 'ZIP_SUPER_TOO_SMALL')
+
+    def test_an_incremental_transfer_list_is_not_fitted(self):
+        self.assertEqual(zi.package_sizes(self.package({'odm': 9 * self.MIB}, incremental=('odm',))), {})
+
+
 if __name__ == '__main__':
     unittest.main()

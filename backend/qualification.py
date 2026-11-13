@@ -30,6 +30,14 @@ SOURCE_FILES = (
 TOOL_NAMES = frozenset({"partclone.ext4", "partclone.chkimg", "partclone.restore",
                         "zstd", "e2fsck", "blkid", "dumpe2fs", "mkfs.ext4"})
 GEOMETRY = {"boot": (41, 33554432), "userdata": (54, 53393489920)}
+# 2026-11-13, the owner: "the Linux backup did not work". A Linux installation grows userdata to the
+# end of the eMMC (storage.GROWN_SIZES, install.GROWN_SIZES); this workflow refused that size.
+GROWN = {"userdata": ((122142720 - 33 - 17850368) * 512,)}
+
+
+def admitted_sizes(label):
+    """The sizes a partition may have here: the stock one, and userdata grown to the end."""
+    return (GEOMETRY[label][1],) + GROWN.get(label, ())
 
 
 def _trusted_regular(path, *, executable=False):
@@ -131,8 +139,8 @@ def device_binding(context, parts):
     if [p["label"] for p in parts] != ["boot", "userdata"]:
         fail("LINUX_TARGET_FORBIDDEN", "Linux v2 admits exactly BOOT and userdata")
     for part in parts:
-        number, size = GEOMETRY[part["label"]]
-        if part.get("partition_number") != number or part["size_bytes"] != size:
+        number = GEOMETRY[part["label"]][0]
+        if part.get("partition_number") != number or part["size_bytes"] not in admitted_sizes(part["label"]):
             fail("GEOMETRY_MISMATCH", "Physical Linux workflow geometry differs from the qualified A226B")
         node = context.nodes[part["device"]]
         if context.graph.physical_roots(part["device"]) != {context.internal_disk}:
@@ -170,7 +178,7 @@ def validate_acceptance(acceptance, record):
             or acceptance.get("target_kind") != "owned-new-regular-files"
             or acceptance.get("target_e2fsck_exit") != 0
             or isinstance(acceptance.get("target_e2fsck_exit"), bool)
-            or acceptance.get("userdata_bytes") != GEOMETRY["userdata"][1]
+            or acceptance.get("userdata_bytes") not in admitted_sizes("userdata")
             or acceptance.get("source_device") != record["binding"]["device"]
             or acceptance.get("implementation_sha256") != digest(record)):
         fail("INVALID_QUALIFICATION", "Acceptance does not describe this exact implementation, physical source and owned image target")
