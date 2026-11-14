@@ -31,7 +31,7 @@ import struct
 import sys
 import zipfile
 
-from lp_metadata import drop_cached  # noqa: F401  the one copy; android_rom.drop_cached for its callers
+from lp_metadata import drop_cached
 
 # update_engine's payload: "CrAU", version 2.
 PAYLOAD_MAGIC = b'CrAU'

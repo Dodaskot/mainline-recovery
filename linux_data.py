@@ -313,16 +313,23 @@ def collect_into(pin, parts, accounts, entries):
     # (2026-11-14 review: a big ~/.cache made a home too large to copy before it was left out).
     caches = tuple(a['home'].strip('/') + '/.cache/' for a in accounts) + ('root-home/.cache/',)
 
+    # Each part is walked into a list of its own: the MAX_ENTRIES limit holds for each part, here as
+    # in inspect, which counts them apart (2026-11-14 review: two parts that each fit there failed
+    # together here). The folders opened stay in ENTRIES, closed by collect when it fails.
+    walked = []
+
     def add(parent_fd, name, arcname):
-        before = len(entries)
+        before = len(walked)
         try:
-            fa.walk(parent_fd, name, device, arcname, entries, skip=caches)
+            fa.walk(parent_fd, name, device, arcname, walked, skip=caches)
         except FileNotFoundError:
             return 0
-        return sum(e[2].st_size for e in entries[before:] if e[1] is not None and stat.S_ISREG(e[2].st_mode))
+        return sum(e[2].st_size for e in walked[before:] if e[1] is not None and stat.S_ISREG(e[2].st_mode))
 
     if 'home' in parts:
         sizes['home'] = add(pin.fd, 'home', 'home') + add(pin.fd, 'root', 'root-home')
+        entries.extend(walked)
+        walked = []
     if 'settings' in parts:
         total = 0
         for path in SETTINGS:
@@ -340,6 +347,7 @@ def collect_into(pin, parts, accounts, entries):
                 if name.startswith('ssh_host_') and 'key' in name:
                     total += add(ssh, name, 'settings/' + SSH_KEYS + '/' + name)
         sizes['settings'] = total
+        entries.extend(walked)
     files = [e for e in entries if e[1] is not None]
     return files, [e[0] for e in entries if e[1] is None], sizes
 
@@ -449,8 +457,8 @@ def inspect(context):
             sizes = {}
             for part in ('home', 'settings'):
                 try:
-                    _, opened, counted = collect(pin, (part,), accounts)
-                    for fd in opened:
+                    _, folders, counted = collect(pin, (part,), accounts)
+                    for fd in folders:
                         os.close(fd)
                     sizes[part] = counted[part]
                 except fs.FilesystemError as error:
@@ -717,6 +725,8 @@ def restore_from(context, volume, token, path, parts, progress):
             'owners_changed': sum(1 for s in said if s.startswith('owner ')),
             'packages_installed': int(packages[0]) if packages else 0, 'packages_missing': int(packages[1]) if packages else 0,
             'missing': [s[8:] for s in said if s.startswith('missing ')][:40],
+            'packages_skipped': next((int(s.split()[1]) for s in said if s.startswith('packages-skipped ')
+                                      and len(s.split()) == 2 and s.split()[1].isdigit()), 0),
             'packages_unsupported': 'packages unsupported' in said, 'note': note}
 
 

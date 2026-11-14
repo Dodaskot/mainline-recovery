@@ -90,7 +90,7 @@ class TestHandoff(unittest.TestCase):
         self.assertLessEqual(now[0], handoff.WAIT_SECONDS + 3)
         self.assertEqual(set(tried), {b'Net 7'})
         self.assertEqual(len(applied['wifi_not_saved']), 8)
-        self.assertEqual(psk.call_count, 8)  # each key derived once
+        self.assertEqual(psk.call_count, 1)  # derived once, and not for the networks past the deadline
 
     def test_strange_language_and_zone_change_nothing(self):
         stored = []

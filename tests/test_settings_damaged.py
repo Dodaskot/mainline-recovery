@@ -26,10 +26,11 @@ class FakeContext:
         self.root, self.calls = root, calls
 
     mountable = {'cache': True, 'userdata': True}
+    supported = {'cache': True, 'userdata': True}
 
     def volume(self, label):
         return {'mounted': False, 'volume_token': 't-' + label, 'fs_type': 'ext4',
-                'mountable': self.mountable[label]}
+                'mountable': self.mountable[label], 'write_supported': self.supported[label]}
 
     def unmount(self, label, token=None):
         self.calls.append(('unmount', label))
@@ -141,6 +142,60 @@ class Damaged(unittest.TestCase):
         self.write('userdata', json.dumps(GOOD))
         self.assertFalse(settings.write_disk({'theme': 'z'}))
         self.assertFalse((self.root / 'cache' / settings.RELATIVE).exists())
+
+    # Each state a settings volume can be in, for the table in settings.settings_root.
+    STATES = {  # holds the file, opens read-only, opens for writing, write_supported, there
+        'file': (True, True, True, True, True), 'file-busy': (True, True, False, True, True),
+        'file-never': (True, True, False, False, True), 'empty': (False, True, True, True, True),
+        'busy': (False, True, False, True, True), 'never': (False, True, False, False, True),
+        'dead': (False, False, False, True, True), 'absent': (False, False, False, True, False)}
+    TABLE = [  # cache, userdata, where a write goes (or what it raises)
+        ('file', 'file', 'cache'), ('file', 'empty', 'cache'), ('file', 'dead', 'cache'), ('file', 'never', 'cache'),
+        ('file-busy', 'empty', settings.Unreadable), ('file-busy', 'file', settings.Unreadable),
+        ('file-never', 'empty', settings.Unreadable),
+        ('empty', 'file', 'userdata'), ('empty', 'file-never', settings.Unreadable), ('empty', 'empty', 'cache'),
+        ('empty', 'never', 'cache'), ('empty', 'absent', 'cache'), ('empty', 'dead', settings.Unreadable),
+        ('busy', 'file', 'userdata'), ('busy', 'empty', settings.Unreadable), ('busy', 'never', settings.Unreadable),
+        ('busy', 'absent', settings.Unreadable),
+        ('never', 'empty', 'userdata'), ('never', 'file', 'userdata'), ('never', 'never', OSError),
+        ('dead', 'empty', settings.Unreadable), ('dead', 'file', settings.Unreadable),
+        ('absent', 'empty', 'userdata'), ('absent', 'file', 'userdata'), ('absent', 'never', OSError),
+        ('absent', 'absent', OSError)]
+
+    def arrange(self, cache, userdata):
+        for label, state in (('cache', cache), ('userdata', userdata)):
+            holds, readable, writable, supported, there = self.STATES[state]
+            path = self.root / label / settings.RELATIVE
+            path.unlink(missing_ok=True)
+            if holds:
+                path.write_text(json.dumps(GOOD))
+            self.readable[label], self.writable[label] = readable, writable
+            FakeContext.supported[label], FakeContext.mountable[label] = supported, there
+        self.addCleanup(lambda: (FakeContext.supported.update(cache=True, userdata=True),
+                                 FakeContext.mountable.update(cache=True, userdata=True)))
+
+    def test_every_state_of_both_volumes_writes_where_the_next_start_reads(self):
+        # 2026-11-14, three reviews of three attempts: one table for every state, each row tested.
+        for cache, userdata, expected in self.TABLE:
+            with self.subTest(cache=cache, userdata=userdata):
+                self.arrange(cache, userdata)
+                self.calls.clear()
+                written = settings.write_disk({'theme': 'y'})
+                opens = [call[1] for call in self.calls if call[0] == 'open']
+                self.assertLessEqual(max(opens.count('cache'), opens.count('userdata'), 0), 1, opens)
+                landed = [label for label in ('cache', 'userdata')
+                          if (self.root / label / settings.RELATIVE).is_file()
+                          and json.loads((self.root / label / settings.RELATIVE).read_text()).get('theme') == 'y']
+                if isinstance(expected, str):
+                    self.assertTrue(written)
+                    self.assertEqual(landed, [expected])
+                    # The next start reads where the write went.
+                    self.assertEqual(self.chosen('ro'), expected)
+                else:
+                    self.assertFalse(written)
+                    self.assertEqual(landed, [])
+                    with self.assertRaises(expected):
+                        self.chosen('rw')
 
     def test_a_theme_that_cannot_be_copied_does_not_lock_the_phone(self):
         # 2026-11-14 review: an EIO on one theme made read_disk say the settings could not be read.

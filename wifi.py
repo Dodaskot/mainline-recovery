@@ -10,6 +10,7 @@ the recovery settings, and recovery joins the strongest remembered one by itself
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -161,7 +162,15 @@ def _networks(value):
 
 
 def _ram_saved(networks):
-    _atomic(SAVED_RAM, {'networks': networks})
+    """The RAM copy of the saved list, written while the settings lock is held (the list on disk was
+    just read or written under it); when it cannot be written it is removed, and the next read
+    takes the disk's (2026-11-14 review: written after the lock, two writers left RAM and disk
+    apart; a failure left RAM older than the disk)."""
+    try:
+        _atomic(SAVED_RAM, {'networks': networks})
+    except OSError:
+        with contextlib.suppress(OSError):
+            SAVED_RAM.unlink()
 
 
 def _settings_volumes(mode, action):
@@ -200,17 +209,15 @@ def saved_known():
             pass
     def read(root):
         path = root / SAVED_RELATIVE
-        if not path.is_file():
-            return []
-        try:
-            return _networks(json.loads(path.read_text()))
-        except ValueError:
-            return []
-    networks = _settings_volumes('ro', read)
-    if networks is None:
-        return None
-    _ram_saved(networks)
-    return networks
+        networks = []
+        if path.is_file():
+            try:
+                networks = _networks(json.loads(path.read_text()))
+            except ValueError:
+                pass
+        _ram_saved(networks)
+        return networks
+    return _settings_volumes('ro', read)
 
 
 def saved_read():
@@ -226,11 +233,9 @@ def saved_write(networks):
         path = root / SAVED_RELATIVE
         path.parent.mkdir(mode=0o700, exist_ok=True)
         _atomic(path, {'schema': 'a22x.wifi.saved.v1', 'networks': networks})
+        _ram_saved(networks)
         return True
-    if _settings_volumes('rw', write) is not True:
-        return False
-    _ram_saved(networks)
-    return True
+    return _settings_volumes('rw', write) is True
 
 
 def remember(ssid, key):

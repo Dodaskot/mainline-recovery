@@ -281,7 +281,7 @@ typedef struct {
     /* The installation prepared in the Android app (android_plan_ui.h, 2026-11-10). */
     bool aplan_asked,aplan_known,aplan_present,aplan_valid,aplan_opened,aplan_pending,aplan_used,aplan_forget_after,aplan_script_present,aplan_erase,aplan_edit;
     char aplan_sha[72],aplan_catalog[64],aplan_name[96],aplan_version[48],aplan_file[160],aplan_user[40],aplan_hash[140],aplan_script[72],aplan_locale[16],aplan_zone[64],aplan_desktop_id[16],aplan_greeter_id[16],aplan_source[72],aplan_error[320],aplan_helper[PATH_LEN],systems_password_hash[140];
-    uint64_t aplan_size,aplan_created;unsigned int aplan_shells,aplan_apps;
+    uint64_t aplan_size,aplan_created,aplan_retry_at;unsigned int aplan_shells,aplan_apps,aplan_tries;
     /* A logical partition inside super (2026-11-10): its size now and after the flash, and the image's own size. */
     bool flash_logical;uint64_t flash_size_now,flash_size_after,flash_payload,flash_super_free;unsigned int id_count;uint64_t id_bytes,id_sizes[ID_PARTS];int id_pick;unsigned int id_backup_count;struct{char path[96],created[32],sha[72];unsigned int parts;uint64_t bytes;bool same;}id_backups[8];char id_labels[ID_PARTS][24],id_volume_id[96],id_volume_token[96],id_error[256],id_done[192],id_helper[PATH_LEN];
     int64_t tools_scroll,page_scroll,page_content;
@@ -411,7 +411,7 @@ typedef struct {
     /* A password as dots: when the last character was typed, and how many there were then. */
     uint64_t secret_typed_at;unsigned int secret_count;bool secret_show;
     bool backup_encrypt,pw_wrong;char backup_password[260],backup_password_file[PATH_LEN];int pw_retry_kind;enum Screen pw_return;
-    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160],ld_reason[64];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_parts_off,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
+    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160],ld_reason[64];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
     bool fs_select,fs_select_all;unsigned int fs_sel_count;char fs_sel[FS_SEL_MAX][256];
     int fs_prompt_kind,fs_destination_index;
     unsigned int fs_confirm_page;
@@ -6335,10 +6335,10 @@ static int test_linux_data(void){
     JsonToken tokens[256];Json j;assert(json_parse(&j,seen,tokens,256)>0);
     a->ld_parts=15u;a->screen=PROGRESS;complete_ld_job(a,&j,J_LD_INSPECT,true);
     assert(a->screen==LINUX_DATA&&a->ld_known&&a->ld_linux&&!strcmp(a->ld_os,"Arch Linux ARM")&&!strcmp(a->ld_accounts,"alex, guest")&&a->ld_home==1048576&&a->ld_account_count==2);
-    assert(a->ld_packages==-1&&a->ld_parts==7u&&a->ld_dest_count==2&&a->ld_archive_count==1&&a->ld_archives[0].parts==9u&&a->ld_archives[0].packages==12);
+    assert(a->ld_packages==-1&&ld_selection(a)==7u&&a->ld_dest_count==2&&a->ld_archive_count==1&&a->ld_archives[0].parts==9u&&a->ld_archives[0].packages==12);
     render(a);Button*b=test_button(a,A_LD_PART+3);assert(b&&!b->enabled);assert(test_button(a,A_LD_BACKUP)->enabled&&test_button(a,A_LD_BACKUP)->hold_ms==2000);
-    assert(test_press(a,A_LD_PART+0,50)&&a->ld_parts==6u&&test_press(a,A_LD_DEST,50)&&a->ld_dest_index==1);
-    assert(test_press(a,A_LD_PART+1,50)&&test_press(a,A_LD_PART+2,50)&&!a->ld_parts);render(a);assert(!test_button(a,A_LD_BACKUP)->enabled);
+    assert(test_press(a,A_LD_PART+0,50)&&ld_selection(a)==6u&&test_press(a,A_LD_DEST,50)&&a->ld_dest_index==1);
+    assert(test_press(a,A_LD_PART+1,50)&&test_press(a,A_LD_PART+2,50)&&!ld_selection(a));render(a);assert(!test_button(a,A_LD_BACKUP)->enabled);
     assert(test_press(a,A_LD_ARCHIVE+0,50)&&a->screen==LINUX_DATA_RESTORE&&a->ld_restore_parts==9u);
     render(a);assert(test_button(a,A_LD_RPART+0)&&test_button(a,A_LD_RPART+3)&&!test_button(a,A_LD_RPART+1)&&test_button(a,A_LD_RESTORE)->hold_ms==3000);
     assert(test_press(a,A_LD_RPART+0,50)&&test_press(a,A_LD_RPART+3,50)&&!a->ld_restore_parts);render(a);assert(!test_button(a,A_LD_RESTORE)->enabled);
@@ -6386,18 +6386,23 @@ static int test_linux_data(void){
     assert(json_parse(&j,large,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);
     assert(a->ld_linux&&a->ld_home==UINT64_MAX&&a->ld_settings==UINT64_MAX&&!strcmp(a->ld_reason,"SELECTION_TOO_LARGE"));render(a);
     /* Homes and settings not counted are out of the selection and cannot be chosen (2026-11-14 review). */
-    assert(!(a->ld_parts&5u)&&!test_button(a,A_LD_PART+0)->enabled&&!test_button(a,A_LD_PART+2)->enabled&&test_button(a,A_LD_PART+1)->enabled);
+    assert(!(ld_selection(a)&5u)&&!test_button(a,A_LD_PART+0)->enabled&&!test_button(a,A_LD_PART+2)->enabled&&test_button(a,A_LD_PART+1)->enabled);
     /* Settings counted on their own stay usable beside a home too large; a Refresh that counts the
        home again brings it back into the selection (2026-11-14 review of that rule). */
     static const char home_only[]="{\"ok\":true,\"linux\":true,\"reason\":\"SELECTION_TOO_LARGE\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
         "\"parts\":{\"home\":-1,\"settings\":4096,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
-    a->ld_parts=15u;a->ld_parts_off=0;   /* the owner chose every part */
+    a->ld_parts=15u;   /* the owner chose every part */
     assert(json_parse(&j,home_only,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);
-    assert((a->ld_parts&4u)&&!(a->ld_parts&1u)&&test_button(a,A_LD_PART+2)->enabled&&!test_button(a,A_LD_PART+0)->enabled);
+    assert((ld_selection(a)&4u)&&!(ld_selection(a)&1u)&&test_button(a,A_LD_PART+2)->enabled&&!test_button(a,A_LD_PART+0)->enabled);
     static const char counted[]="{\"ok\":true,\"linux\":true,\"reason\":\"\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
         "\"parts\":{\"home\":1024,\"settings\":4096,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
     assert(json_parse(&j,counted,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);
-    assert((a->ld_parts&5u)==5u&&test_button(a,A_LD_PART+0)->enabled);
+    assert((ld_selection(a)&5u)==5u&&test_button(a,A_LD_PART+0)->enabled);
+    /* The owner's choice outlives a reading without a system: Home and Accounts stay Home and
+       Accounts, never all four again (2026-11-14 review). */
+    a->ld_parts=3u;static const char gone[]="{\"ok\":true,\"linux\":false,\"reason\":\"IO_ERROR\",\"destinations\":[],\"archives\":[]}";
+    assert(json_parse(&j,gone,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);assert(a->ld_parts==3u&&!ld_selection(a));
+    assert(json_parse(&j,counted,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);assert(ld_selection(a)==3u);
     static const char changed[]="{\"ok\":true,\"linux\":true,\"reason\":\"FILE_CHANGED\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
         "\"parts\":{\"home\":-1,\"settings\":-1,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
     assert(json_parse(&j,changed,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);

@@ -64,6 +64,17 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   could not be upgraded; the hand-off waits about 20 s in all; smaller fixes (descriptors closed on
   every path, one drop_cached at the bottom, one read of each saved BOOT).
 
+- **Fixes from the fourth review** (13 findings, all fixed, and one found on the phone): where the
+  settings, themes and saved Wi-Fi list are written is one table for every state of cache and
+  userdata, each row tested, and the next start reads where the write went (a busy cache no longer
+  moves them to userdata for good); the owner's choice of Linux data parts is kept, and only parts
+  that can be backed up now are taken; the file limit holds for each part in the review and the
+  backup alike; packages left out by a failed Arch upgrade are counted apart, not as missing; a
+  script whose room shell cannot run is a room failure, a binary updater that cannot run keeps its
+  reason in the log; the saved Wi-Fi list in RAM follows the disk under its lock; BLKFLSBUF failing
+  on a block device fails the readback instead of passing it from the cache; the check for a plan
+  from the Android app is asked again when storage is busy at the start (seen on the phone).
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

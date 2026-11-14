@@ -477,7 +477,7 @@ def native_install(context, room, fd, sizes, found, progress):
                             at += os.pwrite(writer, image[at:at + (1 << 20)], at)
                         os.fsync(writer)
                         if context.mode == 'device':
-                            fcntl.ioctl(writer, flash.BLKFLSBUF)
+                            fcntl.ioctl(writer, lp.BLKFLSBUF)
                     finally:
                         os.close(writer)
                     require(install.target_hash(context, target) == hashlib.sha256(image).hexdigest(), 'READBACK_MISMATCH',
@@ -803,10 +803,9 @@ def report_start(fd, error=None):
 
 
 def read_start(fd):
-    """(started, error) from the started channel, read after the run ended. E first: the room was
-    ready and the installer was started; when its exec itself then failed (an updater that cannot
-    run here), that is an installer that stopped without changing anything, not a room that could
-    not be made (2026-11-14 review)."""
+    """(ready, error) from the started channel, read after the run ended: READY when E came first
+    (the room was made and exec was called), ERROR the F that followed (exec failed) or came alone
+    (the room could not be made); see started()."""
     data = b''
     os.set_blocking(fd, False)
     while True:
@@ -817,16 +816,32 @@ def read_start(fd):
         if not chunk:
             break
         data += chunk
-    if data.startswith(b'E'):
-        return True, None
-    error = {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}
+    ready = data.startswith(b'E')
+    error = None if ready else {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}
     at = data.find(b'F')
     if at >= 0:
+        error = error or {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}
         with contextlib.suppress(ValueError):
             value = json.loads(data[at + 1:])
             if isinstance(value, dict) and isinstance(value.get('code'), str) and isinstance(value.get('message'), str):
                 error = value
-    return False, error
+    return ready, error
+
+
+def started(ready, error, kind):
+    """(installer started, room error, installer error) from read_start and the installer's KIND.
+    A failed exec of a binary updater is the ZIP's own: an installer that stopped without changing
+    anything, its reason kept (2026-11-14 review: it was said as a room that could not be made, then
+    its reason was dropped). A failed exec of a script's is the room's own shell: the room failed
+    (2026-11-14 review), never a reason for the recovery to write the ROM itself."""
+    if not ready:
+        return False, error, None
+    if error is None:
+        return True, None, None
+    if kind == 'script':
+        return False, {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared',
+                       'reason': error['message'][:240]}, None
+    return True, None, error
 
 
 def check_installer(path, expected):
@@ -1105,10 +1120,12 @@ def run(context, args, progress):
                                          time.monotonic() + RUN_SECONDS)
                 finally:
                     close_channel('read')
-                started, room_error = read_start(start_read)
+                ran, room_error, exec_error = started(*read_start(start_read), about['installer'])
                 close_channel('start_read')
-                installer_code = code if started else None
-                if code != 0 and native and started:
+                installer_code = code if ran else None
+                if exec_error is not None:
+                    shown = list(shown) + ['update-binary: ' + exec_error['message'][:200]]  # as the installer's own lines
+                if code != 0 and native and ran:
                     seen = hashes(context, found)
                     if untouched(context, found, room, before, layout_run, counters, seen):
                         native_ran = True
@@ -1162,7 +1179,7 @@ def run(context, args, progress):
                 'The installer of this ZIP changed a partition it may not write: ' + ', '.join(touched), touched=touched, **result)
         if room_error is not None:
             # The installer never ran: the room's own reason, never the recovery's writing in its place.
-            fail(room_error['code'], room_error['message'], **result)
+            fail(room_error['code'], room_error['message'], **result, **({'reason': room_error['reason']} if 'reason' in room_error else {}))
         if native_error is not None:
             fail(getattr(native_error, 'code', None) or 'IO_ERROR', str(native_error),
                  **{**(getattr(native_error, 'details', None) or {}), **result})

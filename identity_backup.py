@@ -53,6 +53,7 @@ import sys
 import time
 
 import filesystem as fs
+from lp_metadata import BLKFLSBUF  # one definition
 import install
 from install import require
 from operation_lock import operation_lock
@@ -118,7 +119,6 @@ def use(kind, labels=None):
         CHOSEN = chosen
 MAX_MANIFEST = 1 << 16
 CHUNK = install.CHUNK
-BLKFLSBUF = 0x1261
 
 
 def emmc_identity():

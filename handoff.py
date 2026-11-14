@@ -117,9 +117,12 @@ def apply_record(record, remember=None, load=None, store=None):
         # busy at the start, 2026-11-14 review of wifi.py); the hand-off file is taken already, so
         # that is tried again until the deadline, and once it has passed no other network waits.
         # A list that could not be written (False) is not tried again. What could not be saved is named.
+        if busy:
+            # Past the deadline: named unsaved at once, its key not even derived (2026-11-14 review).
+            unsaved.append(ssid.decode('utf-8', 'replace'))
+            continue
         key = wifi.psk(ssid, password) if password else ''
-        saved = None
-        while not busy:
+        while True:
             saved = remember(ssid, key)
             if saved is not None:
                 break

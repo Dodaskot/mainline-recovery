@@ -40,6 +40,7 @@ import tempfile
 import time
 
 import filesystem as fs
+from lp_metadata import BLKFLSBUF  # one definition
 from filesystem import fail
 from operation_lock import operation_lock
 
@@ -50,7 +51,7 @@ MBR_BYTES = (1 << 32) * SECTOR  # An MBR table addresses 2 TiB.
 HEAD = 1 << 20             # Erased at both ends of the medium and at the head of each partition.
 TYPES = {'files': 0x0c, 'linux': 0x83, 'swap': 0x82}
 FILESYSTEMS = {'files': 'vfat', 'linux': 'ext4', 'swap': 'swap'}
-BLKRRPART, BLKGETSIZE64, BLKFLSBUF = 0x125f, 0x80081272, 0x1261
+BLKRRPART, BLKGETSIZE64 = 0x125f, 0x80081272
 BUSYBOX = '/bin/busybox'
 MKFS = {'files': [BUSYBOX, 'mkdosfs', '-F', '32', '-n', 'A22X'],
         'linux': ['/sbin/mkfs.ext4', '-F', '-q', '-L', 'linux'],

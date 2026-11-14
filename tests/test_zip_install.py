@@ -233,14 +233,21 @@ class InstallerChecks(unittest.TestCase):
     def test_an_installer_that_could_not_be_started_is_no_room_failure(self):
         # 2026-11-14 review: E was written before exec; an updater that cannot run here (its
         # interpreter missing) was said as a room that could not be made.
-        for data, expected in ((b'E', (True, None)), (b'EF{"code": "IO_ERROR", "message": "exec"}', (True, None)),
-                               (b'F{"code": "ZIP_CHANGED", "message": "changed"}', (False, {'code': 'ZIP_CHANGED', 'message': 'changed'})),
-                               (b'', (False, {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}))):
+        room = {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}
+        execf = {'code': 'IO_ERROR', 'message': 'exec format error'}
+        for data, kind, expected in (
+                (b'E', 'binary', (True, None, None)), (b'E', 'script', (True, None, None)),
+                # A binary updater that cannot run here: its own stop, its reason kept (2026-11-14 review).
+                (b'EF{"code": "IO_ERROR", "message": "exec format error"}', 'binary', (True, None, execf)),
+                # The room's own shell for a script: the room failed (2026-11-14 review).
+                (b'EF{"code": "IO_ERROR", "message": "exec format error"}', 'script', (False, {**room, 'reason': 'exec format error'}, None)),
+                (b'F{"code": "ZIP_CHANGED", "message": "changed"}', 'binary', (False, {'code': 'ZIP_CHANGED', 'message': 'changed'}, None)),
+                (b'', 'script', (False, room, None))):
             read, write = os.pipe()
             os.write(write, data)
             os.close(write)
             try:
-                self.assertEqual(zi.read_start(read), expected, data)
+                self.assertEqual(zi.started(*zi.read_start(read), kind), expected, (data, kind))
             finally:
                 os.close(read)
 

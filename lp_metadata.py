@@ -63,12 +63,19 @@ def name_bytes(name):
     return data.ljust(NAME, b'\0')
 
 
+BLKFLSBUF = 0x1261  # the one definition: flash, sdcard, identity_backup and zip_install take it from here
+
+
 def drop_cached(fd):
-    """What was just written is read back from the storage, not from the page cache: the block
-    device's buffers are dropped (BLKFLSBUF), a regular file's pages let go. The one copy, here at
-    the bottom where every writer can import it (2026-11-13 and 2026-11-14 reviews)."""
-    with contextlib.suppress(OSError):
-        fcntl.ioctl(fd, 0x1261)  # BLKFLSBUF
+    """What was just written is read back from the storage, not from the page cache: a block
+    device's buffers are dropped (BLKFLSBUF), a regular file's pages let go. Here at the bottom,
+    where every writer can import it (2026-11-13 and 2026-11-14 reviews). On a block device a
+    BLKFLSBUF that fails is raised: a readback from the cache would pass whatever is on the eMMC
+    (2026-11-14 review of that)."""
+    import stat
+    if stat.S_ISBLK(os.fstat(fd).st_mode):
+        fcntl.ioctl(fd, BLKFLSBUF)
+        return
     with contextlib.suppress(OSError, AttributeError):
         os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
 

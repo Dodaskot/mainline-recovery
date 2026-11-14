@@ -310,6 +310,27 @@ class LinuxData(unittest.TestCase):
             seen = ld.inspect(self.ctx)
         self.assertEqual((seen['linux'], seen['reason'], seen['parts']['home'], seen['accounts']), (True, 'SELECTION_TOO_LARGE', -1, ['alex']))
 
+    def test_parts_that_each_fit_are_backed_up_together(self):
+        # 2026-11-14 review: inspect counted home and settings apart, the backup against one limit for
+        # both; two parts that each fit failed together. The limit holds for each part in both.
+        from unittest import mock
+        import file_archive as fa
+        sizes = {}
+        with ld.linux_root(self.ctx) as (pin, _, _):
+            accounts = ld.accounts_of(pin.fd)
+            for part in ('home', 'settings'):
+                files, folders, _ = ld.collect(pin, (part,), accounts)
+                for fd in folders:
+                    os.close(fd)
+                sizes[part] = len(files)
+        limit = max(sizes.values())
+        self.assertLess(limit, sum(sizes.values()))
+        with mock.patch.object(fa, 'MAX_ENTRIES', limit):
+            seen = ld.inspect(self.ctx)
+            self.assertFalse(seen['reason'], seen)
+            done = ld.backup(self.ctx, ['home', 'settings'], 'sdcard-p1', None, True, self.progress)
+        self.assertEqual(done['entries'], sum(sizes.values()))
+
     def test_arch_is_upgraded_once_and_never_partly(self):
         # 2026-11-14 review: pacman -Syu for every package meant one upgrade that could not go
         # through kept every package out, each one tried again in vain.
@@ -332,7 +353,7 @@ class LinuxData(unittest.TestCase):
         (stubs / 'pacman').chmod(0o755)
         # A list already there needs no upgrade at all (2026-11-14 review: it upgraded the system as a
         # side effect); a failed upgrade is said, and nothing is installed onto the older system.
-        for upgrade, installs, upgrades, said in (('1', False, 1, 'a22x: packages 0 2'),
+        for upgrade, installs, upgrades, said in (('1', False, 1, 'a22x: packages 0 0'),
                                                   ('0', True, 1, 'a22x: packages 2 0'), ('1', False, 0, 'a22x: packages 2 0')):
             log.unlink(missing_ok=True)
             if upgrades:
@@ -347,7 +368,9 @@ class LinuxData(unittest.TestCase):
             if upgrade == '1' and upgrades:
                 # The failed upgrade is said, and what is missing is named as missing.
                 self.assertIn('a22x: packages upgrade failed', out.stdout)
-                self.assertIn('a22x: missing firefox', out.stdout)
+                # Not installed now, though the system has them: counted apart, never as missing.
+                self.assertIn('a22x: packages-skipped 2', out.stdout)
+                self.assertNotIn('a22x: missing', out.stdout)
 
 
 if __name__ == '__main__':

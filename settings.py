@@ -196,19 +196,36 @@ def read_disk():
 
 @contextlib.contextmanager
 def settings_root(context, mode, relative=RELATIVE):
-    """(label, root) of the volume the settings are read from at the next start, as read_disk
-    chooses it: the first of VOLUMES that holds a settings file, else the first that opens; opened
-    in MODE. Writes of settings and themes go there and nowhere else (2026-11-14 review: a write
-    that failed on cache went to userdata, which is not read while cache holds settings).
-    RELATIVE: another file kept the same way (the saved Wi-Fi networks). Called under the
-    operation lock.
+    """(label, root) of the volume that keeps the settings, opened in MODE; RELATIVE: another file
+    kept the same way (the saved Wi-Fi networks). Called under the operation lock.
 
-    Each volume is opened once: the first one without the file stays open while the others are
-    looked at (2026-11-14 review). A volume that cannot be opened for writing is passed over when a
-    read-only look shows it does not hold the file (2026-11-14 review of that change: Android's
-    encrypted userdata, never writable here, kept every setting from being saved on cache); a
-    volume that holds it, or cannot be looked at at all, raises Unreadable."""
-    first = None
+    Reading ('ro') chooses as read_disk does at every start: the first of VOLUMES (cache, then
+    userdata) that holds the file, else the first that opens; a volume that is there and cannot be
+    opened raises Unreadable, never taken for an empty one.
+
+    Writing ('rw') goes where the next start will read, and nowhere else (2026-11-14, three reviews
+    of three earlier attempts):
+
+      cache                         userdata                        written to
+      holds it, writable            any                             cache
+      holds it, not writable now    any                             none: Unreadable
+      without it, writable          holds it, writable              userdata
+      without it, writable          holds it, never writable here   none: Unreadable
+      without it, writable          without it / never writable /   cache
+                                    not there
+      without it, not writable now  holds it, writable              userdata
+      without it, not writable now  without it                      none: Unreadable (it belongs
+                                                                    on cache; never moved to
+                                                                    userdata for a moment's EBUSY)
+      without it, never writable    without it, writable            userdata
+      cannot be looked at           -                               none: Unreadable
+      not there                     as above for userdata alone     userdata
+
+    "Never writable here" is a volume whose write_supported is False (Android's encrypted
+    userdata, erofs): it is only looked at, read-only. "Not writable now" is any other failure to
+    open for writing (busy, EIO, read-only by another owner). Each volume is opened once; the one
+    without the file that would take it stays open while the others are looked at."""
+    target = blocked = None
     try:
         for label in VOLUMES:
             try:
@@ -217,39 +234,50 @@ def settings_root(context, mode, relative=RELATIVE):
                 continue
             if not volume.get('mountable') and not volume.get('mounted'):
                 continue
-            opened = contextlib.ExitStack()
-            try:
-                root = opened.enter_context(volume_root(context, label, mode))
-            except (OSError, ValueError, fs.FilesystemError) as error:
-                opened.close()
-                if mode != 'ro' and not _holds(context, label, relative):
-                    continue
-                raise Unreadable('The settings volume %s cannot be used now' % label) from error
-            try:
-                holds = (root / relative).is_file()
-            except OSError as error:
-                opened.close()
-                raise Unreadable('The settings volume %s cannot be read now' % label) from error
+            never = mode != 'ro' and volume.get('write_supported') is False
+            opened, root, failure = contextlib.ExitStack(), None, None
+            if not never:
+                try:
+                    root = opened.enter_context(volume_root(context, label, mode))
+                except (OSError, ValueError, fs.FilesystemError) as error:
+                    opened.close()
+                    if mode == 'ro':
+                        raise Unreadable('The settings volume %s cannot be read now' % label) from error
+                    failure = error
+            if root is not None:
+                try:
+                    holds = (root / relative).is_file()
+                except OSError as error:
+                    opened.close()
+                    raise Unreadable('The settings volume %s cannot be read now' % label) from error
+            else:
+                holds = _holds(context, label, relative)
             if holds:
-                if first is not None:
-                    first[1].close()
-                    first = None
+                if root is None:
+                    raise Unreadable('The settings on %s cannot be written now' % label) from failure
                 with opened:
+                    if target is not None:
+                        previous, target = target, None
+                        previous[1].close()
                     yield label, root
                 return
-            if first is None:
-                first = (label, opened, root)
-            else:
-                opened.close()
-        if first is None:
-            raise OSError('No settings volume could be read')
-        label, opened, root = first
-        first = None
+            if root is not None and target is None and blocked is None:
+                target = (label, opened, root)
+                continue
+            opened.close()
+            if root is None and not never and target is None and blocked is None:
+                blocked = (label, failure)
+        if target is None:
+            if blocked is not None:
+                raise Unreadable('The settings volume %s cannot be written now' % blocked[0]) from blocked[1]
+            raise OSError('No settings volume could be opened')
+        label, opened, root = target
+        target = None
         with opened:
             yield label, root
     finally:
-        if first is not None:
-            first[1].close()
+        if target is not None:
+            target[1].close()
 
 
 def _holds(context, label, relative):

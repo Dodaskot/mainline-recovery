@@ -13,6 +13,12 @@ static const char*const ld_part_titles[LD_PARTS]={"Home folders","Accounts","Set
 static bool ld_part_usable(const App*a,unsigned int n){
     return a->ld_linux&&(n!=3||a->ld_packages>=0)&&!(n==0&&a->ld_home==UINT64_MAX)&&!(n==2&&a->ld_settings==UINT64_MAX);
 }
+/* What a backup takes: the owner's choice (ld_parts, never changed by a reading of the system) and
+   only the parts that can be backed up now (2026-11-14 reviews: a part the reading had left out
+   stayed out, and one that could not be counted kept the button on for a backup that would fail). */
+static unsigned int ld_selection(const App*a){
+    unsigned int mask=0;for(unsigned int n=0;n<LD_PARTS;n++)if((a->ld_parts>>n&1u)&&ld_part_usable(a,n))mask|=1u<<n;return mask;
+}
 static unsigned int ld_mask(const Json*j,int list){
     unsigned int mask=0;if(list<0||j->tokens[list].type!=J_ARRAY)return 0;
     for(int i=list+1;i<json_next(j,list);i=json_next(j,i)){char name[24];if(json_string(j,i,name,sizeof(name))<=0)continue;
@@ -35,8 +41,8 @@ static bool start_ld_job(App*a,int kind){
     if(a->backup_password[0]&&a->backup_password_file[0]){args[n++]="--password-file";args[n++]=a->backup_password_file;}
     if(kind==J_LD_INSPECT)args[n++]="inspect";
     else if(kind==J_LD_BACKUP){
-        if(a->ld_dest_index<0||a->ld_dest_index>=(int)a->ld_dest_count||!a->ld_parts)return false;
-        ld_parts_argument(a->ld_parts,parts,sizeof(parts));
+        if(a->ld_dest_index<0||a->ld_dest_index>=(int)a->ld_dest_count||!ld_selection(a))return false;
+        ld_parts_argument(ld_selection(a),parts,sizeof(parts));
         args[n++]="backup";args[n++]="--volume";args[n++]=a->ld_dest[a->ld_dest_index].id;args[n++]="--parts";args[n++]=parts;args[n++]="--confirm";
         if(a->backup_encrypt&&a->backup_password[0])args[n++]="--encrypt";
     }else{
@@ -67,12 +73,6 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
                 a->ld_account_count=(unsigned int)json_uint(j,json_get(j,parts,"accounts"),0);
                 int packages=json_get(j,parts,"packages");a->ld_packages=packages>=0&&j->tokens[packages].type==J_PRIMITIVE&&j->text[j->tokens[packages].start]!='-'?(int)json_uint(j,packages,0):-1;}
         }
-        /* Parts that cannot be backed up now (packages unknown, homes or settings not counted) are
-           left out of the selection and their rows are off (2026-11-14 review: the button stayed on
-           for a selection that would fail); each one comes back once it is known again (2026-11-14
-           review of that: it stayed out after a Refresh that counted it). */
-        a->ld_parts|=a->ld_parts_off;a->ld_parts_off=0;
-        for(unsigned int n=0;n<LD_PARTS;n++)if((a->ld_parts>>n&1u)&&!ld_part_usable(a,n)){a->ld_parts&=~(1u<<n);a->ld_parts_off|=1u<<n;}
         a->ld_dest_count=0;int list=json_get(j,0,"destinations");
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->ld_dest_count<LD_DESTS;i=json_next(j,i)){
             LdDest*d=&a->ld_dest[a->ld_dest_count++];jstring(j,i,"volume",d->id,sizeof(d->id));jstring(j,i,"label",d->label,sizeof(d->label));d->free=json_uint(j,json_get(j,i,"free_bytes"),0);}
@@ -147,12 +147,12 @@ static void render_linux_data(App*a){
     snprintf(detail[1],sizeof(detail[1]),"%u",a->ld_account_count);
     if(a->ld_settings==UINT64_MAX)copy(detail[2],sizeof(detail[2]),"—");else{human_bytes(a->ld_settings,bytes,sizeof(bytes));snprintf(detail[2],sizeof(detail[2]),"%s",bytes);}
     if(a->ld_packages>=0)snprintf(detail[3],sizeof(detail[3]),"%d",a->ld_packages);else copy(detail[3],sizeof(detail[3]),"—");
-    for(unsigned int n=0;n<LD_PARTS;n++)ld_row(a,362+(int)n*86,ld_part_titles[n],a->ld_linux?detail[n]:"",(a->ld_parts>>n)&1u,ld_part_usable(a,n),A_LD_PART+(int)n);
+    for(unsigned int n=0;n<LD_PARTS;n++)ld_row(a,362+(int)n*86,ld_part_titles[n],a->ld_linux?detail[n]:"",(ld_selection(a)>>n)&1u,ld_part_usable(a,n),A_LD_PART+(int)n);
     char label[200];
     if(a->ld_dest_count){LdDest*d=&a->ld_dest[a->ld_dest_index];human_bytes(d->free,bytes,sizeof(bytes));snprintf(label,sizeof(label),T("To: %.100s  /  %s free"),d->label,bytes);}
     else copy(label,sizeof(label),tr("Insert an SD card or attach a USB drive"));
     raw_text(true);button(a,(Rect){28,722,664,72},label,A_LD_DEST,ui_free(a)&&a->ld_dest_count>1,false,0);raw_text(false);
-    button(a,(Rect){28,806,664,92},"Hold 2 seconds: back up",A_LD_BACKUP,ui_free(a)&&a->ld_linux&&a->ld_parts&&a->ld_dest_count>0,true,2000);
+    button(a,(Rect){28,806,664,92},"Hold 2 seconds: back up",A_LD_BACKUP,ui_free(a)&&a->ld_linux&&ld_selection(a)&&a->ld_dest_count>0,true,2000);
     text(a,34,918,0,ORANGE,"BACKUPS ON CARDS AND STICKS");
     if(!a->ld_archive_count)text(a,34,962,0,MUTED,"None found");
     /* 2026-11-13 review: only the first three were drawn; the rest are on further pages. */

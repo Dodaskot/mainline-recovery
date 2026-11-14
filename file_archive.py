@@ -183,10 +183,12 @@ def write_error(number, said=''):
     zstd SAID about its own write (2026-11-14 review: every cause, EIO and a FAT32 file at 4 GiB
     too, was said as a full volume)."""
     if number in (errno.ENOSPC, errno.EDQUOT):
-        return said_error(os.strerror(errno.ENOSPC))
+        return fs.FilesystemError('INSUFFICIENT_SPACE', 'There is not enough space for the archive')
     if number == errno.EFBIG:
-        return said_error(os.strerror(errno.EFBIG))
-    return said_error(said if number == errno.EPIPE and said else os.strerror(number))
+        return fs.FilesystemError('FILE_TOO_LARGE', 'This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4')
+    if number == errno.EPIPE and said:
+        return said_error(said)
+    return fs.FilesystemError('ARCHIVE_WRITE_FAILED', 'The archive could not be written', said=os.strerror(number))
 
 
 def said_error(said):

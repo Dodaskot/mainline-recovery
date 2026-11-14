@@ -298,6 +298,23 @@ class TestControlSocket(unittest.TestCase):
         self.assertTrue(joined['connected'])
         self.assertFalse(joined['remembered'])
 
+    def test_a_ram_copy_that_cannot_be_written_goes_and_the_disk_is_read(self):
+        # 2026-11-14 review: the RAM copy was written after the lock, and a failure left it older
+        # than the disk.
+        ram = Path(self.tmp.name, 'saved-ram.json')
+        ram.write_text(json.dumps({'networks': []}))
+        real = w._atomic
+
+        def no_ram(path, value):
+            if Path(path) == ram:
+                raise OSError(28, 'No space left on device')
+            return real(path, value)
+        with mock.patch.object(w, '_atomic', no_ram):
+            self.assertTrue(w.remember(b'Home', FakeSupplicant.KEY))
+        self.assertFalse(ram.exists())
+        self.assertEqual([bytes.fromhex(n['ssid_hex']) for n in w.saved_known()], [b'Home'])
+        self.assertTrue(ram.exists())
+
     def test_a_damaged_saved_list_holds_no_network(self):
         # 2026-11-14 review: a list, or entries that are no objects, raised AttributeError.
         ram = Path(self.tmp.name, 'saved-ram.json')
