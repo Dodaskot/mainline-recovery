@@ -30,7 +30,9 @@ class FakeContext:
 
     def volume(self, label):
         return {'mounted': False, 'volume_token': 't-' + label, 'fs_type': 'ext4',
-                'mountable': self.mountable[label], 'write_supported': self.supported[label]}
+                'mountable': self.mountable[label], 'write_supported': self.supported[label],
+                # Not mountable here: no filesystem to look into (settings.NO_FILESYSTEM).
+                'reason_code': None if self.mountable[label] else 'ENCRYPTED_OR_UNRECOGNIZED_USERDATA'}
 
     def unmount(self, label, token=None):
         self.calls.append(('unmount', label))
@@ -133,10 +135,10 @@ class Damaged(unittest.TestCase):
         self.assertTrue(settings.write_disk({**GOOD, 'theme': 'y'}))
         # Opened once, for writing (2026-11-14 review: once read-only to choose it, then again).
         self.assertEqual([call for call in self.calls if call[0] == 'open'], [('open', 'cache', 'rw')])
-        # Clearing the password needs every volume looked at: a mark on one that cannot be may stay
-        # (2026-11-14 review), so it is refused, and the password stays.
-        self.assertFalse(settings.write_disk({'theme': 'z'}))
-        self.assertTrue(json.loads((self.root / 'cache' / settings.RELATIVE).read_text()).get('hash'))
+        # A volume after the holder that cannot be looked at keeps no password from being cleared: a
+        # mark could be there only from a time cache had no filesystem (settings.settled).
+        self.assertTrue(settings.write_disk({'theme': 'z'}))
+        self.assertFalse(json.loads((self.root / 'cache' / settings.RELATIVE).read_text()).get('hash'))
 
     def test_a_volume_that_cannot_be_written_and_holds_nothing_is_passed_over(self):
         # 2026-11-14 review: Android's encrypted userdata, never writable here, made every first save
@@ -174,7 +176,8 @@ class Damaged(unittest.TestCase):
             def volume(self, label):
                 mountable, mounted, supported, code = Damaged.KINDS[kinds[label].split('+')[0]][:4]
                 return {'mounted': mounted, 'volume_token': 't-' + label, 'fs_type': 'ext4', 'mountable': mountable,
-                        'write_supported': supported, 'read_only_reason_code': code}
+                        'write_supported': supported, 'read_only_reason_code': code,
+                        'reason_code': None if (mountable or mounted) else 'ENCRYPTED_OR_UNRECOGNIZED_USERDATA'}
 
         @contextlib.contextmanager
         def volume_root(context, label, mode):
@@ -259,13 +262,13 @@ class Damaged(unittest.TestCase):
         # replaced the file with a record without it.
         self.write('cache', json.dumps(GOOD))
         before = (self.root / 'cache' / settings.RELATIVE).read_text()
-        real = os.stat
+        real = os.lstat
 
         def failing(path, *args, **kwargs):
             if str(path).endswith(str(settings.RELATIVE)) and '/cache/' in str(path):
                 raise PermissionError(13, 'Permission denied')
             return real(path, *args, **kwargs)
-        with mock.patch.object(settings.os, 'stat', failing):
+        with mock.patch.object(settings.os, 'lstat', failing):
             with self.assertRaises(settings.Unreadable):
                 settings.read_disk()
             self.assertFalse(settings.write_disk({'theme': 'y'}))
@@ -358,10 +361,10 @@ class Damaged(unittest.TestCase):
         # settings (userdata would be asked for), nor settings without a password beside a mark elsewhere.
         record = {**GOOD}
         order = []
-        real_set, real_drop, real_write = settings.set_mark, settings.drop_mark, settings.fs.atomic_state
+        real_set, real_drop, real_write = settings.set_mark, settings.drop_mark, settings.write_bytes
         with mock.patch.object(settings, 'set_mark', lambda root: (order.append('mark'), real_set(root))), \
                 mock.patch.object(settings, 'drop_mark', lambda root: (order.append('unmark ' + Path(root).name), real_drop(root))), \
-                mock.patch.object(settings.fs, 'atomic_state', lambda path, value: (order.append('settings'), real_write(path, value))):
+                mock.patch.object(settings, 'write_bytes', lambda root, rel, data: (order.append('settings'), real_write(root, rel, data))):
             self.assertTrue(settings.write_disk(record))
             (self.root / 'userdata' / settings.PASSWORD_MARK).write_text('')  # a mark left on the other volume
             self.assertTrue(settings.write_disk({k: v for k, v in record.items() if k not in ('hash', 'salt')}))
@@ -410,6 +413,29 @@ class Damaged(unittest.TestCase):
         loop = self.root / 'loop'
         loop.symlink_to('loop')
         self.assertFalse(settings.present(loop))
+
+    def test_a_mountpoint_that_shows_another_filesystem_is_unreadable(self):
+        # 2026-11-14 review: a volume mounted elsewhere left an empty mountpoint, read as no settings.
+        st = os.stat(self.root / 'cache')
+        other = '%d:%d' % (os.major(st.st_dev), os.minor(st.st_dev) + 1)
+        with self.assertRaises(settings.Unreadable):
+            settings._its_root(self.root / 'cache', {'id': 'cache', 'device': other})
+        same = '%d:%d' % (os.major(st.st_dev), os.minor(st.st_dev))
+        self.assertEqual(settings._its_root(self.root / 'cache', {'id': 'cache', 'device': same}), self.root / 'cache')
+
+    def test_a_volume_list_that_fails_is_never_a_volume_erased(self):
+        # 2026-11-14 review: a list of volumes that failed for a moment (a card coming) read as cache erased.
+        class Flaky(FakeContext):
+            def volume(self, label):
+                if label == 'cache':
+                    raise settings.fs.FilesystemError('BLOCK_GEOMETRY_CHANGED', 'changed')
+                return super().volume(label)
+        self.write('cache', json.dumps(GOOD))
+        with mock.patch.object(settings.fs, 'DeviceContext', lambda: Flaky(self.root, self.calls)):
+            with self.assertRaises(settings.Unreadable):
+                settings.read_disk()
+            self.assertFalse(settings.write_disk({'theme': 'y'}))
+        self.assertEqual(json.loads((self.root / 'cache' / settings.RELATIVE).read_text())['hash'], GOOD['hash'])
 
     def test_themes_come_from_the_volume_that_keeps_the_settings(self):
         # 2026-11-14 reviews: themes are written where the settings are; a theme or note left on

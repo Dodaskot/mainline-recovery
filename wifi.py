@@ -271,11 +271,11 @@ def _change(change):
             _ram_saved(current)
             return True
         # A damaged list that is no file goes; never a folder of its path, which also holds the
-        # settings (2026-11-14 reviews): a folder that is no real folder fails the write instead.
+        # settings (2026-11-14 reviews): a folder that is no folder of the volume fails the write.
+        # Written as the settings are (settings.write_bytes), through a link to a folder of the volume.
         settings.clear_file(root, SAVED_RELATIVE)
-        path = root / SAVED_RELATIVE
-        path.parent.mkdir(mode=0o700, exist_ok=True)
-        _atomic(path, {'schema': 'a22x.wifi.saved.v1', 'networks': networks})
+        value = {'schema': 'a22x.wifi.saved.v1', 'networks': networks}
+        settings.write_bytes(root, SAVED_RELATIVE, (json.dumps(value, ensure_ascii=True, sort_keys=True) + '\n').encode())
         _ram_saved(networks)
         return True
     status, _ = _settings_volumes('rw', update)
@@ -324,10 +324,14 @@ def forget(ssid):
         return kept
     status = _change(without)
     if status == 'busy':
+        # Not writable now: a network the disk does not hold is forgotten already; one it holds, or a
+        # list that cannot be read, is not, and is said so (2026-11-14 review: a saved network was
+        # reported forgotten, and an unreadable list as one not written).
         status, current = _settings_volumes('ro', _read_and_keep)
         if status == 'ok' and all(n.get('ssid_hex') != ssid.hex() for n in current):
             return {**state(), 'saved_count': len(current)}
-    if status in ('busy', 'locked'):
+        fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
+    if status == 'locked':
         fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     # A failed write is said: the network would come back at the next start (2026-11-14 review).
     if status == 'failed':

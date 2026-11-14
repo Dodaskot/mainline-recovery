@@ -358,7 +358,8 @@ class TestControlSocket(unittest.TestCase):
             lock_path, mode = '/nonexistent', 'fixture'
 
             def volume(self, label):
-                return {'mounted': False, 'mountable': label == 'cache', 'write_supported': True, 'read_only_reason_code': None}
+                return {'mounted': False, 'mountable': label == 'cache', 'write_supported': True, 'read_only_reason_code': None,
+                        'reason_code': None if label == 'cache' else 'ENCRYPTED_OR_UNRECOGNIZED_USERDATA'}
 
         @contextlib.contextmanager
         def volume_root(context, label, mode):
@@ -394,9 +395,12 @@ class TestControlSocket(unittest.TestCase):
         (real / 'settings.json').write_text('{"hash": "kept"}')
         (self.disk / 'a22x-recovery').symlink_to('real-folder')
         Path(self.tmp.name, 'saved-ram.json').unlink(missing_ok=True)
-        self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), False)
+        # A link to a folder of the volume itself is followed, as older releases left it: the list is
+        # written there, and the link and the settings stay (2026-11-14 review: the link was removed).
+        self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), True)
         self.assertTrue((self.disk / 'a22x-recovery').is_symlink())
         self.assertEqual((real / 'settings.json').read_text(), '{"hash": "kept"}')
+        self.assertTrue((real / 'wifi.json').is_file())
         (self.disk / 'a22x-recovery').unlink()
         (self.disk / 'a22x-recovery').write_text('a file')
         self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), False)
@@ -456,6 +460,28 @@ class TestControlSocket(unittest.TestCase):
             self.assertEqual((caught.exception.code, asked), ('WIFI_SAVED_UNAVAILABLE', modes))
         with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('busy', None) if mode == 'rw' else ('ok', [])):
             self.assertEqual(w.forget(b'Unknown')['saved_count'], 0)
+
+    def test_a_saved_network_is_never_said_forgotten_when_nothing_was_written(self):
+        # 2026-11-14 review: with the volume not writable now, a network still on disk was reported forgotten.
+        on_disk = [{'ssid_hex': b'Home'.hex(), 'psk': 'a' * 64}]
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('busy', None) if mode == 'rw' else ('ok', on_disk)):
+            with self.assertRaises(w.WifiError) as caught:
+                w.forget(b'Home')
+        self.assertEqual(caught.exception.code, 'WIFI_SAVED_UNAVAILABLE')
+
+    def test_a_socket_where_the_list_should_be_holds_no_network(self):
+        # 2026-11-14 review: opening it gave ENXIO and broke the list for good.
+        import socket
+        import settings
+        (self.disk / 'a22x-recovery').mkdir()
+        here = os.getcwd()
+        os.chdir(self.disk / 'a22x-recovery')
+        self.addCleanup(os.chdir, here)
+        with socket.socket(socket.AF_UNIX) as server:
+            server.bind('wifi.json')
+            with self.assertRaises(settings.NotRegular):
+                settings.read_bytes(self.disk, w.SAVED_RELATIVE)
+            self.assertEqual(w._read_list(self.disk), [])
 
     def test_a_damaged_saved_list_holds_no_network(self):
         # 2026-11-14 review: a list, or entries that are no objects, raised AttributeError.

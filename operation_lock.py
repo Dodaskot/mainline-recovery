@@ -117,7 +117,8 @@ def operation_lock(path, mode='device'):
         try:
             yield fd
         finally:
-            _HELD.remove(mine)
+            with _GUARD:  # never while another thread walks the record (2026-11-14 review)
+                _HELD.remove(mine)
     finally:
         if fd is not None:
             # Closing the duplicate does not release a parent's shared open-file

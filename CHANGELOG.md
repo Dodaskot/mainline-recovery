@@ -134,6 +134,16 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   walks the start states, both operations stopped at every step (a crash or an I/O error), the
   states of both volumes and outside events, and checks the two promises after each.
 
+- **Fixes from the twelfth review** (21 findings): a list of volumes that fails for a moment (a
+  card or a stick coming or going), block holders, or a mountpoint that shows another filesystem
+  is "cannot be read now", never "the volume is gone": only a partition without a filesystem counts
+  as empty; a phone with no password is no longer locked by a userdata that will not mount; the
+  settings folder may be a link only to a folder of the same volume, read and written through it,
+  and the settings file itself is never a link; a save is done only when the password's mark agrees
+  with the settings; forgetting a Wi-Fi network no longer reports one still saved as forgotten. The
+  walk over all states now covers failing volume lists, saves of what was read, and more outside
+  events, with a third promise: no password and readable settings always open.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

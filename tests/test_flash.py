@@ -525,7 +525,7 @@ class Settings(unittest.TestCase):
         self.real_read_disk = self.settings.read_disk
         self.disk = {}
         self.writable = True
-        patcher = mock.patch.multiple(self.settings, read_disk=lambda: dict(self.disk), write_disk=self.save)
+        patcher = mock.patch.multiple(self.settings, read_disk=lambda details=None: dict(self.disk), write_disk=self.save)
         patcher.start()
         self.addCleanup(patcher.stop)
 
