@@ -4,11 +4,7 @@
    manifest of checksums and read back; a copy is written back from the restore page. */
 
 static bool identity_android(const App*a){return a->id_kind==1;}
-static void identity_helper(App*a,char*out,size_t size){
-    /* identity_backup.py sits beside the other helpers in /opt/a22x-recovery. */
-    copy(out,size,a->distro_helper);char*slash=strrchr(out,'/');
-    if(slash&&(size_t)(slash-out)+20<size)strcpy(slash+1,"identity_backup.py");else out[0]=0;
-}
+static void identity_helper(App*a,char*out,size_t size){(void)sibling_helper(a,"identity_backup.py",out,size);}
 static FileVolume*identity_volume(App*a){
     FileVolume*v=a->id_volume_index>=0&&a->id_volume_index<a->volume_count?&a->volumes[a->id_volume_index]:NULL;
     return v&&!strcmp(v->id,a->id_volume_id)&&!strcmp(v->token,a->id_volume_token)?v:NULL;

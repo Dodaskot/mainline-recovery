@@ -166,6 +166,23 @@ class TestPlatformLibLink(unittest.TestCase):
                 a22x_adapter.install_platform(root, mock.Mock(platform=str(source), platform_paths=[], platform_optional=()))
             owner = os.lstat(source / 'lib')
             self.assertIn((root / 'lib', owner.st_uid, owner.st_gid, False), calls)
+            # 2026-11-14 review: an installed system's plain-file copy of the UCM conf.d entry gives way
+            # to the recovery's link; any other optional file still comes from the installed system.
+            entry = 'usr/share/alsa/ucm2/conf.d/mt6833_mt6359/mt6833-mt6359.conf'
+            fallback = Path(tmp) / 'fallback'
+            (fallback / entry).parent.mkdir(parents=True)
+            (fallback / entry).symlink_to('../../MediaTek/mt6833/mt6359-sia8109/mt6833-mt6359.conf')
+            (fallback / 'etc').mkdir()
+            (fallback / 'etc/other.conf').write_text('recovery')
+            (source / entry).parent.mkdir(parents=True)
+            (source / entry).write_text('Syntax 4\n')
+            (source / 'etc').mkdir()
+            (source / 'etc/other.conf').write_text('installed')
+            with mock.patch.object(a22x_adapter.os, 'chown', record):
+                a22x_adapter.install_platform(root, mock.Mock(platform=str(source), platform_paths=[], platform_fallback=str(fallback),
+                                                              platform_optional=(entry, 'etc/other.conf')))
+            self.assertTrue((root / entry).is_symlink())
+            self.assertEqual((root / 'etc/other.conf').read_text(), 'installed')
 
 
 class TestImageInstall(unittest.TestCase):

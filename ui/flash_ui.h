@@ -43,11 +43,14 @@ static void complete_flash_job(App*a,const Json*j,int kind,bool ok){
     if(!ok){
         char code[96]="FLASH_FAILED",message[384]="The helper did not return a result.";
         if(j){int error=json_get(j,0,"error");if(error>=0){jstring(j,error,"code",code,sizeof(code));jstring(j,error,"message",message,sizeof(message));}}
-        if(kind==J_FLASH_TARGETS){a->flash_known=false;copy(a->flash_reason,sizeof(a->flash_reason),message);a->dirty=true;return;}
+        /* The partition list failed: what was asked to be flashed after it is dropped, or a later
+           ordinary Flash a partition went straight to that review (2026-11-14 review). */
+        if(kind==J_FLASH_TARGETS){a->flash_after_targets=false;a->flash_after_label[0]=0;a->flash_known=false;copy(a->flash_reason,sizeof(a->flash_reason),message);a->dirty=true;return;}
         a->flash_review_valid=false;files_problem(a,code,message,kind==J_FLASH_CHECK?flash_repick(a,nav_top(a)):flash_home(a));return;
     }
     if(kind==J_FLASH_TARGETS){
-        a->flash_target_count=0;int list=json_get(j,0,"targets");if(list<0||j->tokens[list].type!=J_ARRAY)return;
+        a->flash_target_count=0;int list=json_get(j,0,"targets");
+        if(list<0||j->tokens[list].type!=J_ARRAY){a->flash_after_targets=false;a->flash_after_label[0]=0;return;}
         for(int i=list+1;i<json_next(j,list)&&a->flash_target_count<FLASH_TARGETS;i=json_next(j,i)){
             FlashTarget*t=&a->flash_targets[a->flash_target_count];jstring(j,i,"label",t->label,sizeof(t->label));jstring(j,i,"title",t->title,sizeof(t->title));
             t->bytes=json_uint(j,json_get(j,i,"size_bytes"),0);t->logical=json_bool(j,json_get(j,i,"logical"),0)==1;t->room=json_uint(j,json_get(j,i,"room_bytes"),0);
@@ -93,7 +96,8 @@ static void complete_flash_job(App*a,const Json*j,int kind,bool ok){
         bool known=a->flash_restore?(!strcmp(label,"userdata")||!strcmp(label,"boot")):!strcmp(label,flash_target_label(a));
         if(image<0||!known){files_problem(a,"INVALID_FLASH_REVIEW","The helper did not describe the image.",flash_repick(a,nav_top(a)));return;}
         if(a->flash_restore)copy(a->flash_label,sizeof(a->flash_label),label);
-        a->flash_offline=json_bool(j,json_get(j,target,"offline"),1)!=0;a->flash_checksum[0]=0;
+        /* Not said is not offline: the hold stays off (2026-11-14 review: it was on by default). */
+        a->flash_offline=json_bool(j,json_get(j,target,"offline"),0)==1;a->flash_checksum[0]=0;
         a->flash_logical=json_bool(j,json_get(j,target,"logical"),0)==1;a->flash_size_now=json_uint(j,json_get(j,target,"size_bytes"),0);
         a->flash_size_after=json_uint(j,json_get(j,target,"new_size_bytes"),a->flash_size_now);a->flash_payload=json_uint(j,json_get(j,image,"payload_bytes"),0);jstring(j,image,"checksum_file",a->flash_checksum,sizeof(a->flash_checksum));
         jstring(j,image,"name",a->flash_name,sizeof(a->flash_name));jstring(j,image,"kind",a->flash_kind,sizeof(a->flash_kind));jstring(j,image,"sha256",a->flash_sha,sizeof(a->flash_sha));
@@ -268,7 +272,8 @@ static bool flash_action(App*a,int id){
         a->flash_restore=a->flash_pick=true;a->flash_review_valid=false;a->flash_label[0]=0;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;
         screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
     }
-    if(id==A_FLASH||(id==A_DONE&&a->result_return==FLASH)){a->flash_restore=false;a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;}
+    if(id==A_BACK&&a->screen==FLASH){a->flash_after_targets=false;a->flash_after_label[0]=0;}  /* then the usual Back */
+    if(id==A_FLASH||(id==A_DONE&&a->result_return==FLASH)){a->flash_after_targets=false;a->flash_after_label[0]=0;a->flash_restore=false;a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;}
     if(id==A_FLASH_SUPER&&a->screen==FLASH){screen(a,FLASH_SUPER);return true;}
     if(id==A_BACK&&a->screen==FLASH_SUPER){screen(a,FLASH);return true;}
     if((a->screen==FLASH||a->screen==FLASH_SUPER)&&id>=A_FLASH_TARGET&&id<A_FLASH_TARGET+(int)a->flash_target_count){

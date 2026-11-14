@@ -130,6 +130,90 @@ class ZipInstall(unittest.TestCase):
         self.assertEqual((self.root / 'targets/boot').read_bytes(), self.old)
 
 
+class NativeFallback(unittest.TestCase):
+    """2026-11-14 review: the recovery writes a block ROM's images itself only after the ROM's own
+    installer stopped without changing anything, and whatever happens then is accounted for."""
+    archive, helper = ZipInstall.archive, ZipInstall.helper
+
+    def setUp(self):
+        ZipInstall.setUp(self)
+        from unittest import mock
+        patch = mock.patch.object(zi, 'native_possible', return_value=True)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def run_with(self, body, code, native):
+        from unittest import mock
+        path = self.archive('rom.zip', body, code=code)
+        about = self.helper('inspect', path)[1]
+        with mock.patch.object(zi, 'native_install', side_effect=native) as called:
+            result = self.helper('run', path, '--expected-sha256', about['sha256'], '--confirm')
+        return result, called
+
+    def test_an_installer_that_changed_something_is_not_written_over(self):
+        (code, failed, _), called = self.run_with(
+            'dd if="$A22X_ZIP_ROOT/../new-boot.img" of="$A22X_ZIP_ROOT/dev/block/by-name/boot" conv=notrunc 2>/dev/null', 3,
+            AssertionError('the recovery must not write over a half-done installation'))
+        self.assertFalse(called.called)
+        self.assertEqual((code, failed['error']['code']), (2, 'ZIP_INSTALLER_FAILED'))
+        details = failed['error']['details']
+        self.assertEqual((details['exit'], details['installer_exit'], details['changed']), (3, 3, ['boot']))
+        self.assertEqual(details['log'][-1], zi.NATIVE_REFUSED)
+        self.assertFalse(details['written_by_recovery'])
+
+    def test_an_installer_that_changed_nothing_gets_the_images_written(self):
+        (code, done, _), called = self.run_with('ui_print "Unsupported updater"', 3, lambda *a: (['system: 1 MiB written and read back'], 0))
+        self.assertTrue(called.called)
+        self.assertEqual(code, 0, done)
+        self.assertEqual((done['exit'], done['installer_exit'], done['written_by_recovery']), (0, 3, True))
+        self.assertEqual(done['log'][-2:], ['system: 1 MiB written and read back', zi.NATIVE_STOPPED])
+
+    def test_a_failed_write_of_the_recovery_is_still_accounted_for(self):
+        changed = bytearray(stock_boot())
+        changed[-1] ^= 1
+        image = signed(bytes(changed))
+
+        def native(context, room, fd, sizes, found, progress):
+            with open(found['boot']['path'], 'r+b') as target:
+                target.write(image)
+            fs.fail('READBACK_MISMATCH', 'BOOT does not match the image after writing')
+        (code, failed, _), _ = self.run_with('', 3, native)
+        self.assertEqual((code, failed['error']['code']), (2, 'READBACK_MISMATCH'))
+        details = failed['error']['details']
+        # What changed, the mark that keeps this recovery and the installer's exit are all there.
+        self.assertEqual((details['changed'], details['installer_exit'], details['keeps_recovery']), (['boot'], 3, True))
+
+    def test_the_review_says_the_installer_runs_first(self):
+        path = self.archive('blocks.zip', extra={'system.transfer.list': '4\n1\n0\n0\nnew 2,0,1\n', 'system.new.dat': bytes(4096)})
+        code, about, _ = self.helper('inspect', path)
+        self.assertEqual(code, 0, about)
+        self.assertIn(zi.NATIVE_NOTE, about['warnings'])
+        self.assertFalse(any('wrote the images' in line for line in about['warnings']))
+
+
+class InstallerChecks(unittest.TestCase):
+    def test_the_installer_run_is_the_one_reviewed(self):
+        folder = Path(tempfile.mkdtemp(dir=os.environ.get('TMPDIR')))
+        self.addCleanup(shutil.rmtree, folder, True)
+        (folder / 'update-binary').write_bytes(b'#!/sbin/sh\necho changed\n')
+        with self.assertRaises(fs.FilesystemError) as caught:
+            zi.check_installer(folder / 'update-binary', hashlib.sha256(b'#!/sbin/sh\necho reviewed\n').hexdigest())
+        self.assertEqual(caught.exception.code, 'ZIP_CHANGED')
+        zi.check_installer(folder / 'update-binary', hashlib.sha256(b'#!/sbin/sh\necho changed\n').hexdigest())
+
+    def test_getprop_matches_the_name_as_text(self):
+        import subprocess
+        folder = Path(tempfile.mkdtemp(dir=os.environ.get('TMPDIR')))
+        self.addCleanup(shutil.rmtree, folder, True)
+        (folder / 'build.prop').write_text('roXproductXdevice=evil\nro.product.device=a22x\n')
+        script = zi.GETPROP.replace('files="/default.prop /system/build.prop /system_root/system/build.prop /vendor/build.prop /product/etc/build.prop"',
+                                    'files="%s"' % (folder / 'build.prop'))
+        (folder / 'getprop').write_text(script.replace('#!/sbin/sh', '#!/bin/sh'))
+        ask = lambda *names: subprocess.run(['sh', str(folder / 'getprop'), *names], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(ask('ro.product.device'), 'a22x')
+        self.assertEqual(ask('ro/odd', 'fallback'), 'fallback')
+
+
 class ZipGuards(ZipInstall):
     """2026-11-12 audit: what reaches past the room is caught, and the room loses its dangerous rights."""
     def test_an_installer_that_changes_a_protected_partition_fails(self):
@@ -347,6 +431,33 @@ class SuperFit(unittest.TestCase):
         opened.commit()
         again = self.opened()
         self.assertEqual({n: again.size_of(again.partition(n)) for n in sizes}, sizes)
+
+    def test_apply_fit_writes_super_once_and_not_at_all_when_it_fails(self):
+        # 2026-11-14 review: the earlier test called resize_all alone, so apply_fit could still write
+        # each resize by itself; here it runs as on the phone, through flash.open_super.
+        import lp_metadata as lp
+        from unittest import mock
+
+        def opened(context, write=False):
+            fd = os.open(self.super, os.O_RDWR if write else os.O_RDONLY)
+            return {'path': str(self.super)}, fd, lp.Super(fd)
+        before = self.super.read_bytes()
+        with mock.patch.object(zi.flash, 'open_super', opened):
+            with self.assertRaises(lp.MetadataError):
+                zi.apply_fit(None, {'system': [12 * self.MIB, 4 * self.MIB], 'odm': [self.MIB, 60 * self.MIB]})
+            self.assertEqual(self.super.read_bytes(), before)
+            zi.apply_fit(None, {'system': [12 * self.MIB, 8 * self.MIB], 'odm': [self.MIB, 2 * self.MIB]})
+        again = self.opened()
+        self.assertEqual((again.size_of(again.partition('system')), again.size_of(again.partition('odm'))), (8 * self.MIB, 2 * self.MIB))
+
+    def test_a_layout_whose_metadata_would_not_fit_is_refused_at_the_review(self):
+        import lp_metadata as lp
+        from unittest import mock
+        sizes = zi.package_sizes(self.package({'system': 8 * self.MIB, 'odm': 9 * self.MIB}))
+        with mock.patch.object(zi.lp, 'serialize', side_effect=lp.MetadataError('METADATA_TOO_LARGE', 'too large')):
+            with self.assertRaises(fs.FilesystemError) as caught:
+                zi.fit_plan(self.opened(), sizes)
+        self.assertEqual(caught.exception.code, 'ZIP_SUPER_METADATA')
 
     def test_a_layout_that_fails_halfway_leaves_super_as_it_was(self):
         # 2026-11-13 review: each resize was written by itself; one that failed left the others done.

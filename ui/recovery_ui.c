@@ -127,11 +127,11 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_WIFI=5700,A_WIFI_SCAN,A_WIFI_DISCONNECT,A_WIFI_HIDDEN,A_WIFI_FIELD_SSID,A_WIFI_FIELD_PASS,A_WIFI_PAGE_PREV,A_WIFI_PAGE_NEXT,A_WIFI_FORGET,A_WIFI_NET=5720,
     A_HOME_THEME=5760,A_BROWSER,
     A_SYS_NEW=5770,A_NEW_INTERNET,A_NEW_FILE,A_CATALOG_WIFI,A_CATALOG_PREV,A_CATALOG_NEXT,A_HOME_CATALOG,A_CATALOG_FAMILY=5780,
-    A_APPS_OPEN=5830,A_PKG_OPEN,A_PKG_QUERY,A_PKG_PREV,A_PKG_NEXT,A_APPS_DONE,A_PKG_DONE,A_PKG_FAMILY=5840,A_PKG_RESULT=5850,A_IDENTITY=5950,A_ID_DEST_NEXT,A_ID_BACKUP,A_ID_RESTORE_OPEN,A_ID_RESTORE,A_ID_ITEM=5960,A_CHARGER_ON=5970,A_CHARGER_OFF,
+    A_APPS_OPEN=5830,A_PKG_OPEN,A_PKG_QUERY,A_APPS_DONE,A_PKG_DONE,A_PKG_FAMILY=5840,A_PKG_RESULT=5850,A_IDENTITY=5950,A_ID_DEST_NEXT,A_ID_BACKUP,A_ID_RESTORE_OPEN,A_ID_RESTORE,A_ID_ITEM=5960,A_CHARGER_ON=5970,A_CHARGER_OFF,
     A_SHELL_ITEM=5980,A_GREETER_ITEM=5990,A_SHELLS_NEXT=6000,A_LOCALE_OPEN=6010,A_TZ_OPEN,A_TZ_RECOVERY,A_TZ_PICK,A_LOCALE_ITEM=6020,
     A_TZ_REGION=6040,A_TZ_ITEM=6100,
     A_NEW_SAVED=7000,A_IMAGES_CATALOG,A_IMAGE_DELETE_CONFIRM,A_IMAGE_DELETE_CANCEL,A_IMAGE_ITEM=7010,A_IMAGE_DELETE=7030,A_ADB_ALLOW=7050,A_ADB_DENY,A_ID_KIND=7100,A_ID_PART=7110,A_APLAN=7130,A_APLAN_REVIEW,A_APLAN_EDIT,A_APLAN_FORGET,A_FLASH_SUPER=7140,A_WIPE=7150,A_WIPE_CACHE,A_WIPE_VOLUMES,A_WIPE_CONFIRM,A_WIPE_ANDROID,
-    A_ANDROID=7160,A_SAMSUNG,A_SAMSUNG_CONFIRM,A_ANDROID_CATALOG,A_ANDROID_DOWNLOAD,A_ANDROID_INSTALL,A_ANDROID_DELETE,A_STOCK_BOOT,A_STOCK_BOOT_FLASH,A_ROOT,A_ROOT_REMOVE,A_ROOT_PREPARE,
+    A_ANDROID=7160,A_SAMSUNG,A_SAMSUNG_CONFIRM,A_ANDROID_CATALOG,A_ANDROID_DOWNLOAD,A_ANDROID_INSTALL,A_ANDROID_DELETE,A_STOCK_BOOT,A_STOCK_BOOT_FLASH,A_ROOT,
     A_CATALOG_CATEGORY=7170,A_CATALOG_VERSION=7180,A_CATALOG_KIND=7190,A_CATALOG_REGION=7200,A_CATALOG_FIT=7210,
     A_ROOT_INSTALL=7220 /* ..7223 */,A_ROOT_KEY=7230 /* ..7233: the SuperKey of a tool that needs one */,A_ROOT_KEY_FIELD=7240,A_ZIP=7250,A_ZIP_CONFIRM,A_BACKUP_RENAME=7260,A_BACKUP_DELETE,A_BACKUP_NAME_FIELD,A_ID_DELETE,A_SETTINGS_RESET,
     A_CARD=7270,A_CARD_NEXT,A_CARD_APPLY,A_CARD_LINUX=7280 /* ..7284 */,A_CARD_SWAP=7290 /* ..7293 */,
@@ -143,7 +143,11 @@ enum Action { A_BACK=1,A_BACKUP,A_RESTORE,A_VERIFY,A_STORAGE,A_SYSTEM,A_POWER,A_
     A_TORCH=7480,A_TORCH_DOWN,A_TORCH_UP,A_TORCH_ON,A_TORCH_OFF,A_TORCH_BAR,A_RESET_LATER,A_RESET_FORGET,A_BACKUP_ANDROID,A_ID_MOUNT,
     A_ZIP_ADD,A_ZIP_RESTART,A_ZIP_STAY,A_ZIP_RESET,A_ZIP_REMOVE /* ..+ZIP_QUEUE-1, below A_SOURCE_ITEM */,
     A_SOURCE_ITEM=7500 /* ..7579: MAX_VOLUMES */,
-    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE,A_FS_SEL_ARCHIVE,A_FS_EXTRACT,A_LD=7680,A_LD_DEST,A_LD_BACKUP,A_LD_REFRESH,A_LD_RESTORE,A_LD_PART=7690 /* ..7693 */,A_LD_RPART=7695 /* ..7698 */,A_LD_ARCHIVE=7700 /* ..7705 */,A_BACKUP_ENCRYPT=7710,A_BACKUP_PASSWORD_FIELD,A_SECRET_SHOW,A_LD_PREV=7720,A_LD_NEXT };
+    A_ALOG_OK=7590,A_ALOG_IMAGES,A_ALOG_STOCK,A_LOCK_SETTINGS_RETRY=7600,A_LOCK_SETTINGS_ERASE,A_UPDATES=7610,A_UPDATES_REFRESH,A_UPDATES_RECOVERY,A_UPDATES_BOOT,A_FLASH_MEMBER=7650 /* ..7665 */,A_FS_SEL_ALL=7670,A_FS_SEL_CANCEL,A_FS_SEL_DELETE,A_FS_SEL_ARCHIVE,A_FS_EXTRACT,A_LD=7680,A_LD_DEST,A_LD_BACKUP,A_LD_REFRESH,A_LD_RESTORE,A_LD_PART=7690 /* ..7693 */,A_LD_RPART=7695 /* ..7698 */,A_LD_ARCHIVE=7700 /* ..7705 */,A_BACKUP_ENCRYPT=7710,A_BACKUP_PASSWORD_FIELD,A_SECRET_SHOW,A_LD_PREV=7720,A_LD_NEXT,
+    /* 2026-11-14 review: numbered on after A_ROOT, they were 7170 and 7171, the catalog's category buttons. */
+    A_ROOT_REMOVE=7730,A_ROOT_PREPARE };
+_Static_assert(A_ROOT<A_CATALOG_CATEGORY,"the Android actions numbered on from A_ANDROID reach the catalog's");
+_Static_assert(A_ROOT_PREPARE<A_LD_PREV+100,"actions numbered after A_LD_PREV");
 enum JobKind { J_NONE,J_INVENTORY,J_LIST,J_BACKUP_PLAN,J_RESTORE_PLAN,J_BACKUP,J_VERIFY,J_RESTORE,J_STORAGE_INVENTORY,J_MOUNT,J_UMOUNT,
     J_FS_INVENTORY,J_FS_MOUNT,J_FS_UNMOUNT,J_FS_LIST,J_FS_READ,J_FS_WRITE,J_FS_MKDIR,J_FS_RENAME,J_FS_COPY,J_FS_DELETE,
     J_FS_STAT,J_FS_CHMOD,J_FS_CHOWN,J_FS_RESOLVE,J_FS_COPY_TREE,J_FS_FORMAT,J_FS_CHECK,J_FS_RESIZE,J_TOOLS_STATUS,J_TOOLS_EXPORT,J_DISPLAY_STATUS,J_DISPLAY_SET,J_WIPE_PLAN,J_WIPE,J_USB_STATUS,J_USB_START,J_USB_STOP,
@@ -323,7 +327,7 @@ typedef struct {
     bool systems_wifi_saved,systems_wifi_old_saved; /* The key comes from the recovery's saved networks. */
     char systems_done_reason[240];
     /* Packages found in the repositories of the new system (2026-11-08). */
-    char systems_packages[PACKAGES_MAX][64];unsigned int systems_package_count,pkg_count,pkg_page,pkg_family;bool pkg_known;
+    char systems_packages[PACKAGES_MAX][64];unsigned int systems_package_count,pkg_count,pkg_family;bool pkg_known;
     PkgResult pkg_results[PKG_RESULTS];char pkg_query[48],pkg_error[200],pkg_search_family[24],pkg_search_release[24];
     unsigned int systems_apps;bool systems_pick_script,systems_empty,systems_plan_clean,systems_mount_sheet,systems_mounting,systems_refresh_after;
     enum Screen systems_mount_return;unsigned int catalog_pending; /* Where a userdata mount returns; the catalog image chosen before it (+1). */
@@ -407,7 +411,7 @@ typedef struct {
     /* A password as dots: when the last character was typed, and how many there were then. */
     uint64_t secret_typed_at;unsigned int secret_count;bool secret_show;
     bool backup_encrypt,pw_wrong;char backup_password[260],backup_password_file[PATH_LEN];int pw_retry_kind;enum Screen pw_return;
-    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
+    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160],ld_reason[64];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
     bool fs_select,fs_select_all;unsigned int fs_sel_count;char fs_sel[FS_SEL_MAX][256];
     int fs_prompt_kind,fs_destination_index;
     unsigned int fs_confirm_page;
@@ -553,7 +557,7 @@ static bool start_install_job(App*a,int kind);
 static int complete_install_job(App*a,const Json*j,int kind,bool ok);
 static void complete_flash_job(App*a,const Json*j,int kind,bool ok);
 static void action(App*a,int id);
-static void update_battery(App*a);static void reset_request_poll(App*a);static void render_android_log(App*a);static void android_log_poll(App*a);static bool android_log_action(App*a,int id);static void render_updates(App*a);static bool updates_action(App*a,int id);static void zip_item_to_review(App*a,const ZipItem*it);static void settings_save(App*a,bool wait);
+static void update_battery(App*a);static void reset_request_poll(App*a);static void render_android_log(App*a);static void android_log_poll(App*a);static bool android_log_action(App*a,int id);static void render_updates(App*a);static bool updates_action(App*a,int id);static void zip_item_to_review(App*a,const ZipItem*it);static void settings_save(App*a,bool wait);static void settings_settle(App*a);
 static long sysfs_number(const char*path,long fallback);
 static void complete_usb_sync(App*a,const Json*j,bool ok);
 static void complete_usb_backup(App*a,const Json*j,bool ok);
@@ -561,6 +565,21 @@ static void complete_usb_eject(App*a,const Json*j,bool ok);
 static void settings_changed(App*a);
 static bool start_usb_backup(App*a,int index);
 static bool repository_needs_setup(const App*a,int index);
+/* What a page shows of a folder on storage, asked at most every two seconds (2026-11-14 review:
+   statvfs and access ran on every frame, up to 90 a second, and a slow USB stick held each frame). */
+typedef struct{char path[PATH_LEN];uint64_t at;bool exists,statted;uint64_t free;}PathProbe;
+static PathProbe path_probes[8];
+static const PathProbe*path_probe(const char*path){
+    uint64_t now=milliseconds();PathProbe*slot=&path_probes[0];
+    for(size_t n=0;n<sizeof(path_probes)/sizeof(path_probes[0]);n++){
+        PathProbe*e=&path_probes[n];
+        if(e->at&&!strcmp(e->path,path)){if(now-e->at<2000u)return e;slot=e;break;}
+        if(e->at<slot->at)slot=e;
+    }
+    copy(slot->path,sizeof(slot->path),path);slot->at=now?now:1;slot->exists=access(path,F_OK)==0;
+    struct statvfs v;slot->statted=statvfs(path,&v)==0;slot->free=slot->statted?(uint64_t)v.f_bavail*v.f_frsize:0;
+    return slot;
+}
 static void scroll_indicator(App*a,Rect track,int64_t offset,int64_t total,uint32_t color);
 static void append(char*dst,size_t n,const char*s);
 static bool flash_source_allowed(const FileVolume*v);
@@ -741,16 +760,26 @@ static int text_tile(App*a,int y,int font,uint32_t color,const char*src,int max_
     int h=wrapped_height(a,604,font,src,max_lines);bool accent=color!=MUTED&&color!=TEXT;
     rounded(a,(Rect){28,y-16,664,h+32},22,PANEL);
     if(accent)rounded(a,(Rect){38,y-2,5,h+4},3,color);
-    wrapped(a,accent?60:52,y,accent?600:612,font,accent?color:color,src,max_lines);
+    wrapped(a,accent?60:52,y,accent?600:612,font,color,src,max_lines);
     return h+32;
 }
 static void ellipsis(App*a,int x,int y,int width,int font,uint32_t color,const char*src){
     src=tr(src);char out[512];size_t n=utf8_prefix(src,sizeof(out)-4);memcpy(out,src,n);out[n]=0;
     bool shortened=src[n]!=0;
-    if(shortened||text_width(out,font)>width){
-        while(n&&text_width(out,font)+text_width("...",font)>width){n=utf8_previous(out,n);out[n]=0;}
-        memcpy(out+n,"...",4);
+    /* One pass over the advances (2026-11-14 review: every step measured the whole prefix again,
+       each time through tr(); long file names cost that on every frame of a scroll). */
+    #define ELLIPSIS_PX(w) (((w)*2+191)/192)
+    int total=0;{const char*q=out;while(*q)total+=codepoint_advance(utf8_next(&q),font);}
+    if(shortened||ELLIPSIS_PX(total)>width){
+        int dots=3*codepoint_advance('.',font),used=0;size_t keep=0;const char*q=out;
+        while(*q){
+            int advance=codepoint_advance(utf8_next(&q),font);
+            if(ELLIPSIS_PX(used+advance)+ELLIPSIS_PX(dots)>width)break;
+            used+=advance;keep=(size_t)(q-out);
+        }
+        n=keep;memcpy(out+n,"...",4);
     }
+    #undef ELLIPSIS_PX
     bool raw=ui_raw;ui_raw=true;text(a,x,y,font,color,out);ui_raw=raw;
 }
 static void human_bytes(uint64_t bytes,char*out,size_t n){
@@ -906,9 +935,9 @@ static void destination(App*a,int y){
     rounded(a,(Rect){28,y,664,154},24,PANEL);
     text(a,52,y+20,0,ORANGE,"BACKUP DESTINATION");
     const char*p=a->repositories[a->store];ellipsis(a,52,y+55,616,1,TEXT,p[0]?p:"Select an external backup location");
-    struct statvfs v;char freebuf[64],msg[128];
+    char freebuf[64],msg[128];const PathProbe*probe=p[0]&&!a->preview?path_probe(p):NULL;
     if(a->preview)copy(msg,sizeof(msg),"ext4 microSD - illustrative preview");
-    else if(p[0]&&statvfs(p,&v)==0){human_bytes((uint64_t)v.f_bavail*v.f_frsize,freebuf,sizeof(freebuf));snprintf(msg,sizeof(msg),T("%s available"),freebuf);}
+    else if(probe&&probe->statted){human_bytes(probe->free,freebuf,sizeof(freebuf));snprintf(msg,sizeof(msg),T("%s available"),freebuf);}
     else copy(msg,sizeof(msg),"Not available. Tap to choose storage");
     text(a,52,y+104,0,MUTED,msg);register_button(a,(Rect){28,y,664,154},A_STORAGE,ui_free(a),0);
 }
@@ -936,11 +965,11 @@ static void bento_tile(App*a,Rect r,unsigned int tone,int id,const char*title,co
 /* The flashlight (2026-11-11, the owner's request; TWRP and OrangeFox have one): the camera's LED in
    torch mode, through the kernel's LED class. A22X_RECOVERY_TORCH names the LED's folder for tests. */
 static void toast(App*a,const char*message);
+/* Read through sysfs_number, the one reader of numbers in sysfs (2026-11-14 review). */
 static bool torch_value(const char*folder,const char*name,unsigned int*out){
-    char path[PATH_LEN+32],value[24]={0};snprintf(path,sizeof(path),"%s/%s",folder,name);
-    int fd=open(path,O_RDONLY|O_CLOEXEC);if(fd<0)return false;
-    ssize_t n=read(fd,value,sizeof(value)-1);close(fd);if(n<=0)return false;
-    *out=(unsigned int)strtoul(value,NULL,10);return true;
+    char path[PATH_LEN+32];snprintf(path,sizeof(path),"%s/%s",folder,name);
+    long value=sysfs_number(path,-1);if(value<0)return false;
+    *out=(unsigned int)value;return true;
 }
 static bool torch_ready(App*a){
     if(a->torch_checked)return a->torch_available;
@@ -1378,6 +1407,8 @@ static void render_result(App*a){
     button(a,(Rect){28,1320,664,102},files&&!picking?"Back to files":(a->result_return==USB_FILES?"Back to USB files":(a->result_return==PREPARE_FILESYSTEM?"Back to preparation":(a->result_return==DISPLAY_SETTINGS?"Back to display":(a->result_return==TOOLS||a->result_return==TOOLS_EXPORT?"Back to tools":(a->result_return==HOME?"Back to recovery":"Back"))))),A_DONE,true,true,0);
 }
 static bool repository_needs_setup(const App*a,int index){return a->repository_volume[index][0]&&(a->repository_read_only[index]||access(a->repositories[index],F_OK));}
+/* The same for drawing, from the probe: a tap still asks the storage itself. */
+static bool repository_shown_needs_setup(const App*a,int index){return a->repository_volume[index][0]&&(a->repository_read_only[index]||!path_probe(a->repositories[index])->exists);}
 static void render_storage(App*a){
     heading(a,"Storage","SD cards and USB sticks. Choose where backups go.",true);
     int y=236;bool stick=false;
@@ -1385,10 +1416,10 @@ static void render_storage(App*a){
         bool usb=a->repository_volume[i][0]!=0,selected=i==a->store;const char*root=usb?a->repository_root[i]:a->repositories[i];stick=stick||usb;
         Rect r={28,y,664,206};surface(a,r,26,selected?ORANGE_DARK:PANEL,A_STORE+i);icon_tile(a,usb?ICON_USB:A_STORAGE,r.x+20,y+18,64,selected?ORANGE_EDGE:ICON_FILL);
         text(a,r.x+100,y+14,1,TEXT,usb?"USB stick":"microSD");
-        struct statvfs v;char b[64],msg[160];bool ready=!a->preview&&statvfs(root,&v)==0;
-        if(ready){human_bytes((uint64_t)v.f_bavail*v.f_frsize,b,sizeof(b));snprintf(msg,sizeof(msg),T("%s available"),b);if(a->repository_fs[i][0]){append(msg,sizeof(msg),"  /  ");append(msg,sizeof(msg),a->repository_fs[i]);}}else copy(msg,sizeof(msg),a->preview?"Example external repository":"Not mounted or not available");
+        char b[64],msg[160];const PathProbe*probe=a->preview?NULL:path_probe(root);bool ready=probe&&probe->statted;
+        if(ready){human_bytes(probe->free,b,sizeof(b));snprintf(msg,sizeof(msg),T("%s available"),b);if(a->repository_fs[i][0]){append(msg,sizeof(msg),"  /  ");append(msg,sizeof(msg),a->repository_fs[i]);}}else copy(msg,sizeof(msg),a->preview?"Example external repository":"Not mounted or not available");
         ellipsis(a,r.x+100,y+58,480,0,MUTED,msg);
-        if(usb&&repository_needs_setup(a,i))ellipsis(a,r.x+100,y+90,480,0,ORANGE,"Tap to use for backups");else{raw_text(true);ellipsis(a,r.x+100,y+90,480,0,MUTED,a->repositories[i]);raw_text(false);}
+        if(usb&&repository_shown_needs_setup(a,i))ellipsis(a,r.x+100,y+90,480,0,ORANGE,"Tap to use for backups");else{raw_text(true);ellipsis(a,r.x+100,y+90,480,0,MUTED,a->repositories[i]);raw_text(false);}
         vector_circle(a,646,y+50,17,4,selected?ORANGE:MUTED);if(selected)vector_circle(a,646,y+50,8,8,ORANGE);
         register_button(a,(Rect){r.x,y,r.w,126},A_STORE+i,ui_free(a),0);
         if(usb)button(a,(Rect){r.x+20,y+128,300,62},"Remove safely",A_USB_EJECT,ui_free(a),false,0);
@@ -1524,7 +1555,10 @@ static void render_tools(App*a){
     char now[16],date[96],zone[48],line[144];clock_text(a,now,sizeof(now),date,sizeof(date));
     if(recovery_zone(a))copy(zone,sizeof(zone),tz_zones[a->recovery_tz].city);else utc_label(a->utc_offset,zone,sizeof(zone));snprintf(line,sizeof(line),"%s  %s",now,date);
     rounded(a,(Rect){28,y,664,180},24,PANEL);icon_tile(a,ICON_CLOCK,46,y+16,56,ICON_FILL);text(a,120,y+14,1,TEXT,"Date and time");ellipsis(a,120,y+52,540,0,MUTED,line);
-    button(a,(Rect){46,y+88,150,72},"−",A_TZ_DOWN,free_ui&&a->utc_offset>-720,false,0);raw_text(recovery_zone(a));button(a,(Rect){204,y+88,312,72},zone,A_TZ_PICK,free_ui,false,0);raw_text(false);button(a,(Rect){524,y+88,150,72},"+",A_TZ_UP,free_ui&&a->utc_offset<840,false,0);
+    /* The steps start from the offset in force now, a zone's as well (2026-11-14 review: the stale
+       fixed offset enabled + at +14 h, and the press then only dropped the zone). */
+    int offset_now=recovery_offset_now(a);
+    button(a,(Rect){46,y+88,150,72},"−",A_TZ_DOWN,free_ui&&offset_now>-720,false,0);raw_text(recovery_zone(a));button(a,(Rect){204,y+88,312,72},zone,A_TZ_PICK,free_ui,false,0);raw_text(false);button(a,(Rect){524,y+88,150,72},"+",A_TZ_UP,free_ui&&offset_now<840,false,0);
     y+=192;{
         static const char*const modes[3]={"Never","At start","Always"};static const char*const notes[3]={"Set, but the screen is not locked","Asked when recovery starts","Asked at start and after the screen turns off"};
         int height=a->lock_enabled?368:180;rounded(a,(Rect){28,y,664,height},24,PANEL);icon_tile(a,ICON_LOCK,46,y+16,56,ICON_FILL);text(a,120,y+14,1,TEXT,"Recovery password");ellipsis(a,120,y+52,540,0,MUTED,a->lock_enabled?notes[a->lock_mode]:"Off");
@@ -2028,7 +2062,7 @@ static void render_file_info(App*a){
     wrapped(a,52,506,608,0,TEXT,metadata,2);
     bool ordinary=file_is_regular(&a->fs_selected)||file_is_directory(&a->fs_selected);
     if(!strcmp(a->fs_selected.type,"symlink")){
-        text(a,40,632,0,ORANGE,"LINK TEXT");wrapped(a,40,676,640,0,TEXT,a->fs_selected.link_target[0]?a->fs_selected.link_target:"No link text returned",5);
+        text(a,40,632,0,ORANGE,"LINK TEXT");raw_text(a->fs_selected.link_target[0]!=0);wrapped(a,40,676,640,0,TEXT,a->fs_selected.link_target[0]?a->fs_selected.link_target:"No link text returned",5);raw_text(false);
         text(a,40,856,0,ORANGE,"RESOLVED INSIDE THIS VOLUME");wrapped(a,40,900,640,0,TEXT,a->fs_link_resolved?a->fs_resolved.path:"Resolve before opening the target.",5);
         button(a,(Rect){28,1080,664,88},"Resolve link",A_FS_RESOLVE,ui_free(a)&&a->fs_selected.token[0],false,0);
         button(a,(Rect){28,1194,664,88},"Open resolved target",A_FS_FOLLOW,ui_free(a)&&a->fs_link_resolved&&(file_is_regular(&a->fs_resolved)||file_is_directory(&a->fs_resolved)),true,0);
@@ -2131,7 +2165,10 @@ static void keyboard_row(App*a,const char*s,int y,int x,int width){
 #define KB_BUBBLE_MS 160
 #define KB_REPEAT_DELAY_MS 450
 #define KB_REPEAT_MS 70
+/* A key past the end of keyboard_keys is not drawn, as in keyboard_row (2026-11-14 review). */
+static bool keyboard_room(const App*a){return a->keyboard_count<(int)(sizeof(a->keyboard_keys)/sizeof(a->keyboard_keys[0]));}
 static void keyboard_key(App*a,Rect r,uint32_t cp){
+    if(!keyboard_room(a))return;
     char label[5];utf8_encode(cp,label);int key=a->keyboard_count++;a->keyboard_keys[key]=cp;button(a,r,label,A_KB_KEY+key,keyboard_enabled(a),false,0);
 }
 /* The pressed key, large and in a circle above the finger that covers it. */
@@ -2206,6 +2243,7 @@ static void pad_digit(App*a,int center,int middle,int digit,uint32_t color){
     canvas_mask(a->pixels,canvas_bounds(a),nx(center)-g->w/2,nx(middle)-zero->h/2+g->y-zero->y,g->w,g->h,pad_digit_alpha+g->off,color);
 }
 static void pad_key(App*a,int cx,int cy,int digit){
+    if(!keyboard_room(a))return;
     int key=a->keyboard_count++,action=A_KB_KEY+key;a->keyboard_keys[key]=(uint32_t)('0'+digit);
     Rect r={cx-PAD_RADIUS,cy-PAD_RADIUS,2*PAD_RADIUS,2*PAD_RADIUS};bool down=pressed(a,action);
     /* The theme's button color, solid enough to stand out from any page behind it. */
@@ -2384,13 +2422,20 @@ static unsigned int confirmation_pages(const FileRequest*q){
 }
 static void confirmation_path(App*a,int x,int y,int width,const char*s,unsigned int page,unsigned int lines){
     size_t row=0;for(unsigned int n=0;n<page*lines&&s[row];n++){TextRow r=text_row(s,row,width);if(r.next<=row)break;row=r.next;}
+    /* A path is shown as it is, never through the translations (2026-11-14 review: a folder named
+       "backup" was shown as the German word for it); callers pass fixed text already translated. */
+    raw_text(true);
     for(unsigned int n=0;n<lines&&s[row];n++){TextRow r=text_row(s,row,width);char part[PATH_LEN];size_t size=r.end-row;if(size>=sizeof(part))size=sizeof(part)-1;memcpy(part,s+row,size);part[size]=0;text(a,x,y+(int)n*28,0,TEXT,part);if(r.next<=row)break;row=r.next;}
+    raw_text(false);
 }
+/* A password goes to a helper only once it is written to its file: one test for what the review
+   says and for the arguments (2026-11-14 review). */
+static bool backup_password_sent(const App*a){return a->backup_password[0]&&a->backup_password_file[0];}
 static void render_file_confirmation(App*a){
     FileRequest*q=&a->fs_pending;heading(a,files_operation_title(q->kind),"Review the exact target before continuing.",true);
-    rounded(a,(Rect){28,240,664,420},24,PANEL);text(a,52,264,0,ORANGE,"VOLUME");wrapped(a,52,306,606,1,TEXT,q->volume,2);
-    text(a,52,394,0,ORANGE,q->kind==J_FS_MOUNT?"ACCESS":"PATH");confirmation_path(a,52,436,606,q->kind==J_FS_MOUNT?"Read and write":q->path,a->fs_confirm_page,7);
-    if(q->kind==J_FS_RENAME||q->kind==J_FS_COPY||q->kind==J_FS_COPY_TREE){text(a,40,712,0,ORANGE,"DESTINATION");confirmation_path(a,40,754,640,q->destination,a->fs_confirm_page,6);if(q->kind==J_FS_COPY||q->kind==J_FS_COPY_TREE)ellipsis(a,40,936,640,0,MUTED,q->destination_volume);}
+    rounded(a,(Rect){28,240,664,420},24,PANEL);text(a,52,264,0,ORANGE,"VOLUME");raw_text(true);wrapped(a,52,306,606,1,TEXT,q->volume,2);raw_text(false);
+    text(a,52,394,0,ORANGE,q->kind==J_FS_MOUNT?"ACCESS":"PATH");confirmation_path(a,52,436,606,q->kind==J_FS_MOUNT?tr("Read and write"):q->path,a->fs_confirm_page,7);
+    if(q->kind==J_FS_RENAME||q->kind==J_FS_COPY||q->kind==J_FS_COPY_TREE){text(a,40,712,0,ORANGE,"DESTINATION");confirmation_path(a,40,754,640,q->destination,a->fs_confirm_page,6);if(q->kind==J_FS_COPY||q->kind==J_FS_COPY_TREE){raw_text(true);ellipsis(a,40,936,640,0,MUTED,q->destination_volume);raw_text(false);}}
     if(q->kind==J_FS_CHMOD){text(a,40,712,0,ORANGE,"NEW MODE / OCTAL");text(a,40,766,2,TEXT,q->mode);}
     if(q->kind==J_FS_CHOWN){char owner[96];snprintf(owner,sizeof(owner),T("UID %s  /  GID %s"),q->uid,q->gid);text(a,40,712,0,ORANGE,"NEW OWNER");text(a,40,766,1,TEXT,owner);}
     if(q->kind==J_FS_DELETE_MANY||q->kind==J_ARCHIVE_PACK){
@@ -2401,7 +2446,9 @@ static void render_file_confirmation(App*a){
     }
     if(q->kind==J_ARCHIVE_PACK){text(a,40,1000,0,ORANGE,"ARCHIVE");raw_text(true);ellipsis(a,40,1040,640,0,TEXT,q->destination);ellipsis(a,40,1076,640,0,MUTED,q->destination_volume);raw_text(false);}
     /* 2026-11-13, on the phone: an archive protected with the password was reviewed as a plain one. */
-    bool sealed=q->kind==J_ARCHIVE_PACK&&a->backup_encrypt&&a->backup_password[0];
+    /* As backup_password_args decides: only a password written to its file goes to the helper
+       (2026-11-14 review: the review said "protected" while the archive was made without it). */
+    bool sealed=q->kind==J_ARCHIVE_PACK&&a->backup_encrypt&&backup_password_sent(a);
     const char*note=sealed?"Protected with the password of copies: it gets the name .enc and opens in Files with that password, or with openssl on a computer (see the README).":
         q->kind==J_ARCHIVE_PACK?"Owners, permissions and links are kept. The archive opens in Files on any A22x, or with tar --zstd -xf on a computer.":
         q->kind==J_ARCHIVE_UNPACK?"Extracts into a new folder beside the archive, named after it. Nothing outside that folder is written.":
@@ -2683,7 +2730,13 @@ static const char*job_name(int kind){
     if(kind==J_ID_BACKUPS)return "identity-backups";
     if(kind==J_ID_RESTORE)return "identity-restore";
     if(wifi_job(kind))return (const char*[]){"wifi-status","wifi-scan","wifi-connect","wifi-disconnect","wifi-forget"}[kind-J_WIFI_STATUS];
-    if(kind>=J_SYSINFO)return kind==J_SYSINFO?"phone-details":(kind==J_THEME_IMPORT?"theme-import":(kind==J_THEME_REMOVE?"theme-remove":"theme-restore"));
+    /* Each by its own name; one that is not listed has none (2026-11-14 review: every unlisted kind
+       from J_SYSINFO on was called "theme-restore", in the log and in start_job). */
+    if(kind==J_SYSINFO)return "phone-details";
+    if(kind==J_THEME_IMPORT)return "theme-import";
+    if(kind==J_THEME_REMOVE)return "theme-remove";
+    if(kind==J_THEME_RESTORE)return "theme-restore";
+    if(kind>J_USB_EJECT)return "";
     const char*n[]={"","inventory","list","backup-plan","restore-plan","backup","verify","restore","inventory","mount","umount",
         "files-inventory","files-mount","files-unmount","files-list","files-read","files-write","files-mkdir","files-rename","files-copy","files-delete",
         "files-stat","files-chmod","files-chown","files-resolve","files-copy-tree","files-format","files-check","files-resize","diagnostic-status","diagnostic-export","display-status","display-set","wipe-plan","wipe","usb-status","usb-start","usb-stop",
@@ -2717,7 +2770,9 @@ static bool launch_job(App*a,int kind,char*const*args){
     a->job=(Job){.pid=pid,.fdout=out[0],.fderr=err[0],.kind=kind,.output=calloc(JSON_LIMIT+1,1)};
     if(!a->job.output)a->job.overflow=true;
     a->job_started=milliseconds();a->progress_done=a->progress_total=0;a->progress_mark_phase[0]=0;copy(a->progress_phase,sizeof(a->progress_phase),"Preparing");a->progress_part[0]=0;copy(a->last_backend_operation,sizeof(a->last_backend_operation),job_name(kind));
-    a->result_return=HOME;
+    /* A job in the background keeps where a result shown now returns to (2026-11-14 review: every
+       launch reset it, and a status read started while a result was up sent Back home). */
+    if(!job_quiet(kind))a->result_return=HOME;
     /* Its page is the one the action that started it ends on; a job started by another job's end keeps that job's page. */
     if(!a->job_completing){a->job_orphan=false;a->job_page_mark=true;}
     if(kind==J_FS_LIST){a->pressed_action=0;a->button_count=0;a->focus=-1;}
@@ -3155,15 +3210,21 @@ static bool parse_file_list(App*a,const Json*j){
     char path[PATH_LEN];jstring(j,0,"path",path,sizeof(path));if(!path[0]||strcmp(path,a->fs_request.path))return false;
     uint64_t offset=json_uint(j,json_get(j,0,"offset"),UINT64_MAX),total=json_uint(j,json_get(j,0,"total"),UINT64_MAX);
     if(offset!=a->fs_request.offset||total>UINT32_MAX)return false;
-    a->file_count=0;a->file_offset=(unsigned int)offset;a->file_total=(unsigned int)total;a->files_more=json_bool(j,json_get(j,0,"has_more"),0);
-    FileVolume*v=current_volume(a);if(v)v->read_only=json_bool(j,json_get(j,0,"read_only"),1);
+    /* The answer is read whole into a staging list and taken only when it is valid (2026-11-14 review:
+       a rejected answer left the browser with its new total, half its rows and the volume's read-only
+       flag from an answer that was not checked). */
+    FileEntry*staged=calloc(FILE_BATCH,sizeof(*staged));if(!staged)return false;
+    unsigned int count=0;bool valid=true;
     for(int i=array+1;i<j->count&&j->tokens[i].start<j->tokens[array].end;i=json_next(j,i)){
-        if(j->tokens[i].type!=J_OBJECT||a->file_count>=FILE_BATCH)return false;
-        FileEntry*e=&a->files[a->file_count];if(!parse_file_entry(j,i,e)||!e->name[0])return false;
-        a->file_count++;
+        if(j->tokens[i].type!=J_OBJECT||count>=FILE_BATCH){valid=false;break;}
+        FileEntry*e=&staged[count];if(!parse_file_entry(j,i,e)||!e->name[0]){valid=false;break;}
+        count++;
     }
     uint64_t expected=offset<total?total-offset:0;if(expected>FILE_BATCH)expected=FILE_BATCH;
-    if((uint64_t)a->file_count!=expected)return false;
+    if(!valid||(uint64_t)count!=expected){free(staged);return false;}
+    memcpy(a->files,staged,(size_t)count*sizeof(*staged));free(staged);
+    a->file_count=count;a->file_offset=(unsigned int)offset;a->file_total=(unsigned int)total;a->files_more=json_bool(j,json_get(j,0,"has_more"),0);
+    FileVolume*v=current_volume(a);if(v)v->read_only=json_bool(j,json_get(j,0,"read_only"),1);
     copy(a->fs_path,sizeof(a->fs_path),path);browser_clamp(a);a->pressed_action=0;a->button_count=0;a->focus=-1;
     return true;
 }
@@ -3249,6 +3310,9 @@ static int complete_files_job(App*a,const Json*j,int kind){
         char where[PATH_LEN]={0};
         if(kind==J_ARCHIVE_PACK){int archive=json_get(j,0,"archive");if(archive>=0)jstring(j,archive,"path",where,sizeof(where));}else jstring(j,0,"folder",where,sizeof(where));
         snprintf(a->fs_status,sizeof(a->fs_status),kind==J_ARCHIVE_PACK?T("Archive saved: %s"):T("Extracted into %s"),where);
+        /* Device nodes in an archive are left out, and the helper says how many (2026-11-14). */
+        unsigned int skipped=kind==J_ARCHIVE_UNPACK?(unsigned int)json_uint(j,json_get(j,0,"skipped"),0):0u;
+        if(skipped){char note[96];snprintf(note,sizeof(note),T("; %u device files left out"),skipped);append(a->fs_status,sizeof(a->fs_status),note);}
         reset_browser(a);screen(a,FILE_BROWSER);return J_FS_LIST;
     }else if(kind==J_FS_DELETE_MANY){
         unsigned int done=(unsigned int)json_uint(j,json_get(j,0,"deleted"),0),left=(unsigned int)json_uint(j,json_get(j,0,"failed_count"),0);
@@ -3505,7 +3569,7 @@ static bool backup_password_store(App*a,const char*text){
 }
 /* What a helper is given: the password when one is known; CREATING, whether new copies take it. */
 static void backup_password_args(App*a,char**args,int*n,bool creating){
-    if(!a->backup_password[0]||!a->backup_password_file[0])return;
+    if(!backup_password_sent(a))return;
     args[(*n)++]="--password-file";args[(*n)++]=a->backup_password_file;
     if(creating&&a->backup_encrypt)args[(*n)++]="--encrypt";
 }
@@ -3534,6 +3598,13 @@ static void render_backup_password_prompt(App*a){
 #include "installer_ui.h"
 #include "images_ui.h"
 #include "adb_ui.h"
+/* The path of a helper that sits beside distro.py in /opt/a22x-recovery; false when it does not fit
+   (one function for identity_ui.h and android_plan_ui.h, 2026-11-14 review). */
+static bool sibling_helper(const App*a,const char*name,char*out,size_t size){
+    copy(out,size,a->distro_helper);char*slash=strrchr(out,'/');
+    if(!slash||(size_t)(slash-out)+1+strlen(name)>=size){out[0]=0;return false;}
+    strcpy(slash+1,name);return true;
+}
 #include "packages_ui.h"
 #include "identity_ui.h"
 #include "charger_ui.h"
@@ -3551,12 +3622,22 @@ static void render_backup_password_prompt(App*a){
    job, which then owns a->job with a buffer of its own (2026-11-11: exporting diagnostics from
    Home reads the status and then the volumes; the second read lost its buffer to the first one's
    clean-up and ended as BACKEND_FAILED). */
+/* Every kind of job ends its reply this one way (2026-11-14 review: some detached the reply by hand
+   before their handler, others used this; two patterns for one rule). */
 static void job_reply_done(App*a,char*ended){if(a->job.output==ended)a->job.output=NULL;free(ended);}
 static void complete_job(App*a){
     Job*j=&a->job;char*const ended=j->output;int kind=j->kind,next_files_job=J_NONE;bool next_display_status=false,next_usb_status=false;JsonToken*tok=calloc(8192,sizeof(*tok));Json doc;bool parsed=tok&&j->output&&!j->overflow&&json_parse(&doc,j->output,tok,8192)>0&&tok[0].type==J_OBJECT;
     if(terminal_background_job(kind)){} /* Shell input/output never enter UI diagnostics. */
     else if(file_job(kind)||kind==J_TOOLS_STATUS||kind==J_TOOLS_EXPORT||kind>=J_USB_STATUS)fprintf(stderr,"[recovery-ui:%s] exit=%d; result details omitted from log\n",job_name(kind),WIFEXITED(j->status)?WEXITSTATUS(j->status):-1);
-    else fprintf(stderr,"[recovery-ui:%s] exit=%d result=%s\n",job_name(kind),WIFEXITED(j->status)?WEXITSTATUS(j->status):-1,j->output?j->output:"(no result buffer)");
+    else{
+        /* Only whether it went and why not: a result holds a plan's confirmation token and the phone's
+           identity, and this log goes into Export diagnostics (2026-11-14 review). */
+        char code[64]="";if(parsed){int e=json_get(&doc,0,"error");if(e>=0)jstring(&doc,e,"code",code,sizeof(code));}
+        fprintf(stderr,"[recovery-ui:%s] exit=%d ok=%d",job_name(kind),WIFEXITED(j->status)?WEXITSTATUS(j->status):-1,
+                parsed&&json_bool(&doc,json_get(&doc,0,"ok"),0)==1);
+        if(code[0])fprintf(stderr," error=%s",code);
+        fputc('\n',stderr);
+    }
     bool ok=parsed&&WIFEXITED(j->status)&&WEXITSTATUS(j->status)==0&&json_bool(&doc,json_get(&doc,0,"ok"),0);
     if(kind==J_CATALOG_CHECK&&!ok)fprintf(stderr,"[recovery-ui:catalog-check] parsed=%d used=%zu overflow=%d status=%d head=%.60s\n",parsed,j->used,j->overflow,j->status,j->output?j->output:"-");
     j->pid=0;a->job_cancel_asked=false;
@@ -3592,23 +3673,23 @@ static void complete_job(App*a){
             free(tok);job_reply_done(a,ended);backup_password_ask(a,kind,code[0]=='W',back);return;
         }
     }
-    if(kind==J_CATALOG||kind==J_CATALOG_CHECK){char*reply=j->output;j->output=NULL;complete_catalog_job(a,parsed?&doc:NULL,ok,kind==J_CATALOG_CHECK);free(tok);free(reply);return;}
+    if(kind==J_CATALOG||kind==J_CATALOG_CHECK){complete_catalog_job(a,parsed?&doc:NULL,ok,kind==J_CATALOG_CHECK);free(tok);job_reply_done(a,ended);return;}
     if(kind==J_CHARGER){complete_charger_job(a,parsed?&doc:NULL,ok);free(tok);job_reply_done(a,ended);return;}
     if(images_job(kind)){complete_images_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
     /* Preparing a plan starts the status of Systems from its completion: that new job owns a->job,
        so this reply is taken off it first, as for the catalog. */
-    if(aplan_job(kind)){char*reply=j->output;j->output=NULL;complete_aplan_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
+    if(aplan_job(kind)){complete_aplan_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
     if(wipe_job(kind)){complete_wipe_job(a,parsed?&doc:NULL,ok);free(tok);job_reply_done(a,ended);return;}
     if(ld_job(kind)){complete_ld_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
     /* An unpacked firmware ZIP starts the review of its AP: that new job owns a->job (2026-11-10). */
-    if(samsung_job(kind)){char*reply=j->output;j->output=NULL;complete_samsung_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
-    if(root_job(kind)){char*reply=j->output;j->output=NULL;complete_root_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
-    if(zip_job(kind)){char*reply=j->output;j->output=NULL;complete_zip_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
-    if(card_job(kind)){char*reply=j->output;j->output=NULL;complete_card_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
+    if(samsung_job(kind)){complete_samsung_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
+    if(root_job(kind)){complete_root_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
+    if(zip_job(kind)){complete_zip_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
+    if(card_job(kind)){complete_card_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
     /* A deleted copy reads the cards again: that job owns a->job, so this reply is taken off it first. */
-    if(copy_job(kind)){char*reply=j->output;j->output=NULL;complete_copy_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
+    if(copy_job(kind)){complete_copy_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
     /* A deleted copy reads the list again: that job owns a->job, so this reply is taken off it first. */
-    if(kind==J_ID_LIST||kind==J_ID_BACKUP||kind==J_ID_BACKUPS||kind==J_ID_RESTORE||kind==J_ID_DELETE){char*reply=j->output;j->output=NULL;complete_identity_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
+    if(kind==J_ID_LIST||kind==J_ID_BACKUP||kind==J_ID_BACKUPS||kind==J_ID_RESTORE||kind==J_ID_DELETE){complete_identity_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
     if(kind==J_PKG_SEARCH){complete_package_search(a,parsed?&doc:NULL,ok);free(tok);job_reply_done(a,ended);return;}
     if(wifi_job(kind)){int next=complete_wifi_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);if(next)start_wifi_job(a,next);return;}
     if(kind==J_USB_SYNC){complete_usb_sync(a,parsed?&doc:NULL,ok);free(tok);job_reply_done(a,ended);return;}
@@ -3616,8 +3697,8 @@ static void complete_job(App*a){
     if(kind==J_USB_EJECT){complete_usb_eject(a,parsed?&doc:NULL,ok);free(tok);job_reply_done(a,ended);return;}
     /* The list of partitions can start the check of a chosen image (2026-11-10, "Flash it to BOOT"):
        that new job owns a->job, so this reply is taken off it first, as for the catalog. */
-    if(updates_job(kind)){char*reply=j->output;j->output=NULL;complete_updates_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
-    if(flash_job(kind)){char*reply=j->output;j->output=NULL;complete_flash_job(a,parsed?&doc:NULL,kind,ok);free(tok);free(reply);return;}
+    if(updates_job(kind)){complete_updates_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
+    if(flash_job(kind)){complete_flash_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
     if(kind==J_SYSINFO){if(ok)complete_sysinfo(a,&doc);free(tok);job_reply_done(a,ended);return;}
     if(theme_job(kind)){complete_theme_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);return;}
     if(install_job(kind)){int next=complete_install_job(a,parsed?&doc:NULL,kind,ok);free(tok);job_reply_done(a,ended);if(next)start_install_job(a,next);return;}
@@ -3776,7 +3857,7 @@ static void begin_file_prompt(App*a,int kind){
     else if(kind==J_ARCHIVE_PACK){
         /* 2026-11-13: A22xArchives/FOLDER-DATE.tar.zst, on an SD card or a stick when one is writable. */
         const char*base=strrchr(a->fs_path,'/');base=base&&base[1]?base+1:(current_volume(a)?current_volume(a)->id:"files");
-        time_t now=time(NULL);struct tm local;localtime_r(&now,&local);char stamp[32];strftime(stamp,sizeof(stamp),"%Y%m%d-%H%M",&local);
+        time_t now=time(NULL);struct tm local;recovery_time(a,now,&local);char stamp[32];strftime(stamp,sizeof(stamp),"%Y%m%d-%H%M",&local);
         if(snprintf(a->fs_prompt,sizeof(a->fs_prompt),"/A22xArchives/%.120s-%s.tar.zst",base,stamp)>=(int)sizeof(a->fs_prompt)){files_problem(a,"PATH_TOO_LONG","Choose a shorter destination path.",FILE_BROWSER);return;}
         int chosen=-1;for(int n=0;n<a->volume_count;n++){FileVolume*v=&a->volumes[n];if(v->mounted&&!v->read_only&&v->write_supported&&(!strncmp(v->id,"sdcard",6)||!strncmp(v->id,"usb",3))){chosen=n;break;}}
         a->fs_destination_index=chosen>=0?chosen:(files_writable(a)?a->volume_index:next_writable_volume(a,-1));
@@ -4023,7 +4104,7 @@ static void complete_usb_backup(App*a,const Json*j,bool ok){
 static bool start_usb_sync(App*a){
     if(a->job.pid||a->preview||!a->filesystem_helper[0])return false;
     char*args[8];int n=0;args[n++]=a->python;args[n++]=a->filesystem_helper;if(a->device)args[n++]="--device";else{args[n++]="--fixture";args[n++]=a->fixture;}
-    args[n++]="usb-sync";args[n]=NULL;enum Screen back=a->result_return;if(!launch_job(a,J_USB_SYNC,args))return false;a->result_return=back;return true;
+    args[n++]="usb-sync";args[n]=NULL;return launch_job(a,J_USB_SYNC,args);   /* quiet: launch_job keeps result_return */
 }
 static void complete_usb_sync(App*a,const Json*j,bool ok){
     if(!ok){if(a->hotplug_retries<4){a->hotplug_retries++;a->hotplug_pending=true;a->hotplug_at=a->now+1500;}return;}
@@ -4046,7 +4127,7 @@ static void usb_cable_watch(App*a){
     if(!a->usb_cable_lost_at)a->usb_cable_lost_at=a->now;
     else if(a->now-a->usb_cable_lost_at>=600&&!a->job.pid&&start_usb_job(a,J_USB_STOP)){a->usb_cable_lost_at=0;toast(a,"USB files stopped: cable removed");}
 }
-static void display_restore_job(App*a,int kind){enum Screen back=a->result_return;a->display_restoring=start_display_job(a,kind);a->result_return=back;}
+static void display_restore_job(App*a,int kind){a->display_restoring=start_display_job(a,kind);}   /* quiet: launch_job keeps result_return */
 /* The panel starts at 60 Hz with its own brightness, so saved values return after startup.
    This runs behind whatever is on screen, the password prompt included, and never opens a page. */
 static void restore_display(App*a){
@@ -4122,7 +4203,7 @@ static void hotplug_tick(App*a){
             /* A read that runs in the background is waited for: the restart follows it. */
             if(!a->job.pid){
                 a->zip_restart_at=0;
-                if(a->allow_power&&!a->systems_reboot_blocked&&!a->install.reboot_blocked){if(a->settings_dirty)settings_save(a,true);a->power_intent=200;a->exit_code=200;a->running=false;}
+                if(a->allow_power&&!a->systems_reboot_blocked&&!a->install.reboot_blocked){settings_settle(a);a->power_intent=200;a->exit_code=200;a->running=false;}
                 a->dirty=true;
             }
         }else{unsigned int left=(unsigned int)((a->zip_restart_at-a->now+999)/1000);if(left!=a->zip_restart_shown){a->zip_restart_shown=left;a->dirty=true;}}
@@ -4149,15 +4230,25 @@ static int settings_run(App*a,char*const*args,char*out,size_t size){
 }
 static void settings_load(App*a){
     if(!a->device)return;
-    char data[768],*args[]={a->python,"-B",(char*)settings_helper,"status",NULL};int rc=settings_run(a,args,data,sizeof(data));
+    char data[8192],*args[]={a->python,"-B",(char*)settings_helper,"status",NULL};int rc=settings_run(a,args,data,sizeof(data));
     /* Settings that cannot be read, or are damaged (exit 4), never mean "no password" (2026-11-12,
      * audit): the recovery stays locked, and nothing is saved over them. */
+    /* 2026-11-14 review: an answer longer than the buffer, or with more values than tokens, failed to
+       parse and left the recovery unlocked; it is read whole now, and one that does not parse is
+       settings that cannot be read. */
+    JsonToken t[192];Json j;
+    if(!rc&&(strlen(data)>=sizeof(data)-1||json_parse(&j,data,t,192)<1))rc=2;
     if(rc){a->settings_broken=rc==4?4:2;a->lock_enabled=true;a->lock_mode=1;a->locked=true;copy(a->status,sizeof(a->status),rc==4?"The settings are damaged, so the recovery stays locked":"Settings could not be read, so the recovery stays locked");a->successful=false;return;}
     a->settings_broken=0;
-    JsonToken t[64];Json j;if(json_parse(&j,data,t,64)<1)return;
     char code[8]={0};jstring(&j,0,"language",code,sizeof(code));for(unsigned int n=0;n<LANGUAGE_COUNT;n++)if(!strcmp(code,language_codes[n]))ui_language=n;
-    theme_files_scan(); /* The settings helper has just brought imported themes to RAM. */
-    char theme[24]={0};jstring(&j,0,"theme",theme,sizeof(theme));(void)theme_select(a,theme);
+    /* The settings helper has just brought imported themes to RAM. The scan rebuilds the table, so the
+       theme in use goes back to a built-in one first, as theme_reload does (2026-11-14 review: it was
+       left pointing into the cleared table). */
+    char before_theme[24],before_scheme[32];copy(before_theme,sizeof(before_theme),ui_theme->code);copy(before_scheme,sizeof(before_scheme),ui_terminal->code);
+    ui_theme=&themes[0];ui_terminal=&terminal_schemes[0];theme_files_scan();
+    char theme[24]={0};jstring(&j,0,"theme",theme,sizeof(theme));
+    if(!theme_select(a,theme)&&!theme_select(a,before_theme))theme_apply(a,0);
+    (void)terminal_select(before_scheme);
     char scheme[32]={0};jstring(&j,0,"terminal",scheme,sizeof(scheme));(void)terminal_select(scheme);
     char storage[8]={0};jstring(&j,0,"storage",storage,sizeof(storage));a->storage_prefers_usb=!strcmp(storage,"usb");
     a->saved_hz=a->restore_hz=(unsigned int)json_uint(&j,json_get(&j,0,"refresh"),0);a->saved_brightness=a->restore_brightness=(unsigned int)json_uint(&j,json_get(&j,0,"brightness"),0);
@@ -4201,7 +4292,30 @@ static void settings_save(App*a,bool wait){
     char*args[38]={a->python,"-B",(char*)settings_helper,"set","--navigation",navigation,"--animation",(char*)animation_codes[a->animation],"--lock",lock,"--access",access,"--language",(char*)language_codes[ui_language],"--theme",(char*)ui_theme->code,"--terminal",(char*)ui_terminal->code,"--storage",a->storage_prefers_usb?"usb":"sd","--refresh",refresh,"--brightness",brightness,"--vibration",vibration,"--timeout",timeout,"--utc-offset",offset,"--timezone",recovery_zone(a)?(char*)tz_zones[a->recovery_tz].id:"","--torch",torch,"--android-log",a->alog_seen,NULL};
     pid_t pid=fork();if(pid<0)return;
     if(!pid){(void)close_range(3,~0u,0);unsetenv("A22X_RECOVERY_LOCK_FD");execv(a->python,args);_exit(2);}
-    if(wait)waitpid(pid,NULL,0);else a->settings_pid=pid;
+    if(!wait){a->settings_pid=pid;return;}
+    int status=0;
+    if(waitpid(pid,&status,0)>0&&WIFEXITED(status)&&WEXITSTATUS(status)==3)
+        fprintf(stderr,"[recovery-ui:settings] kept in RAM only: the storage was in use\n");
+}
+/* 2026-11-14 review: a power action came while settings.py was still writing the last change (it
+   was lost at the restart), or while the screenshot helper still had a volume mounted; a stop by
+   SIGTERM saved nothing. Both helpers are waited for (the screenshot one as long as it may run),
+   then what is not saved yet is saved, before the recovery leaves. */
+static void settings_settle(App*a){
+    if(a->settings_pid){
+        int status=0;
+        if(waitpid(a->settings_pid,&status,0)>0&&WIFEXITED(status)&&WEXITSTATUS(status)==3)a->settings_dirty=true;
+        a->settings_pid=0;
+    }
+    if(a->shot_pid){
+        uint64_t until=milliseconds()+SHOT_TIMEOUT_MS;
+        while(a->shot_pid&&milliseconds()<until){
+            if(waitpid(a->shot_pid,NULL,WNOHANG)!=0)a->shot_pid=0;
+            else{struct timespec t={0,20000000L};nanosleep(&t,NULL);}
+        }
+        if(a->shot_pid){kill(a->shot_pid,SIGTERM);waitpid(a->shot_pid,NULL,0);a->shot_pid=0;}
+    }
+    if(a->settings_dirty)settings_save(a,true);
 }
 static bool lock_secret_file(const char*path,const char*secret){
     int fd=open(path,O_WRONLY|O_CREAT|O_TRUNC|O_NOFOLLOW|O_CLOEXEC,0600);if(fd<0)return false;
@@ -4307,9 +4421,9 @@ static void reopen(App*a,enum Screen s){
     if(s==SYSTEMS)start_systems_job(a,J_SYS_STATUS);
     else if(s==FILE_BROWSER)start_files_job(a,J_FS_LIST);
     /* Root is read again: what was flashed meanwhile ("Remove root") changed what BOOT carries. */
-    else if(s==ROOT_PAGE){a->root_known=false;start_root_job(a,J_ROOT_LIST);}
+    else if(s==ROOT_PAGE)root_read(a);
     /* The card is read again: it may have been partitioned, mounted or pulled out meanwhile. */
-    else if(s==CARD_PAGE){a->card_known=false;start_card_job(a,J_CARD_LIST);}
+    else if(s==CARD_PAGE)card_read(a);
     /* 2026-11-13, on the phone: a card mounted on the Storage page did not show its snapshots on
        the way back; the list is read again once its storage is there. */
     else if(s==LIST&&a->device&&!a->preview&&!a->install.pick_backup&&!access(a->repositories[a->store],F_OK))start_job(a,J_LIST);
@@ -4379,7 +4493,7 @@ static void action_run(App*a,int id){
         int intent=id==A_REBOOT?200:(id==A_SHUTDOWN?201:(id==A_REBOOT_RECOVERY?202:(id==A_REBOOT_DOWNLOAD?203:0)));
         if(!intent){a->screen=a->menu_return;a->button_count=0;a->focus=-1;a->dirty=true;return;}
         if(!a->allow_power||a->job.pid||(intent==200&&(a->systems_reboot_blocked||a->install.reboot_blocked)))return;
-        if(a->settings_dirty)settings_save(a,true);
+        settings_settle(a);
         a->power_intent=intent;a->exit_code=intent;a->running=false;return;
     }
     haptic(a,1);
@@ -4532,7 +4646,7 @@ static void action_run(App*a,int id){
     case A_LIST_PREV:if(a->list_page>0)a->list_page--;a->dirty=true;break;
     case A_LIST_NEXT:if((a->list_page+1)*list_rows(a)<a->backup_count)a->list_page++;a->dirty=true;break;
     case A_REBOOT:case A_SHUTDOWN:case A_REBOOT_RECOVERY:case A_REBOOT_DOWNLOAD:if(a->allow_power&&(id!=A_REBOOT||(!a->systems_reboot_blocked&&!a->install.reboot_blocked))){a->power_intent=id==A_REBOOT?200:(id==A_SHUTDOWN?201:(id==A_REBOOT_RECOVERY?202:203));screen(a,POWER_CONFIRM);}break;
-    case A_POWER_CONFIRM:if(a->allow_power&&ui_free(a)&&a->power_intent>=200&&a->power_intent<=203&&(a->power_intent!=200||(!a->systems_reboot_blocked&&!a->install.reboot_blocked))){if(a->settings_dirty)settings_save(a,true);a->exit_code=a->power_intent;a->running=false;}break;
+    case A_POWER_CONFIRM:if(a->allow_power&&ui_free(a)&&a->power_intent>=200&&a->power_intent<=203&&(a->power_intent!=200||(!a->systems_reboot_blocked&&!a->install.reboot_blocked))){settings_settle(a);a->exit_code=a->power_intent;a->running=false;}break;
     default:break;
     }
 }
@@ -4721,6 +4835,11 @@ static void nav_home(App*a){
     a->flash_pick=a->samsung_pick=a->stock_boot_pick=a->zip_pick=a->rom_pick=a->source_sheet=false;a->theme_pick=HOME;a->install.pick_source=false;a->install.pick_backup=false;a->systems_pick_manifest=a->systems_pick_script=false;a->fs_prompt_kind=0;
     a->flash_after_targets=a->catalog_saving=a->wifi_from_catalog=false;a->catalog_return=HOME;a->catalog_only=0;
     memset(a->root_superkey,0,sizeof(a->root_superkey));a->root_key_tool=-1;
+    /* 2026-11-14 review: the prompt is left, so what was typed in it goes too (a SuperKey or the
+       password of copies stayed in fs_prompt, shown on), and the clock's zone page forgets it was
+       opened for the recovery (a new system's time zone then changed the recovery's clock). */
+    memset(a->fs_prompt,0,sizeof(a->fs_prompt));a->secret_show=false;a->secret_count=0;a->secret_typed_at=0;
+    a->tz_for_recovery=false;
     int before=(int)a->screen;const Theme*theme=ui_theme;screen(a,HOME);transition_after(a,A_BACK,before,theme);
 }
 /* 2026-11-13, the owner: a hold that is full acts at once, with the finger still down, and a long
@@ -5197,8 +5316,10 @@ static void update_battery(App*a){
     a->battery_percent=percent;snprintf(a->battery,sizeof(a->battery),"%d%%",percent);
 }
 static void initialize(App*a){
-    a->lock_mode=1;a->access_mode=1;
-    memset(a,0,sizeof(*a));a->screen_timeout_index=SCREEN_TIMEOUT_DEFAULT;a->pixels=calloc((size_t)NW*NH,sizeof(uint32_t));if(!a->pixels){perror("canvas");exit(1);}a->running=true;a->dirty=true;a->focus=-1;
+    memset(a,0,sizeof(*a));a->screen_timeout_index=SCREEN_TIMEOUT_DEFAULT;
+    /* After the memset, as settings.py's defaults (2026-11-14 review: set before it, both became 0:
+       a password never locked the screen and a computer was let in without asking). */
+    a->lock_mode=1;a->access_mode=1;a->pixels=calloc((size_t)NW*NH,sizeof(uint32_t));if(!a->pixels){perror("canvas");exit(1);}a->running=true;a->dirty=true;a->focus=-1;
     a->systems_locale=a->systems_tz=a->recovery_tz=-1;  /* The recovery's language and clock until others are picked. */
     copy(a->python,sizeof(a->python),"/usr/bin/python3");copy(a->backend,sizeof(a->backend),"/opt/a22x-recovery/backend/recoveryctl.py");copy(a->workdir,sizeof(a->workdir),"/run/a22x-recovery/plans/ui");copy(a->fb_path,sizeof(a->fb_path),"/dev/fb0");copy(a->profile,sizeof(a->profile),"linux");
     copy(a->filesystem_helper,sizeof(a->filesystem_helper),"/opt/a22x-recovery/filesystem.py");copy(a->management_helper,sizeof(a->management_helper),"/opt/a22x-recovery/management.py");copy(a->fs_path,sizeof(a->fs_path),"/");
@@ -5831,6 +5952,10 @@ static int test_screenshot_keys(void){
     assert(!a->shot_flash);
     /* The flash fades and ends by itself. */
     a->display_blanked=false;a->shot_flash=a->now;screenshot_poll(a);assert(a->shot_flash);a->now+=SHOT_FLASH_MS;screenshot_poll(a);assert(!a->shot_flash);
+    /* 2026-11-14 review: nothing while locked, nor of a password being typed. */
+    a->display_blank_known=false;a->locked=true;a->shot_flash=0;a->toast[0]=0;take_screenshot(a);assert(!a->shot_flash&&strstr(a->toast,"password"));
+    a->locked=false;a->screen=FILE_PROMPT;a->fs_prompt_kind=J_BACKUP_PASSWORD;a->toast[0]=0;take_screenshot(a);assert(!a->shot_flash&&strstr(a->toast,"password"));
+    a->screen=HOME;a->fs_prompt_kind=0;render(a);take_screenshot(a);assert(a->shot_flash&&strstr(a->toast,"preview"));
     free(a->pixels);free(a);return 1;
 }
 /* 2026-11-11: several ZIPs that one hold runs one after another. Replies of the helper are fed in by
@@ -6051,6 +6176,11 @@ static int test_updates_page(void){
     static char offline[]="{\"ok\":true,\"recovery\":{\"installed\":\"0.6.199\",\"latest\":null,\"newer\":false,\"error\":\"UPDATE_UNAVAILABLE\"},\"boot\":{\"kind\":\"android\",\"latest\":null,\"newer\":false}}";
     assert(json_parse(&j,offline,t,96)>0);a->screen=UPDATES;complete_updates_job(a,&j,J_UPDATES_CHECK,true);
     assert(a->updates_known&&!a->upd_rec_newer&&!a->upd_boot_newer&&!strcmp(a->upd_boot_kind,"android"));render(a);
+    /* 2026-11-14 review: no release read is never up to date; an unread BOOT offers nothing. */
+    static char failed[]="{\"ok\":true,\"recovery\":{\"installed\":\"1.0.0\",\"latest\":null,\"newer\":false,\"error\":\"\"},\"boot\":{\"kind\":\"unknown\",\"error\":\"IO_ERROR\",\"latest\":{\"version\":\"v147\",\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"},\"newer\":false}}";
+    assert(json_parse(&j,failed,t,96)>0);a->screen=UPDATES;complete_updates_job(a,&j,J_UPDATES_CHECK,true);
+    assert(!strcmp(a->upd_rec_error,"UPDATE_UNAVAILABLE"));render(a);
+    assert(test_button(a,A_UPDATES_BOOT)&&!test_button(a,A_UPDATES_BOOT)->enabled&&!test_button(a,A_UPDATES_RECOVERY)->enabled);
     free(a->pixels);free(a);return 1;
 }
 static int test_android_log(void){
@@ -6243,7 +6373,42 @@ static int test_linux_data(void){
     assert(test_press(a,A_LD_NEXT,50)&&a->ld_page==1);render(a);assert(test_button(a,A_LD_ARCHIVE+1)&&!test_button(a,A_LD_ARCHIVE+2));
     assert(test_press(a,A_LD_ARCHIVE+1,50)&&a->screen==LINUX_DATA_RESTORE&&a->ld_selected==4&&a->ld_restore_parts==1u);
     screen(a,LINUX_DATA);assert(test_press(a,A_LD_PREV,50)&&a->ld_page==0);a->ld_archive_count=1;
+    /* 2026-11-14 review: a list read again keeps its page; a home too large to count is shown as
+       such, and a system that could not be read says why instead of no system. */
+    a->ld_page=1;complete_ld_job(a,&j,J_LD_INSPECT,true);assert(a->ld_page==1);
+    static const char large[]="{\"ok\":true,\"linux\":true,\"reason\":\"SELECTION_TOO_LARGE\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
+        "\"parts\":{\"home\":-1,\"settings\":-1,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
+    assert(json_parse(&j,large,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);
+    assert(a->ld_linux&&a->ld_home==UINT64_MAX&&a->ld_settings==UINT64_MAX&&!strcmp(a->ld_reason,"SELECTION_TOO_LARGE"));render(a);
+    static const char unread[]="{\"ok\":true,\"linux\":false,\"reason\":\"IO_ERROR\",\"destinations\":[],\"archives\":[]}";
+    assert(json_parse(&j,unread,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);assert(!a->ld_linux&&!strcmp(a->ld_reason,"IO_ERROR"));render(a);
     unlink(a->backup_password_file);rmdir(a->workdir);
+    free(a->pixels);free(a);return 1;
+}
+/* 2026-11-14 review fixes: job names, zone labels, a pending flash, the offline hold, reads that
+   cannot start, and when a password counts as sent. */
+static int test_review_fixes(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->inventory_ok=true;
+    assert(!strcmp(job_name(J_THEME_RESTORE),"theme-restore")&&!strcmp(job_name(J_SYSINFO),"phone-details")&&!strcmp(job_name(J_LD_RESTORE),"linux-data-restore"));
+    assert(!job_name(J_PKG_QUERY)[0]&&!job_name(J_BACKUP_NAME)[0]&&!job_name(J_WIFI_SSID)[0]&&!job_name(J_ROOT_SUPERKEY)[0]);
+    char text[24];tz_offset_text(330,text,sizeof(text));assert(!strcmp(text,"+5:30"));tz_offset_text(-60,text,sizeof(text));assert(!strcmp(text,"-1"));
+    for(unsigned int n=0;n<TZ_REGIONS;n++)assert(!strncmp(tz_region_labels[n],tz_regions[n],strlen(tz_regions[n])));
+    a->flash_after_targets=true;copy(a->flash_after_label,sizeof(a->flash_after_label),"recovery");a->screen=FLASH;
+    complete_flash_job(a,NULL,J_FLASH_TARGETS,false);assert(!a->flash_after_targets&&!a->flash_after_label[0]&&!a->flash_known);
+    JsonToken t[64];Json j;static const char none[]="{\"ok\":true}";assert(json_parse(&j,none,t,64)>0);
+    a->flash_after_targets=true;complete_flash_job(a,&j,J_FLASH_TARGETS,true);assert(!a->flash_after_targets);
+    static const char review[]="{\"ok\":true,\"target\":{\"label\":\"boot\",\"size_bytes\":4096},\"image\":{\"name\":\"boot.img\",\"kind\":\"android-boot\","
+        "\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"identity\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"file_bytes\":4096}}";
+    a->flash_restore=true;a->flash_offline=true;assert(json_parse(&j,review,t,64)>0);complete_flash_job(a,&j,J_FLASH_CHECK,true);
+    assert(a->screen==FLASH_REVIEW&&a->flash_review_valid&&!a->flash_offline);render(a);assert(!test_button(a,A_FLASH_CONFIRM)->enabled);
+    a->job.pid=1;   /* another job runs: the reads below cannot start */
+    a->root_known=false;a->root_count=3;root_read(a);assert(a->root_known&&!a->root_count);
+    a->card_known=false;card_read(a);assert(a->card_known&&a->card_error[0]);
+    a->job.pid=0;
+    copy(a->backup_password,sizeof(a->backup_password),"secret");a->backup_password_file[0]=0;assert(!backup_password_sent(a));
+    copy(a->backup_password_file,sizeof(a->backup_password_file),"/nonexistent/pw");assert(backup_password_sent(a));
+    char*args[4];int n=0;backup_password_args(a,args,&n,false);assert(n==2&&!strcmp(args[0],"--password-file"));
+    memset(a->backup_password,0,sizeof(a->backup_password));
     free(a->pixels);free(a);return 1;
 }
 static int test_settings_reset(void){
@@ -6360,7 +6525,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_review_fixes();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;
@@ -6791,6 +6956,7 @@ int main(int argc,char**argv){
         }
     }
     for(int n=0;n<count;n++)close(inputs[n].fd);
+    if(a->device)settings_settle(a);  /* a stop by SIGTERM too (2026-11-14 review) */
     /* A power action switches the flashlight off, and leaves this frame up while init finishes the
        work and the phone resets. */
     if(a->exit_code>=200&&a->exit_code<=203)torch_leave(a);

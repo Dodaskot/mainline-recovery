@@ -105,9 +105,11 @@ if [ -z "$1" ]; then
     for f in $files; do [ -f "$f" ] && sed -n 's/^\\([^#=][^=]*\\)=\\(.*\\)$/[\\1]: [\\2]/p' "$f"; done
     exit 0
 fi
+# The name is compared as text, never put into a pattern: '.' matched any character and '/'
+# broke the expression (2026-11-14 review).
 for f in $files; do
     [ -f "$f" ] || continue
-    value=$(sed -n "s/^$1=//p" "$f" | head -n 1)
+    value=$(awk -v name="$1" 'index($0, name "=") == 1 { print substr($0, length(name) + 2); exit }' "$f")
     [ -n "$value" ] && { echo "$value"; exit 0; }
 done
 echo "$2"
@@ -131,6 +133,18 @@ def fail(code, message, **details):
     fs.fail(code, message, **details)
 
 
+def sectors_written(stat_file):
+    """The sectors the kernel has written to a block device, from its stat file (the seventh field).
+    The one place that reads it (2026-11-14 review: two copies of the field's index)."""
+    return int((Path(stat_file).read_text().split() + ['0'] * 7)[6])
+
+
+def device_written(path):
+    """sectors_written of the block device at PATH."""
+    st = os.stat(path)
+    return sectors_written('/sys/dev/block/%d:%d/stat' % (os.major(st.st_rdev), os.minor(st.st_rdev)))
+
+
 def mapped_devices():
     """The device-mapper devices the kernel has now: {'dm-0': {...}}."""
     found = {}
@@ -139,7 +153,7 @@ def mapped_devices():
             found[entry.name] = {'name': (entry / 'dm/name').read_text().strip(), 'uuid': (entry / 'dm/uuid').read_text().strip(),
                                  'devno': (entry / 'dev').read_text().strip(),
                                  'slaves': sorted((s / 'dev').read_text().strip() for s in (entry / 'slaves').iterdir()),
-                                 'sectors_written': int(((entry / 'stat').read_text().split() + ['0'] * 7)[6])}
+                                 'sectors_written': sectors_written(entry / 'stat')}
         except (OSError, ValueError):
             continue
     return found
@@ -299,8 +313,11 @@ def read_inside(folder, relative, limit=512 << 10):
         os.close(fd)
 
 
-def describe(fd, name):
-    """What the ZIP at FD is: its SHA-256, its installer (a script or a program) and what it says of itself."""
+def describe(fd, name, check_members=True):
+    """What the ZIP at FD is: its SHA-256, its installer (a script or a program, and its own SHA-256)
+    and what it says of itself. CHECK_MEMBERS reads every member against its CRC; the run of a ZIP
+    whose SHA-256 is the reviewed one does not need that again (2026-11-14 review: a ROM of 2.5 GB
+    was read four times before its installer started)."""
     size = os.fstat(fd).st_size
     digest = hashlib.sha256()
     at = 0
@@ -316,14 +333,15 @@ def describe(fd, name):
                     'This ZIP has no installer of its own. Images and ROM packages go through Android or Flash a partition')
             info = archive.getinfo(INSTALLER)
             require(0 < info.file_size <= INSTALLER_LIMIT, 'ZIP_INSTALLER_INVALID', 'The installer in this ZIP has an unusable size')
-            with archive.open(INSTALLER) as member:
-                head = member.read(64)
+            program = archive.read(INSTALLER)
+            head = program[:64]
             module = {}
             if 'module.prop' in names:
                 for line in archive.read('module.prop').decode('utf-8', 'replace').splitlines():
                     key, _, value = line.partition('=')
                     module[key.strip()] = value.strip()[:80]
-            require(archive.testzip() is None, 'ZIP_DAMAGED', 'A file in this ZIP does not match its checksum')
+            if check_members:
+                require(archive.testzip() is None, 'ZIP_DAMAGED', 'A file in this ZIP does not match its checksum')
     except zipfile.BadZipFile:
         fail('ZIP_DAMAGED', 'This is not a complete ZIP archive')
     if head[:2] == b'#!':
@@ -348,6 +366,7 @@ def describe(fd, name):
     if what == 'module':
         warnings.append('A module needs Android data, which stays closed here: install it in the Magisk or APatch app')
     return {'name': name[:200], 'sha256': digest.hexdigest(), 'size': size, 'installer': kind, 'arch': arch, 'what': what,
+            'installer_sha256': hashlib.sha256(program).hexdigest(),
             'title': title[:120], 'files': len(names), 'warnings': warnings, 'writable': list(WRITABLE), 'logical': list(LOGICAL)}
 
 
@@ -391,8 +410,12 @@ def package_sizes(fd):
     return sizes
 
 
-NATIVE_NOTE = 'The recovery wrote the images of this ROM itself and read them back'
-NATIVE_STOPPED = 'The installer of this ZIP stopped; the recovery writes the images of this ROM itself'
+# 2026-11-14 review: the installer of the ZIP runs first; the recovery writes a block ROM's images
+# itself only when that installer stopped without changing anything (the KKRT case), never over
+# what an installer left half done.
+NATIVE_NOTE = 'If the installer of this ZIP stops without changing anything, the recovery writes the images of this ROM itself'
+NATIVE_STOPPED = 'The installer of this ZIP stopped without changing anything; the recovery wrote the images of this ROM itself and read them back'
+NATIVE_REFUSED = 'The installer of this ZIP changed partitions before it stopped, so the recovery did not write the images itself'
 NATIVE_LEFT_OUT = 'Not written by the recovery, as the script of the ZIP would have:'
 
 
@@ -466,7 +489,6 @@ def native_install(context, room, fd, sizes, found, progress):
                 shown.append(', '.join(left))
     except android_rom.RomError as error:
         fail(error.code, error.message, **error.details)
-    shown.append(NATIVE_NOTE)
     return shown, 0
 
 
@@ -501,7 +523,11 @@ def fit_plan(opened, sizes):
     trial.metadata = copy.deepcopy(opened.metadata)
     try:
         resize_all(trial, plan)
+        # 2026-11-14 review: metadata too large for super came out only when apply_fit wrote it.
+        lp.serialize(trial.metadata, trial.geometry['metadata_max_size'])
     except lp.MetadataError as error:
+        if error.code == 'METADATA_TOO_LARGE':
+            fail('ZIP_SUPER_METADATA', 'The new layout of super would not fit in its metadata', reason=error.code)
         fail('ZIP_SUPER_TOO_SMALL', 'super has not enough free space for the partitions of this ROM', reason=error.code)
     return plan
 
@@ -588,9 +614,15 @@ class Room:
                 continue
             major, minor = (int(part) for part in devno.split(':'))
             node = ROOM_NODES / name
-            with contextlib.suppress(FileNotFoundError):
-                node.unlink()
-            os.mknod(node, 0o600 | stat.S_IFBLK, os.makedev(major, minor))
+            try:
+                with contextlib.suppress(FileNotFoundError):
+                    node.unlink()
+                os.mknod(node, 0o600 | stat.S_IFBLK, os.makedev(major, minor))
+            except OSError:
+                # 2026-11-14 review: the mapping stayed, unknown to detach, and held the partition.
+                with contextlib.suppress(OSError):
+                    dm_linear.remove(mapping)
+                continue
             self.loops[name] = str(node)
             self.mapped_before.add('dm-%d' % minor)
 
@@ -599,8 +631,7 @@ class Room:
         names = []
         for name in self.loops:
             with contextlib.suppress(OSError, ValueError):
-                minor = os.minor(os.stat(self.loops[name]).st_rdev)
-                if int(((SYS_BLOCK / ('dm-%d' % minor) / 'stat').read_text().split() + ['0'] * 7)[6]):
+                if device_written(self.loops[name]):
                     names.append(name)
         return names
 
@@ -626,8 +657,9 @@ class Room:
                 continue
             point = self.root / 'mnt' / ('props-' + name)
             point.mkdir(exist_ok=True)
-            # ext4 without its journal replayed: reading a property must not write to super.
-            for kind, options in (('erofs', 'ro'), ('ext4', 'ro,noload'), ('f2fs', 'ro')):
+            # ext4 without its journal replayed, f2fs without its roll-forward recovery (2026-11-14
+            # review): reading a property must not write to super.
+            for kind, options in (('erofs', 'ro'), ('ext4', 'ro,noload'), ('f2fs', 'ro,norecovery')):
                 if self.run('mount', '-t', kind, '-o', options, device, str(point), check=False).returncode:
                     continue
                 try:
@@ -754,7 +786,13 @@ def drop_capabilities():
             raise OSError(ctypes.get_errno(), 'capability %d' % capability)
 
 
-def room_child(room, zip_fd, out_fd, kind):
+def check_installer(path, expected):
+    """The update-binary taken out for the run is the one reviewed (2026-11-14 review: only the
+    ZIP's device, inode and size were compared, so its bytes could be changed in place)."""
+    require(hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, 'ZIP_CHANGED', 'The ZIP changed after it was reviewed')
+
+
+def room_child(room, zip_fd, out_fd, kind, expected):
     """The process the installer runs in: new spaces, the room, then update-binary as TWRP calls it."""
     os.setsid()
     os.unshare(os.CLONE_NEWNS | os.CLONE_NEWPID | os.CLONE_NEWIPC | os.CLONE_NEWUTS)
@@ -816,6 +854,7 @@ def room_child(room, zip_fd, out_fd, kind):
                 'ZIP_CHANGED', 'The ZIP changed after it was reviewed')
         with zipfile.ZipFile(place) as archive, open(root / 'tmp/update-binary', 'wb') as out:
             out.write(archive.read(INSTALLER))
+        check_installer(root / 'tmp/update-binary', expected)
         (root / 'tmp/update-binary').chmod(0o755)
         os.dup2(out_fd, 9)
         os.set_inheritable(9, True)
@@ -831,7 +870,7 @@ def room_child(room, zip_fd, out_fd, kind):
         os._exit(126)
 
 
-def fixture_child(context, found, zip_fd, out_fd, kind):
+def fixture_child(context, found, zip_fd, out_fd, kind, expected):
     """Tests: the installer as a plain process in a folder of its own; its devices are the fixture's
     partition files under $A22X_ZIP_ROOT/dev/block/by-name."""
     root = context.root / 'zip-room'
@@ -844,6 +883,7 @@ def fixture_child(context, found, zip_fd, out_fd, kind):
         copy.write(os.pread(zip_fd, os.fstat(zip_fd).st_size, 0))
     with zipfile.ZipFile(root / 'tmp/install.zip') as archive:
         (root / 'tmp/update-binary').write_bytes(archive.read(INSTALLER))
+    check_installer(root / 'tmp/update-binary', expected)
     os.dup2(out_fd, 9)
     os.set_inheritable(9, True)
     os.chdir(root / 'tmp')
@@ -905,6 +945,34 @@ def follow(read_fd, pid, progress, deadline):
     return shown, status
 
 
+def write_counters(context, found):
+    """Sectors written so far to super and the partitions beside it, as the kernel counts them:
+    super's count grows with every write through a mapping of its partitions too."""
+    if context.mode != 'device':
+        return {}
+    counts = {}
+    for label in ('super', 'prism', 'optics'):
+        if label in found:
+            with contextlib.suppress(OSError, ValueError):
+                counts[label] = device_written(found[label]['path'])
+    return counts
+
+
+def untouched(context, found, room, before, layout, counters):
+    """Whether the installer left every partition in its reach as it found it: the watched
+    partitions by their hashes, super's layout, the kernel's count of sectors written to super,
+    prism and optics, and the mappings in the room and those the installer made itself."""
+    if hashes(context, found) != before or write_counters(context, found) != counters:
+        return False
+    if layout is not None and layout_hash(context, found) != layout:
+        return False
+    if room is not None:
+        if room.written() or any(device['sectors_written'] for kernel, device in mapped_devices().items()
+                                 if kernel not in room.mapped_before):
+            return False
+    return True
+
+
 def run(context, args, progress):
     require(args.confirm, 'CONFIRMATION_REQUIRED', 'Running the installer of a ZIP must be confirmed')
     with flash.operation_lock(context.lock_path, context.mode):
@@ -913,7 +981,8 @@ def run(context, args, progress):
         context.check_offline(list(found.values()))
         ensure_mounted(context, args.volume, args.volume_token)
         with flash.source_file(context, args.volume, args.volume_token, args.path) as fd:
-            about = describe(fd, Path(args.path).name)
+            # Its members' CRC were read at the review; the same SHA-256 means the same bytes.
+            about = describe(fd, Path(args.path).name, check_members=False)
             require(about['sha256'] == args.expected_sha256, 'ZIP_CHANGED', 'The ZIP changed after it was reviewed')
             # The BOOT there is kept on cache first: the way back from whatever the installer writes.
             kept = saved_boot.keep_current_boot(context, lambda *a: None)
@@ -933,14 +1002,21 @@ def run(context, args, progress):
                     os.close(sfd)
                 if fitted:
                     apply_fit(context, fitted)
+            # The layout the installer starts from, after the recovery's own fit; LAYOUT stays the
+            # one found, so the result still names super when its layout changed.
+            layout_run = layout_hash(context, found) if 'super' in found else None
             read_fd, write_fd = os.pipe()
             room = Room(context, found) if context.mode == 'device' else None
             if room:
                 room.attach_logical()
+            counters = write_counters(context, found)
             # 2026-11-13 review: the recovery used to write a full block-based ROM itself in place of
             # its script, and so left out what else the script does (dtbo, vbmeta, ...). The script
-            # runs first; the recovery writes the images itself only when it failed.
-            native = room is not None and native_possible(fd, sizes)
+            # runs first. 2026-11-14 review: the recovery writes the images itself only when the
+            # script stopped without changing anything; over a layout the script had changed, its
+            # mappings (made before) pointed elsewhere, and what it had written was left unsaid.
+            native = (room is not None or context.mode == 'fixture') and native_possible(fd, sizes)
+            installer_code, native_error, native_ran = None, None, False
             try:
                 pid = os.fork()
                 if pid == 0:
@@ -950,10 +1026,10 @@ def run(context, args, progress):
                         os.dup2(null, 0)
                         os.dup2(2, 1)  # what the installer prints goes to the helper's log, never into its JSON
                         if room:
-                            room_child(room, fd, write_fd, about['installer'])
+                            room_child(room, fd, write_fd, about['installer'], about['installer_sha256'])
                         else:
                             os.setsid()
-                            fixture_child(context, found, fd, write_fd, about['installer'])
+                            fixture_child(context, found, fd, write_fd, about['installer'], about['installer_sha256'])
                     finally:
                         os._exit(127)
                 os.close(write_fd)
@@ -962,9 +1038,20 @@ def run(context, args, progress):
                                          time.monotonic() + RUN_SECONDS)
                 finally:
                     os.close(read_fd)
+                installer_code = code
                 if code != 0 and native:
-                    written_natively, code = native_install(context, room, fd, sizes, found, progress)
-                    shown = list(shown)[-8:] + [NATIVE_STOPPED] + written_natively
+                    if untouched(context, found, room, before, layout_run, counters):
+                        native_ran = True
+                        try:
+                            written_natively, code = native_install(context, room, fd, sizes, found, progress)
+                            # The last lines are what the result page shows: the recovery's own last.
+                            shown = list(shown)[-8:] + written_natively + [NATIVE_STOPPED]
+                        except Exception as error:  # noqa: BLE001 - reported below with the run's account
+                            # Accounted for below like any other end of the run (2026-11-14 review:
+                            # this skipped what changed, the mark on BOOT and the protected check).
+                            native_error = error
+                    else:
+                        shown = list(shown) + [NATIVE_REFUSED]
             finally:
                 os.sync()
                 written, left = unmap_after(room.mapped_before) if room else ([], [])
@@ -987,6 +1074,7 @@ def run(context, args, progress):
                 with contextlib.suppress(Exception):
                     install.record_flash(context, label, marked['sha256'] if label == 'boot' and marked else after[label])
         result = {'zip': about['name'], 'sha256': about['sha256'], 'title': about['title'], 'what': about['what'], 'exit': code,
+                  'installer_exit': installer_code, 'written_by_recovery': native_ran and native_error is None,
                   'changed': changed, 'log': shown[-40:], 'kept_boot': kept.get('kept') if kept else None,
                   'keeps_recovery': bool(marked), 'mappings_left': left,
                   # 2026-11-13, the owner, on stock and custom builds alike: Android starts with a
@@ -997,6 +1085,9 @@ def run(context, args, progress):
         touched = sorted(label for label, digest in guarded.items() if now.get(label) != digest)
         require(not touched, 'PROTECTED_PARTITION_CHANGED',
                 'The installer of this ZIP changed a partition it may not write: ' + ', '.join(touched), touched=touched, **result)
+        if native_error is not None:
+            fail(getattr(native_error, 'code', None) or 'IO_ERROR', str(native_error),
+                 **{**(getattr(native_error, 'details', None) or {}), **result})
         require(code == 0, 'ZIP_INSTALLER_FAILED' if code > 0 else 'ZIP_INSTALLER_STOPPED',
                 'The installer of this ZIP ended with an error' if code > 0 else 'The installer of this ZIP did not end in time and was stopped',
                 **result)
@@ -1025,12 +1116,15 @@ def inspect(context, args, progress):
         finally:
             os.close(sfd)
         about['super_fit'] = {name: {'from': now, 'to': then} for name, (now, then) in plan.items()}
-        with flash.source_file(context, args.volume, args.volume_token, args.path) as fd:
-            if native_possible(fd, sizes):
-                about['warnings'] = [w for w in about['warnings'] if not w.startswith('This installer is a program')] + [NATIVE_NOTE]
         if plan:
             about['warnings'].append('super is laid out for this ROM first: ' + ', '.join(
                 '%s %d -> %d MiB' % (name, now >> 20, then >> 20) for name, (now, then) in sorted(plan.items())))
+    if sizes:
+        with flash.source_file(context, args.volume, args.volume_token, args.path) as fd:
+            if native_possible(fd, sizes):
+                # The installer runs first, with its warning (2026-11-14 review: the review said the
+                # images had been written, in the past, before anything ran).
+                about['warnings'].append(NATIVE_NOTE)
     return about
 
 

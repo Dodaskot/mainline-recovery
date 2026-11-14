@@ -210,10 +210,14 @@ def sink(fd, password):
     thread.start()
     try:
         yield writer
-    except BaseException:
+    except BaseException as error:
         os.close(writer)
         thread.join()
         encryptor.key.close()
+        # What failed first is said: the writer's broken pipe only follows from it (2026-11-14 review:
+        # a full card or FAT32's 4 GiB came out as a write error without a cause).
+        if failure:
+            raise failure[0] from error
         raise
     os.close(writer)
     thread.join()

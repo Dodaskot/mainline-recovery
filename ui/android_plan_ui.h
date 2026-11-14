@@ -16,15 +16,13 @@ static int aplan_index(const char*const*list,unsigned int count,const char*id){
 }
 static bool start_aplan_job(App*a,int kind){
     if(a->job.pid||a->preview||!a->distro_helper[0]||!aplan_job(kind))return false;
-    /* install_plan.py sits beside the other helpers in /opt/a22x-recovery. */
-    copy(a->aplan_helper,sizeof(a->aplan_helper),a->distro_helper);char*slash=strrchr(a->aplan_helper,'/');
-    if(slash&&(size_t)(slash-a->aplan_helper)+20<sizeof(a->aplan_helper))strcpy(slash+1,"install_plan.py");else return false;
+    if(!sibling_helper(a,"install_plan.py",a->aplan_helper,sizeof(a->aplan_helper)))return false;
     char*args[10];int n=0;args[n++]=a->python;args[n++]=a->aplan_helper;
     if(a->device)args[n++]="--device";else{args[n++]="--fixture";args[n++]=a->fixture;}
     if(kind==J_APLAN_SHOW)args[n++]="show";
     else if(kind==J_APLAN_PREPARE)args[n++]="prepare";
     else{if(strlen(a->aplan_sha)!=64)return false;args[n++]="forget";args[n++]="--expected-sha256";args[n++]=a->aplan_sha;}
-    args[n]=NULL;enum Screen back=a->result_return;bool ok=launch_job(a,kind,args);a->result_return=back;return ok;
+    args[n]=NULL;return launch_job(a,kind,args);   /* quiet: launch_job keeps result_return (2026-11-14 review) */
 }
 /* Once after startup, behind whatever is on screen; never while locked or during the splash. */
 static void android_plan_tick(App*a){

@@ -584,7 +584,14 @@ def install_platform(root, args):
         # Optional files come from the installed system, else from the copy kept in recovery.
         fallback = getattr(args, 'platform_fallback', None)
         for relative in getattr(args, 'platform_optional', ()):
-            for base in (platform, Path(fallback) if fallback else None):
+            bases = [platform, Path(fallback) if fallback else None]
+            # 2026-11-14 review: a system installed before the sound profile's conf.d entry became a
+            # link again carries it as a plain file, which alsa-lib cannot follow to its folder; where
+            # the recovery's copy is a link and the installed one is not, the link is taken.
+            if (fallback and os.path.islink(Path(fallback) / relative) and os.path.lexists(platform / relative)
+                    and not os.path.islink(platform / relative)):
+                bases.reverse()
+            for base in bases:
                 if base is not None and os.path.lexists(base / relative):
                     copy_entry(base / relative, entry(root, relative))
                     break

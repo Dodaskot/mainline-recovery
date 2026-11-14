@@ -129,15 +129,31 @@ def check_password(password):
         fail('WIFI_PASSWORD_INVALID', 'A Wi-Fi password uses printable ASCII characters.')
 
 
+def _atomic(path, value):
+    """VALUE as PATH, whole or not at all: filesystem.atomic_state (a unique temporary name, fsync of
+    the file and its folder). 2026-11-14 review: a fixed name.new, no fsync of the folder."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import filesystem as fs
+    fs.atomic_state(path, value)
+
+
+def _networks(value):
+    """The remembered networks of a wifi.json, the ones that are whole; a damaged file holds none
+    (2026-11-14 review: a list or a non-dict entry raised AttributeError past every handler)."""
+    found = value.get('networks') if isinstance(value, dict) else None
+    if not isinstance(found, list):
+        return []
+    whole = []
+    for network in found:
+        if (isinstance(network, dict) and isinstance(network.get('ssid_hex'), str)
+                and re.fullmatch(r'(?:[0-9a-f]{2}){1,32}', network['ssid_hex'])
+                and isinstance(network.get('psk', ''), str)):
+            whole.append(network)
+    return whole
+
+
 def _ram_saved(networks):
-    SAVED_RAM.parent.mkdir(parents=True, exist_ok=True)
-    temporary = SAVED_RAM.with_suffix('.new')
-    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-    try:
-        os.write(fd, json.dumps({'networks': networks}).encode())
-    finally:
-        os.close(fd)
-    temporary.replace(SAVED_RAM)
+    _atomic(SAVED_RAM, {'networks': networks})
 
 
 def _settings_volumes(mode, action):
@@ -165,21 +181,32 @@ def _settings_volumes(mode, action):
             time.sleep(0.1)
 
 
-def saved_read():
-    """The remembered networks: [{'ssid_hex', 'psk', 'added'}], newest first."""
+def saved_known():
+    """The remembered networks: [{'ssid_hex', 'psk', 'added'}], newest first; None when they cannot
+    be read now (the settings volume is busy or will not open), which is not the same as none."""
     if SAVED_RAM.is_file():
         try:
-            return json.loads(SAVED_RAM.read_text()).get('networks', [])
+            return _networks(json.loads(SAVED_RAM.read_text()))
         except ValueError:
             pass
     def read(root):
         path = root / SAVED_RELATIVE
-        return json.loads(path.read_text()).get('networks', []) if path.is_file() else []
+        if not path.is_file():
+            return []
+        try:
+            return _networks(json.loads(path.read_text()))
+        except ValueError:
+            return []
     networks = _settings_volumes('ro', read)
     if networks is None:
-        return []
+        return None
     _ram_saved(networks)
     return networks
+
+
+def saved_read():
+    """The remembered networks, or none when they cannot be read now."""
+    return saved_known() or []
 
 
 def saved_write(networks):
@@ -187,22 +214,20 @@ def saved_write(networks):
     def write(root):
         path = root / SAVED_RELATIVE
         path.parent.mkdir(mode=0o700, exist_ok=True)
-        temporary = path.with_suffix('.new')
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-        try:
-            os.write(fd, json.dumps({'schema': 'a22x.wifi.saved.v1', 'networks': networks}).encode())
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        temporary.replace(path)
+        _atomic(path, {'schema': 'a22x.wifi.saved.v1', 'networks': networks})
         return True
     return _settings_volumes('rw', write) is True
 
 
 def remember(ssid, key):
-    networks = [n for n in saved_read() if n.get('ssid_hex') != ssid.hex()]
+    """2026-11-14 review: with the settings volume busy, the list read as empty, and the new network
+    alone replaced every other one. When they cannot be read, nothing is changed."""
+    known = saved_known()
+    if known is None:
+        return False
+    networks = [n for n in known if n.get('ssid_hex') != ssid.hex()]
     networks.insert(0, {'ssid_hex': ssid.hex(), 'psk': key, 'added': int(time.time())})
-    saved_write(networks[:SAVED_MAX])
+    return saved_write(networks[:SAVED_MAX])
 
 
 def saved_key(ssid):
@@ -213,7 +238,9 @@ def saved_key(ssid):
 
 
 def forget(ssid):
-    networks = saved_read()
+    networks = saved_known()
+    if networks is None:
+        fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     kept = [n for n in networks if n.get('ssid_hex') != ssid.hex()]
     if len(kept) != len(networks):
         saved_write(kept)
@@ -395,16 +422,26 @@ def scan():
     driver_up()
     start_supplicant()
     with Control() as ctl, Control(attach=True) as monitor:
+        started = False
         for _ in range(6):
             reply = ctl.request('SCAN')
             if reply == 'OK':
+                started = True
                 break
             if reply != 'FAIL-BUSY':
                 fail('WIFI_SCAN_FAILED', 'Wi-Fi could not search for networks.')
             time.sleep(1)
+        fresh = False
         for event in monitor.events(SCAN_SECONDS):
-            if event.startswith(('CTRL-EVENT-SCAN-RESULTS', 'CTRL-EVENT-SCAN-FAILED')):
+            if event.startswith('CTRL-EVENT-SCAN-RESULTS'):
+                fresh = True
                 break
+            if event.startswith('CTRL-EVENT-SCAN-FAILED'):
+                break
+        # 2026-11-14 review: a driver that stayed busy, with no search of its own finishing, gave the
+        # last results as new ones.
+        if not started and not fresh:
+            fail('WIFI_SCAN_FAILED', 'Wi-Fi could not search for networks.')
         reply = ctl.request('SCAN_RESULTS', timeout=10)
     joined = current()
     known = {n.get('ssid_hex') for n in saved_read()}
@@ -470,11 +507,18 @@ def connect(ssid, password, hidden, use_saved=False, keep=True):
 
 
 def auto():
-    """At the start of recovery: join the strongest remembered network in range."""
+    """At the start of recovery: join the strongest remembered network in range. A network joined
+    already stays (2026-11-14 review: a later try of the start went on to another saved network
+    and so undid the owner's own choice made meanwhile)."""
     networks = saved_read()
     if not networks:
         return {**state(b''), 'saved_count': 0}
+    now = state()
+    if now['connected']:
+        return {**now, 'saved_count': len(networks), 'tried': 0}
     found = scan()
+    if found['connected']:
+        return {**state(), 'saved_count': len(networks), 'tried': 0}
     tried = []
     for network in found['networks']:
         if network.get('saved') and network['supported'] and not network['connected']:
@@ -586,6 +630,7 @@ def read_password(path):
 
 def main(argv=None):
     operation = 'unknown'
+    backend = None
     try:
         parser = Parser(description=__doc__)
         parser.add_argument('--fixture')
@@ -638,6 +683,15 @@ def main(argv=None):
         reply = {'ok': False, 'operation': operation, 'error': {'code': error.code, 'message': str(error)}}
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         reply = {'ok': False, 'operation': operation, 'error': {'code': 'WIFI_FAILED', 'message': str(error)}}
+    if not reply['ok'] and backend is None and operation in ('connect', 'auto', 'disconnect', 'scan'):
+        # 2026-11-14 review: a failed join had already let the old network go, and the interface and
+        # SSH went on following a connection that was gone. What is joined now is written down.
+        try:
+            now = state()
+            reply.update(now)
+            write_state({**now, 'ok': False})
+        except (OSError, WifiError, subprocess.SubprocessError, ValueError):
+            pass
     print(json.dumps(reply, separators=(',', ':'), ensure_ascii=True), flush=True)
     return 0 if reply['ok'] else 2
 

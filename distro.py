@@ -70,9 +70,9 @@ ALLOWED_BOOTS = frozenset((BOOT_SHA256, BOOT_K108_SHA256, BOOT_CHARGER_OFF_SHA25
 BOOT_BYTES = 33554432
 # userdata: stock, or grown to the end of the eMMC by an image's first start (Manjaro ARM's sfdisk,
 # 2026-11-08); on every SM-A226B, 64 GB or 128 GB (install.userdata_sizes).
-def userdata_sizes():
+def userdata_fits(size):
     import install
-    return install.userdata_sizes(int(Path('/sys/block/mmcblk0/size').read_text()))
+    return install.userdata_fits(size, int(Path('/sys/block/mmcblk0/size').read_text()))
 
 
 PROFILE_ID = 'a22x-ext4-v2'
@@ -378,7 +378,7 @@ def require_userdata(pin):
     require(v['id'] == 'userdata' and v['fs_type'] == 'ext4' and not v.get('fscrypt_feature'),
             'LINUX_USERDATA_REQUIRED', 'Systems requires mounted, unencrypted ext4 userdata')
     if pin.context.mode == 'device':
-        require(v.get('size_bytes') in userdata_sizes() and v.get('path') == '/dev/mmcblk0p54',
+        require(userdata_fits(v.get('size_bytes') or 0) and v.get('path') == '/dev/mmcblk0p54',
                 'WRONG_USERDATA', 'The mounted filesystem is not the admitted userdata partition')
         foreign = [m for m in fs.all_namespace_mounts()
                    if m['devno'] == v['device'] and

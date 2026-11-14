@@ -16,22 +16,32 @@ class UserdataSizes(unittest.TestCase):
     def test_the_rule_matches_the_64_gb_phone(self):
         self.assertEqual(storage.userdata_sizes(GB64), (53393489920, (GB64 - 33 - 17850368) * 512))
 
-    def test_on_a_computer_any_admitted_emmc_is_accepted(self):
+    def test_on_a_computer_only_sizes_seen_on_a_phone(self):
+        # 2026-11-14 review: off the phone any multiple of 512 in a 70 GB range was admitted.
         with mock.patch.object(qualification, 'PHONE', Path('/nonexistent/device.json')):
-            for disk in (GB64, GB128):
-                for size in storage.userdata_sizes(disk):
-                    self.assertTrue(qualification.size_admitted('userdata', size), (disk, size))
-            self.assertFalse(qualification.size_admitted('userdata', 4096 * 1000))
-            self.assertFalse(qualification.size_admitted('userdata', storage.userdata_sizes(GB64)[0] + 1))
+            for size in storage.userdata_sizes(GB64):
+                self.assertTrue(qualification.size_admitted('userdata', size))
+            self.assertFalse(qualification.size_admitted('userdata', storage.userdata_sizes(GB64)[0] + 512))
+            self.assertFalse(qualification.size_admitted('userdata', storage.userdata_sizes(GB128)[0]))
             self.assertFalse(qualification.size_admitted('boot', 4096))
             self.assertTrue(qualification.size_admitted('boot', qualification.GEOMETRY['boot'][1]))
 
     def test_on_the_phone_its_own_emmc_decides(self):
-        with mock.patch.object(qualification, 'PHONE', Path(__file__)), \
-                mock.patch.object(qualification, 'DISK', mock.Mock(is_file=lambda: True, read_text=lambda: str(GB128))):
+        disk = mock.Mock(is_file=lambda: True, read_text=lambda: str(GB128))
+        with mock.patch.object(qualification, 'PHONE', Path(__file__)), mock.patch.object(qualification, 'DISK', disk):
             self.assertTrue(qualification.size_admitted('userdata', storage.userdata_sizes(GB128)[1]))
-            self.assertFalse(qualification.size_admitted('userdata', storage.userdata_sizes(GB64)[1]))
+            self.assertTrue(qualification.size_admitted('userdata', storage.userdata_sizes(GB128)[0]))
+            # The 64 GB phone's stock size is no userdata of a 128 GB eMMC.
+            self.assertFalse(qualification.size_admitted('userdata', storage.userdata_sizes(GB64)[0]))
 
+    def test_the_end_of_userdata_may_differ_a_little_on_another_emmc(self):
+        # 2026-11-14 review: only exactly 8192 sectors short of the end was admitted.
+        self.assertTrue(storage.userdata_fits((GB128 - 4096 - storage.USERDATA_START) * 512, GB128))
+        self.assertTrue(storage.userdata_fits((GB128 - 33 - storage.USERDATA_START) * 512, GB128))
+        self.assertFalse(storage.userdata_fits((GB128 - 32 - storage.USERDATA_START) * 512, GB128))
+        self.assertFalse(storage.userdata_fits((GB128 - 20000 - storage.USERDATA_START) * 512, GB128))
+        self.assertFalse(storage.userdata_fits((GB128 - 4096 - storage.USERDATA_START) * 512 + 1, GB128))
+        self.assertFalse(storage.userdata_fits(10 << 30, 60_000_000))
 
 if __name__ == '__main__':
     unittest.main()

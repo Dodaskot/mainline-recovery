@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import handoff  # noqa: E402
@@ -56,6 +57,19 @@ class TestHandoff(unittest.TestCase):
         self.assertEqual(applied['wifi'], ['Home', 'Open net'])
         self.assertEqual((applied['language'], applied['timezone'], applied['source']), ('uk', 'Europe/Kyiv', 'android-app'))
         self.assertNotIn('secret-pass', json.dumps(applied))
+
+    def test_a_busy_saved_list_is_waited_for_and_what_was_not_saved_is_named(self):
+        # 2026-11-14: remember() changes nothing while the list cannot be read; the hand-off is taken
+        # already, so it tries again, and names a network it still could not save.
+        record = {'schema': 'a22x.handoff.v1', 'wifi': [{'ssid': 'Home', 'password': 'secret-pass'}]}
+        answers = [False, False, True]
+        with mock.patch.object(handoff.time, 'sleep'):
+            applied = handoff.apply_record(record, remember=lambda ssid, key: answers.pop(0),
+                                           load=dict, store=lambda current: None)
+        self.assertNotIn('wifi_not_saved', applied)
+        with mock.patch.object(handoff.time, 'sleep'):
+            applied = handoff.apply_record(record, remember=lambda ssid, key: False, load=dict, store=lambda current: None)
+        self.assertEqual(applied['wifi_not_saved'], ['Home'])
 
     def test_strange_language_and_zone_change_nothing(self):
         stored = []

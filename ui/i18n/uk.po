@@ -105,6 +105,9 @@ msgstr "5 хв"
 msgid "8 to 63 characters without spaces, with a letter and a digit. It is kept nowhere: remember it."
 msgstr "Від 8 до 63 символів без пробілів, з літерою та цифрою. Він ніде не зберігається: запам’ятайте його."
 
+msgid "; %u device files left out"
+msgstr "; пропущено файлів пристроїв: %u"
+
 msgid "A backup can still be restored once one is installed"
 msgstr "Копію можна відновити, щойно систему буде встановлено"
 
@@ -866,6 +869,9 @@ msgstr "Boot + зайняті блоки ext4\nЗберегти ядро Linux �
 
 msgid "BOOT and allocated ext4 blocks are read and compressed. Existing files on the destination are retained."
 msgstr "BOOT і зайняті блоки ext4 читаються та стискаються. Наявні файли в місці призначення лишаються."
+
+msgid "BOOT could not be read, so nothing is offered for it."
+msgstr "BOOT не вдалося прочитати, тож для нього нічого не пропонується."
 
 msgid "BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache."
 msgstr "BOOT отримає ядро Linux, коли система буде на місці; теперішній BOOT зберігається в cache."
@@ -2217,6 +2223,9 @@ msgstr "Ідентичність відновлено й перевірено"
 msgid "If the backup also has a BOOT image, restore it the same way before starting Linux."
 msgstr "Якщо в копії є і образ BOOT, відновіть його так само, перш ніж запускати Linux."
 
+msgid "If the installer of this ZIP stops without changing anything, the recovery writes the images of this ROM itself"
+msgstr "Якщо інсталятор цього ZIP зупиниться, нічого не змінивши, recovery запише образи цього ROM сам"
+
 msgid "IMAGE"
 msgstr "ОБРАЗ"
 
@@ -2991,6 +3000,9 @@ msgstr "без root"
 msgid "No saved system slots yet. Import a prepared bundle to keep the current Linux alongside another system."
 msgstr "Збережених слотів систем ще немає. Імпортуйте систему, щоб лишити поточний Linux поруч з іншою."
 
+msgid "No screenshot while a password is on the screen"
+msgstr "Знімок екрана не робиться, поки на екрані пароль"
+
 msgid "No SD card is needed; the image stays saved after the installation."
 msgstr "SD-картка не потрібна; після встановлення образ лишається збереженим."
 
@@ -3633,6 +3645,9 @@ msgstr "Готово із застосунку Android: %s"
 msgid "Ready: %s"
 msgstr "Готово: %s"
 
+msgid "Reason: %s"
+msgstr "Причина: %s"
+
 msgid "Reboot recovery"
 msgstr "Перезапустити recovery"
 
@@ -4160,6 +4175,9 @@ msgstr "Знімок екрана збережено на %s, у A22xScreenshots
 
 msgid "Screenshot saved to A22xScreenshots"
 msgstr "Знімок екрана збережено в A22xScreenshots"
+
+msgid "Screenshot taken (preview: not saved)"
+msgstr "Знімок екрана зроблено (попередній перегляд: не збережено)"
 
 msgid "Screenshot: press Volume down and Power together. It is saved to A22xScreenshots on an SD card or a USB drive, else on cache."
 msgstr "Знімок екрана: натисніть разом «Гучність вниз» і «Живлення». Він зберігається в A22xScreenshots на SD-картці чи USB-накопичувачі, а без них — у cache."
@@ -5130,14 +5148,17 @@ msgstr "Інсталятор у цьому ZIP не є ні скриптом, н
 msgid "The installer of this ZIP changed a partition it may not write: "
 msgstr "Інсталятор цього ZIP змінив розділ, який йому не можна писати: "
 
+msgid "The installer of this ZIP changed partitions before it stopped, so the recovery did not write the images itself"
+msgstr "Інсталятор цього ZIP змінив розділи, перш ніж зупинився, тож recovery не записував образи сам"
+
 msgid "The installer of this ZIP did not end in time and was stopped"
 msgstr "Інсталятор цього ZIP не завершився вчасно, і його зупинено"
 
 msgid "The installer of this ZIP ended with an error"
 msgstr "Інсталятор цього ZIP завершився з помилкою"
 
-msgid "The installer of this ZIP stopped; the recovery writes the images of this ROM itself"
-msgstr "Інсталятор цього ZIP зупинився; recovery записує образи цього ROM сам"
+msgid "The installer of this ZIP stopped without changing anything; the recovery wrote the images of this ROM itself and read them back"
+msgstr "Інсталятор цього ZIP зупинився, нічого не змінивши; recovery сам записав образи цього ROM і перечитав їх"
 
 msgid "The installer result did not match the requested environment or operation."
 msgstr "Результат інсталятора не збігся із запитаним середовищем або операцією."
@@ -5252,6 +5273,9 @@ msgstr "Мережа поза зоною досяжності."
 
 msgid "The new image is downloaded and checked first. Then Flash a partition shows it: the old content is saved, and a hold writes it."
 msgstr "Новий образ спершу завантажується й перевіряється. Потім його показує «Прошити розділ»: старий вміст зберігається, а утримання записує новий."
+
+msgid "The new layout of super would not fit in its metadata"
+msgstr "Нова розмітка super не вміститься в її метадані"
 
 msgid "The new recovery starts at the next restart into recovery. If it does not start, flash a working one from a computer in Download Mode."
 msgstr "Новий recovery запуститься після наступного перезапуску в recovery. Якщо він не запуститься, прошийте робочий з комп’ютера в режимі Download."
@@ -5478,14 +5502,14 @@ msgstr "Налаштування recovery пошкоджені. Пароль н�
 msgid "The recovery settings could not be read. The password cannot be checked, so the recovery stays locked."
 msgstr "Не вдалося прочитати налаштування recovery. Пароль не можна перевірити, тому recovery лишається заблокованим."
 
-msgid "The recovery wrote the images of this ROM itself and read them back"
-msgstr "Recovery сам записав образи цього ROM і перечитав їх"
-
 msgid "The recovery's own folder stays"
 msgstr "Власна тека Recovery лишається"
 
 msgid "The regional file is of another version than the AP"
 msgstr "Регіональний файл іншої версії, ніж AP"
+
+msgid "The releases could not be read (%s). Check again later."
+msgstr "Випуски не вдалося прочитати (%s). Перевірте пізніше."
 
 msgid "The releases could not be read. Join Wi-Fi, then check again."
 msgstr "Не вдалося прочитати випуски. Під’єднайтеся до Wi-Fi і перевірте ще раз."
@@ -5612,6 +5636,9 @@ msgstr "Менеджер систем не повернув дійсного р�
 
 msgid "The system manager helper is not configured."
 msgstr "Помічник менеджера систем не налаштовано."
+
+msgid "The system on userdata could not be read"
+msgstr "Систему на userdata не вдалося прочитати"
 
 msgid "The system transaction completed. Read the refreshed active system before restarting Linux."
 msgstr "Транзакцію системи завершено. Перегляньте оновлену активну систему перед перезапуском Linux."
@@ -5904,9 +5931,6 @@ msgstr "Система в цьому образі лежить на btrfs, а ц
 msgid "This image keeps its system on xfs, which this recovery cannot read"
 msgstr "Система в цьому образі лежить на xfs, а цей рекавері не читає xfs"
 
-msgid "This installer is a program"
-msgstr "Цей встановлювач — програма"
-
 msgid "This installer is a program: it can map and rewrite the logical partitions of super by itself"
 msgstr "Цей інсталятор — програма: вона може сама відображати й перезаписувати логічні розділи super"
 
@@ -6039,6 +6063,9 @@ msgstr "Використовується звичайне розмонтуван
 msgid "This volume cannot be written"
 msgstr "На цей том не можна писати"
 
+msgid "This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4"
+msgstr "Цей том не вміщує такого великого файла: FAT32 обмежена 4 ГіБ. Використовуйте exFAT або ext4"
+
 msgid "This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4, or leave super out"
 msgstr "Цей том не вміщує такого великого файла: межа FAT32 — 4 ГіБ. Візьміть exFAT чи ext4 або пропустіть super"
 
@@ -6086,6 +6113,9 @@ msgstr "Забагато спроб. Спробуйте за %u с"
 
 msgid "Too many files are selected at once"
 msgstr "Вибрано забагато файлів одразу"
+
+msgid "too many files to count"
+msgstr "забагато файлів, щоб полічити"
 
 msgid "Touch panel"
 msgstr "Сенсорна панель"

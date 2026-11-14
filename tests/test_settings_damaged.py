@@ -16,6 +16,9 @@ import settings
 GOOD = {'theme': 'aurora', 'hash': 'ab' * 32, 'salt': '0f' * 16}
 
 
+REAL_COPY_THEMES = settings.copy_themes
+
+
 class FakeContext:
     lock_path, mode = '/nonexistent', 'fixture'
 
@@ -98,6 +101,34 @@ class Damaged(unittest.TestCase):
         self.readable = {'cache': False, 'userdata': False}
         with self.assertRaises(OSError):
             settings.read_disk()
+
+    def test_settings_and_themes_go_where_the_next_start_reads_them(self):
+        # 2026-11-14 review: a write that failed on cache went to userdata, unread while cache holds settings.
+        context = FakeContext(self.root, self.calls)
+        self.assertEqual(settings.settings_volume(context), 'cache')  # none yet: the first that opens
+        self.write('userdata', json.dumps(GOOD))
+        self.assertEqual(settings.settings_volume(context), 'userdata')
+        self.write('cache', json.dumps(GOOD))
+        self.assertEqual(settings.settings_volume(context), 'cache')
+        self.readable = {'cache': False, 'userdata': True}
+        with self.assertRaises(settings.Unreadable):
+            settings.settings_volume(context)
+        self.readable = {'cache': True, 'userdata': False}
+        self.calls.clear()
+        self.assertTrue(settings.write_disk({'theme': 'y'}))
+        self.assertIn(('open', 'cache', 'rw'), self.calls)
+        self.assertNotIn(('open', 'userdata', 'rw'), self.calls)
+
+    def test_a_theme_that_cannot_be_copied_does_not_lock_the_phone(self):
+        # 2026-11-14 review: an EIO on one theme made read_disk say the settings could not be read.
+        self.write('cache', json.dumps(GOOD))
+        (self.root / 'cache' / settings.THEMES).mkdir(parents=True)
+        (self.root / 'cache' / settings.THEMES / 'mine.theme').write_text('x')
+        def broken(*args, **kwargs):
+            raise OSError(5, 'Input/output error')
+        with mock.patch.object(settings, 'copy_themes', REAL_COPY_THEMES), \
+                mock.patch.object(settings, 'RAM_THEMES', self.root / 'ram-themes'), mock.patch.object(settings.shutil, 'copyfile', broken):
+            self.assertEqual(settings.read_disk(), GOOD)
 
     def test_a_cache_that_fails_to_mount_is_not_taken_for_one_without_settings(self):
         # 2026-11-13 review: cache with the password failed to mount, userdata had no settings, and

@@ -32,6 +32,7 @@
 30 s
 5 min
 8 to 63 characters without spaces, with a letter and a digit. It is kept nowhere: remember it.
+; %u device files left out
 A backup can still be restored once one is installed
 A backup with this name already exists
 A block node does not match the kernel
@@ -286,6 +287,7 @@ Board revision
 BOOT
 Boot + used ext4 blocks\nSave the Linux kernel and root filesystem offline.
 BOOT and allocated ext4 blocks are read and compressed. Existing files on the destination are retained.
+BOOT could not be read, so nothing is offered for it.
 BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache.
 BOOT holds a Linux kernel of another build. Update only if you want the release.
 BOOT holds an older Linux kernel than the one this recovery was made for. A new system gets the current one; the BOOT there is kept on cache.
@@ -736,6 +738,7 @@ Identity already matches this copy
 Identity partitions
 Identity restored and checked
 If the backup also has a BOOT image, restore it the same way before starting Linux.
+If the installer of this ZIP stops without changing anything, the recovery writes the images of this ROM itself
 IMAGE
 Image source
 Images in the phone's memory, no SD card needed
@@ -994,6 +997,7 @@ No retry is started automatically. Inspect the backend result before another ope
 No room in RAM for the patch
 no root
 No saved system slots yet. Import a prepared bundle to keep the current Linux alongside another system.
+No screenshot while a password is on the screen
 No SD card is needed; the image stays saved after the installation.
 No SD card or USB drive
 No valid export reported
@@ -1208,6 +1212,7 @@ Reading Wi-Fi...
 Reading...
 Ready from the Android app: %s
 Ready: %s
+Reason: %s
 Reboot recovery
 Reboot system
 Reboot to recovery?
@@ -1384,6 +1389,7 @@ Screenshot saved in RAM: no writable SD or USB
 Screenshot saved on cache, in a22x-recovery/screenshots
 Screenshot saved to %s, in A22xScreenshots
 Screenshot saved to A22xScreenshots
+Screenshot taken (preview: not saved)
 Screenshot: press Volume down and Power together. It is saved to A22xScreenshots on an SD card or a USB drive, else on cache.
 Scroll to the end before confirming.
 Scrollback
@@ -1707,9 +1713,10 @@ The installer in this ZIP has an unusable size
 The installer in this ZIP is a program for another processor
 The installer in this ZIP is neither a script nor a program
 The installer of this ZIP changed a partition it may not write: 
+The installer of this ZIP changed partitions before it stopped, so the recovery did not write the images itself
 The installer of this ZIP did not end in time and was stopped
 The installer of this ZIP ended with an error
-The installer of this ZIP stopped; the recovery writes the images of this ROM itself
+The installer of this ZIP stopped without changing anything; the recovery wrote the images of this ROM itself and read them back
 The installer result did not match the requested environment or operation.
 The installers finished
 The interrupted transaction changed. Review the refreshed Systems screen.
@@ -1748,6 +1755,7 @@ The name uses lowercase letters, digits, - and _. The password signs in and conf
 The network did not answer in time.
 The network is not in range.
 The new image is downloaded and checked first. Then Flash a partition shows it: the old content is saved, and a hold writes it.
+The new layout of super would not fit in its metadata
 The new recovery starts at the next restart into recovery. If it does not start, flash a working one from a computer in Download Mode.
 The new system becomes the only one on userdata.
 The new system is active.
@@ -1823,9 +1831,9 @@ The ramdisk does not unpack to its end: the image is damaged or incomplete
 The ramdisk does not unpack: the image is damaged or incomplete
 The recovery settings are damaged. The password cannot be checked, so the recovery stays locked.
 The recovery settings could not be read. The password cannot be checked, so the recovery stays locked.
-The recovery wrote the images of this ROM itself and read them back
 The recovery's own folder stays
 The regional file is of another version than the AP
+The releases could not be read (%s). Check again later.
 The releases could not be read. Join Wi-Fi, then check again.
 The removal was not confirmed. Refresh Systems.
 The request could not be cleared
@@ -1868,6 +1876,7 @@ The SuperKey needs 8 to 63 characters without spaces, with a letter and a digit
 The switch is journaled, not fully atomic. If interrupted, return to Systems and choose Resume or Rollback. Linux boot remains blocked until the journal completes.
 The system manager did not return a valid result.
 The system manager helper is not configured.
+The system on userdata could not be read
 The system transaction completed. Read the refreshed active system before restarting Linux.
 The system was removed. /home and the active system stay.
 The terminal helper did not return a valid response.
@@ -1965,7 +1974,6 @@ This image has no Wi-Fi program, so the desktop and apps cannot be downloaded at
 This image is already on the partition. There is nothing to flash.
 This image keeps its system on btrfs, which this recovery cannot read
 This image keeps its system on xfs, which this recovery cannot read
-This installer is a program
 This installer is a program: it can map and rewrite the logical partitions of super by itself
 This is a recovery image, not a boot image
 This is an update for phones with two system slots (payload.bin). This phone has one: choose a ROM made for it, or a system image.
@@ -2010,6 +2018,7 @@ This system was set up for another kernel and firmware. Install it again, or rem
 This system's package manager is not known here: the packages were not installed.
 This uses a normal unmount. Busy filesystems are refused. The backup destination stays mounted and userdata remains offline until you choose to mount it again in Files.
 This volume cannot be written
+This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4
 This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4, or leave super out
 This volume is available for reading only.
 This volume is in use read-only
@@ -2026,6 +2035,7 @@ To: %.100s  /  %s free
 To: %.170s
 Too many attempts. Try again in %u s
 Too many files are selected at once
+too many files to count
 Touch panel
 TRANSACTION
 Treble GSI: made to start on older vendors too

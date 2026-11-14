@@ -128,11 +128,19 @@ def volume_root(context, label, mode):
 
 
 def copy_themes(root):
-    """Themes wait in RAM, so choosing one needs no mount."""
+    """Themes wait in RAM, so choosing one needs no mount. A theme that cannot be copied (EIO, a full
+    /run) is left out: it says nothing about the settings, and read_disk must not take it for
+    settings that cannot be read (2026-11-14 review: the phone stayed locked at every start)."""
     folder = root / THEMES
-    if folder.is_dir():
+    try:
+        if not folder.is_dir():
+            return
         RAM_THEMES.mkdir(parents=True, exist_ok=True)
-        for theme in (*folder.glob('*.theme'), *folder.glob('*.hidden')):
+        themes = (*folder.glob('*.theme'), *folder.glob('*.hidden'))
+    except OSError:
+        return
+    for theme in themes:
+        with contextlib.suppress(OSError):
             if theme.is_file() and not theme.is_symlink():
                 shutil.copyfile(theme, RAM_THEMES / theme.name)
 
@@ -186,26 +194,50 @@ def read_disk():
     return {}
 
 
+def settings_volume(context):
+    """The volume the settings are read from at the next start, as read_disk chooses it: the first
+    of VOLUMES that holds a settings file, else the first that can be opened. Writes of settings and
+    themes go there and nowhere else (2026-11-14 review: a write that failed on cache went to
+    userdata, which is not read while cache holds settings). Called under the operation lock."""
+    first = None
+    for label in VOLUMES:
+        try:
+            volume = context.volume(label)
+        except fs.FilesystemError:
+            continue
+        if not volume.get('mountable') and not volume.get('mounted'):
+            continue
+        try:
+            with volume_root(context, label, 'ro') as root:
+                if (root / RELATIVE).is_file():
+                    return label
+        except (OSError, ValueError, fs.FilesystemError) as error:
+            raise Unreadable('The settings volume %s cannot be read now' % label) from error
+        first = first or label
+    if first is None:
+        raise OSError('No settings volume could be read')
+    return first
+
+
 def write_disk(record):
     context = fs.DeviceContext()
     with operation_lock(context.lock_path, context.mode):
-        for label in VOLUMES:
-            try:
-                with volume_root(context, label, 'rw') as root:
-                    path = root / RELATIVE
-                    path.parent.mkdir(mode=0o700, exist_ok=True)
-                    temporary = path.with_suffix('.new')
-                    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-                    try:
-                        os.write(fd, json.dumps(record).encode())
-                        os.fsync(fd)
-                    finally:
-                        os.close(fd)
-                    temporary.replace(path)
-                    return True
-            except (OSError, ValueError, fs.FilesystemError):
-                continue
-    return False
+        try:
+            label = settings_volume(context)
+            with volume_root(context, label, 'rw') as root:
+                path = root / RELATIVE
+                path.parent.mkdir(mode=0o700, exist_ok=True)
+                temporary = path.with_suffix('.new')
+                fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+                try:
+                    os.write(fd, json.dumps(record).encode())
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                temporary.replace(path)
+                return True
+        except (OSError, ValueError, fs.FilesystemError):
+            return False
 
 
 def remember(record):

@@ -86,6 +86,8 @@ fi
 # An image for any phone (PUBLIC=1, 2026-11-11): no SSH key is built in, so a computer is let in only
 # by the request on the phone's screen; PRIVATE then names platform files whose Bluetooth address is
 # zeros (platform/conn-start.sh makes one from the phone's own storage chip).
+# What a former public build left is never taken for this build's (2026-11-14 review).
+rm -f build-public-forbidden.txt
 if [ "${PUBLIC:-}" = 1 ]; then
     : > build-no-keys
     ADD+=(--replace "etc/a22x-recovery/authorized_keys=build-no-keys")
@@ -117,7 +119,11 @@ Path('build-public-forbidden.txt').write_text(''.join(c + '\n' for c in sorted(c
 Q
     ADD+=(--replace "etc/a22x-recovery/install-stock-profile.json=build-public-stock-profile.json")
     # The build records name this computer's folders; a public image says only /build.
-    ADD+=(--scrub "$(dirname "$WORK")=/build" --scrub "$HOME=/build")
+    # Only folders of two levels or more: "/" or "/src" would replace far more than a folder name
+    # (2026-11-14 review); build_v06_image.py refuses such a scrub itself too.
+    for folder in "$(dirname "$WORK")" "$HOME"; do
+        case "$folder" in /*/*) ADD+=(--scrub "$folder=/build") ;; esac
+    done
 fi
 # The base image of 0.5 carries the qualification capsule of the phone it was made on, with a hash of
 # that phone's eMMC identity. Linux snapshots no longer need it (backend/qualification.py
@@ -161,18 +167,21 @@ python3 -B "$S/tools/build_v06_image.py" --base "$BASE" --output "build-v06-$NN"
     "${ADD[@]}" | tail -1 | cut -c1-90
 
 python3 - "$NN" "$S" <<'P'
-import gzip, importlib.util, struct, sys
+import gzip, importlib.util, os, struct, sys
 from pathlib import Path
 nn, src = sys.argv[1], Path(sys.argv[2])
 spec = importlib.util.spec_from_file_location('b', src / 'tools/build_v06_image.py')
 b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)
 root = Path('build-v06-' + nn); img = root / 'recovery-a22x-mainline-k108-v0.6.img'
-d = img.read_bytes()[:2048]; k, _, r = struct.unpack_from('<III', d, 8); page = struct.unpack_from('<I', d, 36)[0]
+with img.open('rb') as f:
+    d = f.read(2048)  # the header only (2026-11-14 review: the whole 40 MiB were read)
+k, _, r = struct.unpack_from('<III', d, 8); page = struct.unpack_from('<I', d, 36)[0]
 second = struct.unpack_from('<I', d, 24)[0]; dtbo = struct.unpack_from('<I', d, 1632)[0]; dtb = struct.unpack_from('<I', d, 1648)[0]
 pad = lambda n: (n + page - 1) // page * page
 print('free in partition', 41873408 - (page + pad(k) + pad(r) + pad(second) + pad(dtbo) + pad(dtb)), '(avb maximum 41873408)')
 bad = []
-for fields, n, *rest in b.read_cpio(gzip.decompress((root / 'ramdisk.cpio.gz').read_bytes())):
+blob = gzip.decompress((root / 'ramdisk.cpio.gz').read_bytes())  # once, for both checks below
+for fields, n, *rest in b.read_cpio(blob):
     if n.startswith('opt/a22x-recovery/') and n.endswith('.py'):
         f = src / n[len('opt/a22x-recovery/'):]
         if f.exists() and f.read_bytes() != bytes(rest[-1]):
@@ -180,10 +189,12 @@ for fields, n, *rest in b.read_cpio(gzip.decompress((root / 'ramdisk.cpio.gz').r
     if n == 'bin/recovery-ui' and bytes(rest[-1]) != (src / 'ui/a22x-recovery-ui-aarch64').read_bytes():
         bad.append(n)
 print('image differs from source in:', bad)
-# A public image must not carry the developer phone's eMMC identity anywhere (2026-11-13).
+# A public image must not carry the developer phone's eMMC identity anywhere (2026-11-13). Checked
+# for every PUBLIC=1 build, whatever its name (2026-11-14 review), from this build's own list.
 forbidden = Path('build-public-forbidden.txt')
-if nn.endswith('-public') and forbidden.exists():
-    blob = gzip.decompress((root / 'ramdisk.cpio.gz').read_bytes())
+if os.environ.get('PUBLIC') == '1':
+    if not forbidden.exists():
+        print('the list of the base phone identities was not made'); sys.exit(1)
     found = [c[:12] for c in forbidden.read_text().split() if c.encode() in blob]
     print('phone identities in the public image:', found)
     bad += found

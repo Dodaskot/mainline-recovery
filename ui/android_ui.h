@@ -303,7 +303,13 @@ static void complete_root_job(App*a,const Json*j,int kind,bool ok){
         append(a->message,sizeof(a->message),"\n");append(a->message,sizeof(a->message),kept);}
     a->android_installed=true;a->root_known=false;a->result_return=ANDROID_MENU;screen(a,RESULT);
 }
-static void open_root(App*a){a->root_known=false;a->root_selected=-1;a->root_key_tool=-1;memset(a->root_superkey,0,sizeof(a->root_superkey));a->page_scroll=0;screen(a,ROOT_PAGE);start_root_job(a,J_ROOT_LIST);}
+/* The list is read again; a read that cannot start (another job runs) ends as a failed one, with no
+   tools shown, and not as a page that reads for ever with the old tools enabled (2026-11-14 review). */
+static void root_read(App*a){
+    a->root_known=false;a->root_count=0;
+    if(!start_root_job(a,J_ROOT_LIST)&&!a->preview){a->root_known=true;copy(a->root_boot_kind,sizeof(a->root_boot_kind),"unknown");a->dirty=true;}
+}
+static void open_root(App*a){a->root_selected=-1;a->root_key_tool=-1;memset(a->root_superkey,0,sizeof(a->root_superkey));a->page_scroll=0;screen(a,ROOT_PAGE);root_read(a);}
 static void render_superkey_prompt(App*a){
     heading(a,"SuperKey","APatch asks for it in its app in Android.",true);
     account_field(a,236,"SUPERKEY",a->fs_prompt,!a->secret_show,true,A_ROOT_KEY_FIELD);
@@ -418,7 +424,7 @@ static bool root_action(App*a,int id){
         /* The stock BOOT on cache goes through Flash a partition, as "Flash it to BOOT". */
         a->flash_restore=a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;
         copy(a->flash_volume,sizeof(a->flash_volume),"cache");copy(a->flash_volume_token,sizeof(a->flash_volume_token),a->root_cache_token);
-        copy(a->flash_path,sizeof(a->flash_path),a->root_stock_path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;
+        copy(a->flash_path,sizeof(a->flash_path),a->root_stock_path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);/* 2026-11-14 review: a list that cannot start drops the pending flash */if(!start_flash_job(a,J_FLASH_TARGETS)&&!a->preview){a->flash_after_targets=false;a->flash_after_label[0]=0;}return true;
     }
     return false;
 }
@@ -777,7 +783,7 @@ static bool samsung_action(App*a,int id){
         /* The kept copy on cache goes through Flash a partition: checked, reviewed, held. */
         a->flash_restore=a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;
         copy(a->flash_volume,sizeof(a->flash_volume),"cache");copy(a->flash_volume_token,sizeof(a->flash_volume_token),a->stock_boot_token);
-        copy(a->flash_path,sizeof(a->flash_path),a->stock_boot_path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;
+        copy(a->flash_path,sizeof(a->flash_path),a->stock_boot_path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);/* 2026-11-14 review: a list that cannot start drops the pending flash */if(!start_flash_job(a,J_FLASH_TARGETS)&&!a->preview){a->flash_after_targets=false;a->flash_after_label[0]=0;}return true;
     }
     if(a->screen==ANDROID_IMAGE){
         const CatalogImage*c=a->android_selected>=0&&(unsigned int)a->android_selected<a->catalog_count?&a->catalog[a->android_selected]:NULL;

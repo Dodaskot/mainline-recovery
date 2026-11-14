@@ -18,6 +18,7 @@ partitions, extents, groups and block devices. Extents are in 512-byte sectors o
 # SPDX-License-Identifier: MIT
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -59,6 +60,19 @@ def name_bytes(name):
     data = name.encode('ascii')
     require(0 < len(data) < NAME, 'INVALID_NAME', 'A partition name has 1 to 35 ASCII characters')
     return data.ljust(NAME, b'\0')
+
+
+def drop_cached(fd):
+    """What was just written is read back from the storage, not from the page cache (2026-11-14
+    review, as android_rom.drop_cached): the block device's buffers dropped, a file's pages let go."""
+    try:
+        fcntl.ioctl(fd, 0x1261)  # BLKFLSBUF
+    except OSError:
+        pass
+    try:
+        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+    except (OSError, AttributeError):
+        pass
 
 
 def read_at(fd, offset, size):
@@ -207,6 +221,7 @@ class Super:
                 written = os.pwrite(self.fd, blob, offset)
                 require(written == len(blob), 'SHORT_WRITE', 'The metadata of super was not written')
         os.fsync(self.fd)
+        drop_cached(self.fd)
         for slot in range(self.geometry['metadata_slot_count']):
             for offset in metadata_offsets(self.geometry, slot):
                 require(read_at(self.fd, offset, len(blob)) == blob, 'READBACK_MISMATCH', 'The metadata of super did not read back')

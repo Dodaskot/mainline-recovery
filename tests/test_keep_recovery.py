@@ -6,6 +6,7 @@ import contextlib
 import hashlib
 import io
 import json
+import types
 import os
 from pathlib import Path
 import shutil
@@ -109,6 +110,34 @@ class KeepRecovery(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in folder.iterdir()),
                          ['linux-k122.img', 'linux-k122.img.json', 'linux-k122.img.sha256', 'stock-A226BXXSBDZC3-x.img',
                           'stock-A226BXXSBDZC3-x.img.json', 'stock-A226BXXSBDZC3-x.img.sha256'])
+
+    def test_a_description_alone_does_not_remove_the_one_whole_copy(self):
+        # 2026-11-14 review: a damaged stock- copy kept its old description (content key); tidying
+        # took it for the same BOOT and removed the other, the one whole copy.
+        folder = self.root / 'cache' / saved_boot.SAVED_BOOT
+        folder.mkdir(parents=True)
+        key = saved_boot.content_key(self.stock)
+        damaged = bytearray(self.stock)
+        damaged[100] ^= 0xff
+        for name, data in (('stock-A226BXXSBDZC3-x.img', bytes(damaged)), ('android-y.img', self.stock)):
+            (folder / name).write_bytes(data)
+            (folder / (name + '.json')).write_text(json.dumps({'saved': 1, 'bytes': len(data), 'content': key}))
+        fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            kept = saved_boot.tidy_folder(fd)
+        finally:
+            os.close(fd)
+        self.assertTrue((folder / 'android-y.img').exists())
+        self.assertIn('android-y.img', kept)
+
+    def test_a_cut_download_leaves_nothing_behind(self):
+        # 2026-11-14 review: .part- files were removed in saved-boot only.
+        for name in (saved_boot.UPDATES, saved_boot.VBMETA_FOLDER):
+            (self.root / 'cache' / name).mkdir(parents=True, exist_ok=True)
+            (self.root / 'cache' / name / '.part-recovery-1.0.1.img').write_bytes(bytes(4096))
+        saved_boot.tidy_cache(types.SimpleNamespace(fs=saved_boot.fs.FixtureContext(self.root)))
+        for name in (saved_boot.UPDATES, saved_boot.VBMETA_FOLDER):
+            self.assertEqual(list((self.root / 'cache' / name).iterdir()), [])
 
     def test_cache_keeps_only_the_newest_copy_of_each_partition(self):
         """2026-11-11, on the phone: two flashes of the recovery left 80 MiB of old recoveries on the

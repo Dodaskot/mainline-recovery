@@ -12,6 +12,37 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   interface (`ui/tools/generate_boot_splash.py`) and the kernel rebuilt with it alone changed
   (source: linux-a22x, branch `a22x-recovery`, `cf097a32`). Checked on the phone: no change of
   lettering at the handover; Wi-Fi and modules as before.
+- **Fixes from five code reviews** (the changes since 0.6.235, `zip_install.py` and the interface
+  whole, the build tools, themes and the terminal: 116 findings, all checked; 2 rejected with
+  evidence, the rest fixed; tested on the computer, the main paths again on the phone):
+  - **ZIP ROMs**: the recovery writes a block ROM's images itself only when the ROM's own installer
+    stopped without changing anything; otherwise the failure is reported with what it changed, and
+    the keep-recovery mark and the checks of protected partitions always run. The installer run is
+    the one reviewed (its SHA-256 is checked again); super's new layout is tried with its metadata
+    serialized; what was written is read back from the eMMC, not the page cache.
+  - **Archives and Linux data**: a link named home can no longer move where homes go; a link
+    beside an existing one is judged where it is made; device nodes are left out (counted), not a
+    reason to stop; a card that is only inserted restores too; restore.sh upgrades Arch once
+    (`pacman -Syu`), then installs with `-S --needed`; the real cause of a failed encrypted write
+    (a full card, FAT32's 4 GiB) is reported; caches are skipped while a home is walked, and a home
+    too large to count still shows its system.
+  - **128 GB phones**: one rule for userdata, in backend/storage.py, with room for another eMMC's
+    stock end; a whole userdata of a 128 GB phone can be flashed; the eMMC register and the block
+    device must give the same size.
+  - **Settings and themes** go where the next start reads them; a theme that cannot be copied no
+    longer locks the phone; saved BOOT copies are removed as duplicates only after the one that
+    stays is checked; cut downloads leave nothing on cache.
+  - **Wi-Fi**: a failed join says the old network is gone; auto never switches away from a joined
+    network; a busy or damaged saved list is never replaced; a driver that stays busy is a failed
+    search. **Updates**: a failed check is never "up to date"; versions compare as numbers in any
+    form; an unreadable BOOT is shown as such. **USB files**: a signal during start-up cleans up;
+    stopping and status answer while it stops.
+  - **Interface**: no screenshot while a password is on screen; a typed secret is cleared when
+    leaving; time zone, settings, Power and the Updates and Linux data pages fixed; the terminal
+    keeps scroll margins and ends a broken OSC as xterm does.
+  - **Build**: a public build is checked for the phone's identity by PUBLIC=1; build records are
+    scrubbed only for real folders and never in sealed ones; no duplicate entries in the ramdisk.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

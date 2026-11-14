@@ -309,11 +309,14 @@ def collect(pin, parts, accounts):
 def collect_into(pin, parts, accounts, entries):
     sizes = {}
     device = pin.stat.st_dev
+    # What can be fetched again is left out: every account's cache, passed over while walking
+    # (2026-11-14 review: a big ~/.cache made a home too large to copy before it was left out).
+    caches = tuple(a['home'].strip('/') + '/.cache/' for a in accounts) + ('root-home/.cache/',)
 
     def add(parent_fd, name, arcname):
         before = len(entries)
         try:
-            fa.walk(parent_fd, name, device, arcname, entries)
+            fa.walk(parent_fd, name, device, arcname, entries, skip=caches)
         except FileNotFoundError:
             return 0
         return sum(e[2].st_size for e in entries[before:] if e[1] is not None and stat.S_ISREG(e[2].st_mode))
@@ -337,8 +340,6 @@ def collect_into(pin, parts, accounts, entries):
                 if name.startswith('ssh_host_') and 'key' in name:
                     total += add(ssh, name, 'settings/' + SSH_KEYS + '/' + name)
         sizes['settings'] = total
-    # What can be fetched again is left out: every account's cache.
-    caches = tuple(a['home'].strip('/') + '/.cache/' for a in accounts) + ('root-home/.cache/',)
     files = [e for e in entries if e[1] is not None and not (e[3] + '/').startswith(caches)]
     return files, [e[0] for e in entries if e[1] is None], sizes
 
@@ -438,11 +439,18 @@ def inspect(context):
     try:
         with linux_root(context) as (pin, _, release):
             accounts = accounts_of(pin.fd)
-            files, opened, sizes = collect(pin, ('home', 'settings'), accounts)
-            for fd in opened:
-                os.close(fd)
             family = family_of(release)
             names = packages_of(pin.fd, family)
+            # 2026-11-14 review: a home with more entries than one archive takes made the whole page
+            # say there was no Linux system. The system is shown; its sizes are unknown and REASON
+            # says why the homes cannot be copied in one archive.
+            try:
+                files, opened, sizes = collect(pin, ('home', 'settings'), accounts)
+                for fd in opened:
+                    os.close(fd)
+            except fs.FilesystemError as error:
+                sizes = {'home': -1, 'settings': -1}
+                result['reason'] = error.code
             result.update(linux=True, os={'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', ''),
                                           'family': family},
                           accounts=[a['name'] for a in accounts],
@@ -517,11 +525,11 @@ def backup(context, parts, dest_volume, dest_token, confirmed, progress):
                         os.fsync(out)
                         size = os.fstat(out).st_size
                     except BaseException as error:
-                        with contextlib.suppress(BaseException):
-                            crypt.__exit__(type(error), error, None)
+                        late = fa.close_sink(crypt, error)
                         os.close(out)
                         with contextlib.suppress(OSError):
                             os.unlink(part, dir_fd=folder)
+                        fa.raise_cause(late, error)
                         raise
                     os.close(out)
                     os.rename(part, name, src_dir_fd=folder, dst_dir_fd=folder)
@@ -566,21 +574,24 @@ def unpack_staged(archive_fd, root, parts, progress):
     plain = crypt.enter_context(ac.source(archive_fd, pa.PASSWORD))
     proc = subprocess.Popen([pa.zstd_path(), '-q', '-d', '-c'], stdin=plain, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     finished, count = False, 0
+    # Each where it belongs and nowhere else (2026-11-13 review: 'home/../etc/x' or a hard link to a
+    # file of the system would have reached outside /home). The three places are fixed before the
+    # first entry (2026-11-14 review: made for every entry, a link 'home' -> '.' moved them).
+    homes, root_home, staged = (fa.safe_filter(Path(root) / 'home'), fa.safe_filter(Path(root) / 'root'),
+                                fa.safe_filter(staging))
     try:
         with tarfile.open(fileobj=proc.stdout, mode='r|', bufsize=fa.CHUNK) as tar:
             for member in tar:
                 name = member.name
-                # Each where it belongs and nowhere else (2026-11-13 review: 'home/../etc/x' or a hard
-                # link to a file of the system would have reached outside /home).
                 if name == 'home' or name.startswith('home/'):
                     if 'home' in parts:
-                        tar.extract(member, root, numeric_owner=True, filter=fa.safe_filter(Path(root) / 'home'))
+                        tar.extract(member, root, numeric_owner=True, filter=homes)
                 elif name == 'root-home' or name.startswith('root-home/'):
                     if 'home' in parts:
                         tar.extract(member.replace(name='root' + name[9:], linkname=root_link(member), deep=False), root,
-                                    numeric_owner=True, filter=fa.safe_filter(Path(root) / 'root'))
+                                    numeric_owner=True, filter=root_home)
                 else:
-                    tar.extract(member, staging, numeric_owner=True, filter=fa.safe_filter(staging))
+                    tar.extract(member, staging, numeric_owner=True, filter=staged)
                 count += 1
                 if count % 64 == 0:
                     progress('Unpacking', os.lseek(archive_fd, 0, os.SEEK_CUR), total, name)
@@ -607,6 +618,22 @@ def restore(context, volume, token, path, parts, confirmed, progress):
     context.confirm(confirmed)
     parts = [p for p in PARTS if p in parts]
     require(parts, 'NOTHING_SELECTED', 'Nothing is selected')
+    # A card that is only inserted, as the page found it, is opened read-only for the restore and let
+    # go again (2026-11-14 review: its backups were listed and could not be restored).
+    found = context.volume(volume, token)
+    opened = not found['mounted']
+    if opened:
+        context.mount(volume, 'ro', False, found['volume_token'])
+        token = context.volume(volume)['volume_token']
+    try:
+        return restore_from(context, volume, token, path, parts, progress)
+    finally:
+        if opened:
+            with contextlib.suppress(fs.FilesystemError, OSError):
+                context.unmount(volume, context.volume(volume)['volume_token'])
+
+
+def restore_from(context, volume, token, path, parts, progress):
     clean = fs.clean_path(path)
     folder, _, name = clean.rpartition('/')
     with fs.PinnedVolume(context, volume, token) as source, source.directory(folder) as directory:
@@ -629,17 +656,21 @@ def restore(context, volume, token, path, parts, confirmed, progress):
                     key.close()
             with linux_root(context, write=True) as (pin, root, release):
                 staging = unpack_into(archive_fd, root, parts, progress)
-                # The recovery's own script does the work here; the archive's copy is for other devices.
-                script = staging / 'restore.sh'
-                script.unlink(missing_ok=True)
-                fd = os.open(script, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o700)
-                with os.fdopen(fd, 'wb') as out:
-                    out.write(SCRIPT.read_bytes())
-                # And its own table of names: it grows with what the phones have taught it.
-                if (staging / 'aliases.tsv').is_file() and not (staging / 'aliases.tsv').is_symlink():
-                    (staging / 'aliases.tsv').write_bytes(ALIASES.encode())
                 lines, status, note = [], None, ''
+                # From here on the staging folder (password hashes, keys) goes whatever happens
+                # (2026-11-14 review: a failure while the script was put in left it behind).
                 try:
+                    # The recovery's own script does the work here; the archive's copy is for other devices.
+                    script = staging / 'restore.sh'
+                    if script.is_dir() and not script.is_symlink():
+                        shutil.rmtree(script)
+                    script.unlink(missing_ok=True)
+                    fd = os.open(script, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o700)
+                    with os.fdopen(fd, 'wb') as out:
+                        out.write(SCRIPT.read_bytes())
+                    # And its own table of names: it grows with what the phones have taught it.
+                    if (staging / 'aliases.tsv').is_file() and not (staging / 'aliases.tsv').is_symlink():
+                        (staging / 'aliases.tsv').write_bytes(ALIASES.encode())
                     run_parts = list(parts)
                     if 'packages' in run_parts and context.mode == 'device':
                         import distro

@@ -72,16 +72,21 @@ class Dir:
     folders under it, with the identity the last one had when it was walked. 2026-11-13 review: every
     folder walked was kept open until the archive was written, and a home with more than about a
     thousand folders ran out of descriptors; now one chain of folders is open at a time."""
-    __slots__ = ('base', 'parts', 'ident')
+    __slots__ = ('base', 'parts', 'ident', 'arcname')
 
-    def __init__(self, base, parts=(), ident=None):
-        self.base, self.parts, self.ident = base, parts, ident
+    def __init__(self, base, parts=(), ident=None, arcname=''):
+        self.base, self.parts, self.ident, self.arcname = base, parts, ident, arcname
 
 
-def walk(directory, name, device, arcname, out, parent=None):
+def walk(directory, name, device, arcname, out, parent=None, skip=()):
     """(Dir, name, lstat, archive name) for NAME and, for a folder, everything under it on the same
-    filesystem. A folder is opened by descriptor while it is listed; a link inside it is never followed."""
+    filesystem. A folder is opened by descriptor while it is listed; a link inside it is never followed.
+    What lies under an archive name in SKIP (prefixes ending in '/') is passed over without being
+    walked (2026-11-14 review: every ~/.cache was walked whole, and a big one made a home too large
+    before it was left out)."""
     parent = parent or Dir(directory)
+    if skip and (arcname + '/').startswith(skip):
+        return
     info = os.stat(name, dir_fd=directory, follow_symlinks=False)
     if stat.S_ISSOCK(info.st_mode):
         return
@@ -93,9 +98,9 @@ def walk(directory, name, device, arcname, out, parent=None):
             now = os.fstat(inner)
             require((now.st_dev, now.st_ino) == (info.st_dev, info.st_ino), 'FILE_CHANGED',
                     'A folder changed while it was read', file=arcname)
-            here = Dir(parent.base, parent.parts + (name,), (info.st_dev, info.st_ino))
+            here = Dir(parent.base, parent.parts + (name,), (info.st_dev, info.st_ino), arcname)
             for child in sorted(os.listdir(inner)):
-                walk(inner, child, device, arcname + '/' + child, out, here)
+                walk(inner, child, device, arcname + '/' + child, out, here, skip)
         finally:
             os.close(inner)
 
@@ -126,9 +131,13 @@ class Opener:
             self.parts += (part,)
         if not self.fds:
             return where.base
+        # The folder is the one walked: on its filesystem, and by its inode where inodes stay. FAT and
+        # exFAT give a folder a new inode number when it comes back into the cache, so there only the
+        # filesystem is compared (2026-11-14 review: a folder that had not changed was refused).
+        # The name in the message is the one in the archive.
         now = os.fstat(self.fds[-1])
-        require((now.st_dev, now.st_ino) == where.ident, 'FILE_CHANGED', 'A folder changed while it was archived',
-                file='/'.join(where.parts))
+        same = now.st_dev == where.ident[0] and (now.st_ino == where.ident[1] or not stable_inodes(now.st_dev))
+        require(same, 'FILE_CHANGED', 'A folder changed while it was archived', file=where.arcname)
         return self.fds[-1]
 
     def close(self):
@@ -138,29 +147,84 @@ class Opener:
         self.base, self.parts, self.fds = None, (), []
 
 
+UNSTABLE_INODES = ('vfat', 'msdos', 'exfat', 'fat')
+
+
+def stable_inodes(device, mountinfo='/proc/self/mountinfo'):
+    """Whether the filesystem on DEVICE keeps a file's inode number while the file is not open."""
+    wanted = '%d:%d' % (os.major(device), os.minor(device))
+    with contextlib.suppress(OSError):
+        with open(mountinfo, encoding='utf-8', errors='replace') as lines:
+            for line in lines:
+                fields = line.split()
+                if len(fields) > 2 and fields[2] == wanted and ' - ' in line:
+                    return line.split(' - ', 1)[1].split()[0] not in UNSTABLE_INODES
+    return True
+
+
+def close_sink(crypt, error):
+    """The encryption of a failed archive ended; what it raised (the first failure of its output, see
+    archive_crypt.sink), or None."""
+    try:
+        crypt.__exit__(type(error), error, None)
+    except BaseException as late:  # noqa: BLE001 - handed back to be said
+        return late
+    return None
+
+
+def raise_cause(late, error):
+    """A full volume or a file too large for it, found by the encryption, said as such (2026-11-14
+    review: both came out as a plain write error)."""
+    if isinstance(late, OSError) and late.errno in (errno.ENOSPC, errno.EDQUOT):
+        raise fs.FilesystemError('INSUFFICIENT_SPACE', 'There is not enough space for the archive') from error
+    if isinstance(late, OSError) and late.errno == errno.EFBIG:
+        raise fs.FilesystemError('FILE_TOO_LARGE', 'This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4') from error
+
+
 def within(path, folder):
     return path == folder or path.startswith(folder.rstrip('/') + '/')
 
 
-def safe_filter(inside):
-    """A tarfile filter: 'tar' (no absolute name, nothing outside the folder, no set-user-id bits) and
-    more (2026-11-13 review): no device node, nothing that lands outside INSIDE (a folder within the
-    destination), and no hard link to a file outside it, which a later entry of the same name would
-    have written through."""
+def safe_filter(inside, skipped=None):
+    """A tarfile filter, made once for one extraction (2026-11-14 review: made again for every entry,
+    a link named like INSIDE moved INSIDE itself). Like tarfile's 'tar' filter: no absolute name, no
+    set-user-id, set-group-id or sticky bit, no group or other write bit. And more:
+
+    - nothing lands outside INSIDE, a folder within the destination; a link is judged where it is
+      made (tarfile replaces whatever has its name), anything else where its path leads now, since a
+      file is written through a link that is there;
+    - INSIDE itself is not replaced by a link or by anything but a folder (2026-11-14 review: a link
+      'home' -> '.' made the system's root the place of every later 'home/...');
+    - a hard link only to a file within INSIDE, which a later entry of its name would write through;
+    - a device node is not made: it is passed over and counted in SKIPPED (2026-11-14 review: a home
+      with container whiteouts could be archived but not unpacked)."""
     inside = os.path.realpath(inside)
 
     def check(member, path):
-        member = tarfile.tar_filter(member, path)
         if member.ischr() or member.isblk():
-            raise tarfile.SpecialFileError(member)
-        target = os.path.realpath(os.path.join(path, member.name))
-        if not within(target, inside):
-            raise tarfile.OutsideDestinationError(member, target)
+            if skipped is not None:
+                skipped.append(member.name)
+            return None
+        name = member.name.lstrip('/')
+        if not name or os.path.isabs(name):
+            raise tarfile.AbsolutePathError(member)
+        if member.issym() or member.islnk():
+            folder, _, last = name.rstrip('/').rpartition('/')
+            where = os.path.join(os.path.realpath(os.path.join(path, folder)), last)
+        else:
+            where = os.path.realpath(os.path.join(path, name))
+        if not within(where, inside):
+            raise tarfile.OutsideDestinationError(member, where)
+        if where == inside and not member.isdir():
+            raise tarfile.OutsideDestinationError(member, where)
         if member.islnk():
             linked = os.path.realpath(os.path.join(path, member.linkname))
-            if not within(linked, inside):
+            if not within(linked, inside) or linked == inside:
                 raise tarfile.LinkOutsideDestinationError(member, linked)
-        return member
+        mode = member.mode
+        if mode is not None:
+            mode &= ~(stat.S_ISUID | stat.S_ISGID | stat.S_ISVTX | stat.S_IWGRP | stat.S_IWOTH)
+        return member.replace(name=name, mode=mode, deep=False)
     return check
 
 
@@ -175,10 +239,8 @@ def tar_info(directory, name, info, arcname):
         item.type, item.linkname = tarfile.SYMTYPE, os.readlink(name, dir_fd=directory)
     elif stat.S_ISFIFO(info.st_mode):
         item.type = tarfile.FIFOTYPE
-    elif stat.S_ISCHR(info.st_mode) or stat.S_ISBLK(info.st_mode):
-        item.type = tarfile.CHRTYPE if stat.S_ISCHR(info.st_mode) else tarfile.BLKTYPE
-        item.devmajor, item.devminor = os.major(info.st_rdev), os.minor(info.st_rdev)
     else:
+        # Sockets and device nodes are not archived: no unpacking here makes them (2026-11-14 review).
         return None
     return item
 
@@ -241,11 +303,11 @@ def pack(context, volume, token, path, everything, names, dest_volume, dest_toke
                             os.fsync(out)
                             size = os.fstat(out).st_size
                         except BaseException as error:
-                            with contextlib.suppress(BaseException):
-                                crypt.__exit__(type(error), error, None)
+                            late = close_sink(crypt, error)
                             os.close(out)
                             with contextlib.suppress(OSError):
                                 os.unlink(part_name, dir_fd=parent)
+                            raise_cause(late, error)
                             raise
                         os.close(out)
                         os.rename(part_name, dest_name, src_dir_fd=parent, dst_dir_fd=parent)
@@ -382,7 +444,7 @@ def unpack(context, volume, token, path, confirmed, progress):
             target = os.open(stem, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
             try:
                 pin.check_fd(target)
-                count = extract(source, total, name, '/proc/self/fd/%d' % target, progress)
+                count, skipped = extract(source, total, name, '/proc/self/fd/%d' % target, progress)
             except BaseException:
                 # Nothing half-unpacked is left behind (2026-11-13: an archive whose password was
                 # not given left its empty folder, and the next try found it in the way).
@@ -393,7 +455,7 @@ def unpack(context, volume, token, path, confirmed, progress):
         finally:
             os.close(source)
         os.fsync(directory)
-    return {'folder': (folder.rstrip('/') + '/' + stem) if folder else '/' + stem, 'entries': count}
+    return {'folder': (folder.rstrip('/') + '/' + stem) if folder else '/' + stem, 'entries': count, 'skipped': skipped}
 
 
 def extract(source, total, name, destination, progress):
@@ -411,12 +473,13 @@ def extract(source, total, name, destination, progress):
         plain = crypt.enter_context(ac.source(source, pa.PASSWORD))
     proc = subprocess.Popen(command, stdin=plain, stdout=subprocess.PIPE, stderr=subprocess.PIPE) if command else None
     stream = proc.stdout if proc else os.fdopen(os.dup(source), 'rb')
-    count, finished = 0, False
+    count, finished, skipped = 0, False, []
+    check = safe_filter(destination, skipped)
     try:
         with tarfile.open(fileobj=stream, mode='r|', bufsize=CHUNK) as tar:
             for member in tar:
                 # Owners as numbers: the names of another system mean nothing in this recovery.
-                tar.extract(member, destination, numeric_owner=True, filter=safe_filter(destination))
+                tar.extract(member, destination, numeric_owner=True, filter=check)
                 count += 1
                 if count % 64 == 0:
                     progress(os.lseek(source, 0, os.SEEK_CUR), total, member.name)
@@ -444,7 +507,7 @@ def extract(source, total, name, destination, progress):
     if code != 0:
         fail('ARCHIVE_DAMAGED', 'The archive is damaged', said=said)
     progress(total, total, '')
-    return count
+    return count, len(skipped)
 
 
 def manifest_of(context, volume, token, path):

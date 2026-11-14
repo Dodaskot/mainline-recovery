@@ -37,8 +37,9 @@ MAX_JSON = 2 * CHUNK
 MAX_SOURCE = 8 * 1024 * 1024 * 1024
 # Samsung firmware packs its images as LZ4 frames; the recovery decodes them with lz4(1).
 LZ4 = os.environ.get('A22X_LZ4', '/bin/lz4')
-# A whole partition decoded from a file, userdata included; source files keep MAX_SOURCE.
-MAX_TARGET = 64 * 1024 * 1024 * 1024
+# A whole partition decoded from a file, userdata of a 128 GB phone included (about 116 GiB);
+# source files keep MAX_SOURCE.
+MAX_TARGET = 128 * 1024 * 1024 * 1024
 MAX_SPARSE_CHUNKS = 65536
 MAX_HEADER = 4096
 MAX_IMAGES = 8
@@ -63,22 +64,19 @@ LINUX_BOOT_K122 = '9701f48ddced60c648e79a502885778935d1cb5610a011d77fc1898eea01d
 # Kernel 138 (BOOT v147, 2026-11-12): the battery percent kept in the PMIC; same modules.
 LINUX_BOOT_K138 = '5faafaa0035bff7bd77251ab01e2b4c395798755ad24db7b3240cc3d6139ad0f'
 MMC_SECTORS = 122142720  # the 64 GB phone, for fixtures
-# 2026-11-13, for every SM-A226B: Samsung's PIT for this model (A22X_EUR_OPEN.pit) gives every
-# partition before userdata a fixed start and size, and userdata "the rest of the device" (count 0).
-# The 64 GB and 128 GB phones differ only there. Stock userdata ends 8192 sectors before the end of
-# the eMMC (observed on the 64 GB phone: 53 393 489 920 bytes); a Linux image's first start grows it
-# to the last usable sector (33 before the end).
-USERDATA_START = 17850368
+# Every SM-A226B, 64 GB or 128 GB: the eMMC and userdata are judged by backend/storage.py's rule.
 
 
 def disk_admitted(sectors):
-    """An eMMC of a 64 GB or 128 GB SM-A226B, in 512-byte sectors."""
-    return 120_000_000 <= sectors <= 252_000_000
+    return _backend_storage().disk_admitted(sectors)
+
+
+def userdata_fits(size, disk_sectors):
+    return _backend_storage().userdata_fits(size, disk_sectors)
 
 
 def userdata_sizes(disk_sectors):
-    """The sizes userdata may have on an eMMC of DISK_SECTORS: stock, and grown to the end."""
-    return ((disk_sectors - 8192 - USERDATA_START) * 512, (disk_sectors - 33 - USERDATA_START) * 512)
+    return _backend_storage().userdata_sizes(disk_sectors)
 MMC_BOOT_BYTES = 4 * CHUNK
 PLATFORM_BASELINE = {
     'dtbo': '97ed1a566cc30418477d790b3b2f4b21af4f0307bc466769c77d2b4edc21fa16',
@@ -643,8 +641,8 @@ class DeviceContext:
         require(fields.get('PARTNAME') == label and fields.get('PARTUUID')
                 and int((sysfs / 'partition').read_text()) == number
                 and int((sysfs / 'start').read_text()) == start
-                and int((sysfs / 'size').read_text()) * 512 in ((size,) if label != 'userdata'
-                                                                 else userdata_sizes(int((sysfs.parent / 'size').read_text()))),
+                and (int((sysfs / 'size').read_text()) * 512 == size if label != 'userdata'
+                     else userdata_fits(int((sysfs / 'size').read_text()) * 512, int((sysfs.parent / 'size').read_text()))),
                 'GPT_GEOMETRY_MISMATCH', 'Kernel GPT identity/geometry differs from the fixed A22x profile', label=label)
         size = int((sysfs / 'size').read_text()) * 512
         return {'label': label, 'path': str(expected), 'size_bytes': size,
@@ -930,6 +928,10 @@ def read_active_boot_selector(context):
                 and struct.unpack('Q', fcntl.ioctl(fd, 0x80081272, bytes(8)))[0] == int((node / 'size').read_text()) * 512,
                 'MMC_IDENTITY_CHANGED', 'Opened MMC descriptor differs from the pinned whole device')
         observed = read_ext_csd_fd(fd)
+        # 2026-11-14 review: both used to equal one fixed number; now each is only in a range, so the
+        # register and the block device must name the same eMMC size.
+        require(observed['user_sector_count'] == int((node / 'size').read_text()), 'MMC_IDENTITY_CHANGED',
+                'The eMMC register and the block device differ in size')
         require(same_object(path.lstat()) == same_object(opened)
                 and hashlib.sha256((card / 'cid').read_bytes().strip()).hexdigest() == cid
                 and Path('/proc/sys/kernel/random/boot_id').read_text().strip() == context.boot_id,
@@ -1265,6 +1267,15 @@ def target_bytes(context, target, limit=64 << 20):
         return bytes(data)
     finally:
         os.close(fd)
+
+
+def drop_cached(fd):
+    """What was just written is read back from the storage: the block device's buffers are dropped
+    (BLKFLSBUF), a regular file's pages let go (2026-11-14 review)."""
+    with contextlib.suppress(OSError):
+        fcntl.ioctl(fd, 0x1261)
+    with contextlib.suppress(OSError, AttributeError):
+        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
 
 
 def target_hash(context, target, progress=None):
@@ -1849,6 +1860,7 @@ def execute(context, plan, confirmation, progress=None, hook=None):
                                 and reader.input_hash.hexdigest() == entry['input_sha256'],
                                 'SOURCE_CHANGED', 'Complete stream differs from its preverified image')
                         os.fsync(writers[label])
+                        drop_cached(writers[label])  # read back from the eMMC, not the page cache (2026-11-14 review)
                         transaction = journal_update(store, plan['journal_path'], transaction, state='verifying')
                         require(hash_fd(writers[label], entry['target_bytes'], progress=progress, label=label, phase='readback') == entry['target_sha256'],
                                 'INSTALL_READBACK_MISMATCH', 'Complete target readback differs from the verified image', label=label)

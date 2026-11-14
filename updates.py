@@ -41,11 +41,36 @@ BUILD = Path('/etc/a22x-recovery/build.json')
 
 def version_key(text):
     """0.6.199, v0.6.199 and a build's 0.6.199-public alike, as numbers; a revision (-r2) counts
-    after them. () when it is no version."""
-    match = re.fullmatch(r'v?([0-9]+(?:\.[0-9]+){1,3})(?:-r([0-9]+)|-[a-z][a-z0-9]{0,15})?', str(text or '').strip())
+    after them. () when it is no version. 2026-11-14 review: the numbers are four, so 1.0 and 1.0.0
+    are one version and 1.0.0-r1 is not 1.0.0.1; any other suffix (-public, -g1a2b-dirty) is a
+    build of the same version, not no version at all."""
+    match = re.fullmatch(r'v?([0-9]+(?:\.[0-9]+){1,3})((?:-[A-Za-z0-9][A-Za-z0-9.+_]*)*)', str(text or '').strip())
     if not match:
         return ()
-    return tuple(int(part) for part in match.group(1).split('.')) + ((int(match.group(2)),) if match.group(2) else ())
+    numbers = [int(part) for part in match.group(1).split('.')]
+    revision = re.search(r'-r([0-9]+)(?:-|$)', match.group(2))
+    return tuple(numbers + [0] * (4 - len(numbers))) + (int(revision.group(1)) if revision else 0,)
+
+
+def version_name(text):
+    """The version for a file name, by version_key: 1.0.0, or 1.0.0.0.10 for 1.0.0-r10, so that the
+    revision is never read as part of the patch number (2026-11-14 review: 1.0.0-r10 was 1.0.010)."""
+    key = list(version_key(text))
+    require(key, 'UPDATE_UNUSABLE', 'The release does not name a version')
+    while len(key) > 3 and key[-1] == 0:
+        key.pop()
+    return '.'.join(str(part) for part in key)
+
+
+def error_code(error, default='UPDATE_UNAVAILABLE'):
+    """A code the interface reads: always text (2026-11-14 review: urllib's HTTPError has the HTTP
+    status as a number in .code, and the interface showed a failed check as up to date)."""
+    code = getattr(error, 'code', None)
+    if isinstance(code, str) and code:
+        return code
+    if isinstance(code, int):
+        return 'HTTP_%d' % code
+    return default
 
 
 def installed_version(context):
@@ -76,13 +101,26 @@ def boot_state(context):
             fs.fail('BOOT_PROFILE_MISMATCH', 'BOOT holds Android')
         there = distro.boot_identity(context)
         now = distro.boot_now(context, there)
-    except fs.FilesystemError:
-        return {'kind': 'android', 'latest': offer, 'newer': False}
+    except fs.FilesystemError as error:
+        # Only BOOT that holds no Linux kernel of this phone is Android's; one that cannot be read
+        # now is not known (2026-11-14 review: any error, an I/O error too, showed it as Android).
+        if error.code == 'BOOT_PROFILE_MISMATCH':
+            return {'kind': 'android', 'latest': offer, 'newer': False}
+        return {'kind': 'unknown', 'error': error_code(error, 'IO_ERROR'), 'latest': offer, 'newer': False}
     older = {item.get('sha256') for item in distro.catalog_builtin(context).get('linux_boot_older', []) if isinstance(item, dict)}
     if context.mode == 'fixture':
         older |= set(context.config().get('linux_boot_older_sha256', []))
     state = 'current' if offer and now == offer['sha256'] else ('older' if now in older else 'own')
     return {'kind': 'linux', 'sha256': now, 'state': state, 'latest': offer, 'newer': bool(offer) and state == 'older'}
+
+
+def boot_known(context):
+    """boot_state, or what kept it from being read: the recovery's half of the check is never lost
+    for it (2026-11-14 review: an I/O error on BOOT made the whole check fail)."""
+    try:
+        return boot_state(context)
+    except (OSError, ValueError, KeyError, TypeError, fs.FilesystemError) as error:
+        return {'kind': 'unknown', 'error': error_code(error, 'IO_ERROR'), 'latest': None, 'newer': False}
 
 
 def check(context):
@@ -92,7 +130,7 @@ def check(context):
     if not distro.network_joined(context):
         # 2026-11-12, on the phone: without Wi-Fi the check waited more than a minute for GitHub.
         recovery['error'] = 'NO_NETWORK'
-        return {'recovery': recovery, 'boot': boot_state(context)}
+        return {'recovery': recovery, 'boot': boot_known(context)}
     try:
         import clock
         clock.ensure(context.mode)  # certificates need the date
@@ -103,8 +141,8 @@ def check(context):
         recovery['latest'] = offer
         recovery['newer'] = version_key(offer.get('version')) > version_key(installed) > ()
     except (OSError, ValueError, fs.FilesystemError) as error:
-        recovery['error'] = getattr(error, 'code', None) or 'UPDATE_UNAVAILABLE'
-    return {'recovery': recovery, 'boot': boot_state(context)}
+        recovery['error'] = error_code(error)
+    return {'recovery': recovery, 'boot': boot_known(context)}
 
 
 def download(context, offer, limit):
@@ -143,7 +181,7 @@ def fetch(context, what, sha256):
         image = download(context, offer, RECOVERY_BYTES)
         info = bootimage.inspect('recovery', image)
         require(info['device']['this_phone'], 'BOOT_PHONE_UNKNOWN', 'Nothing in this boot image names the Galaxy A22 5G (SM-A226B)')
-        name = 'recovery-%s.img' % re.sub(r'[^0-9.]', '', str(offer.get('version', '')))[:24]
+        name = 'recovery-%s.img' % version_name(offer.get('version', ''))
         path = saved_boot.save_on_cache(holder, name, image, {'kind': 'recovery', 'version': offer.get('version', '')},
                                         lambda *unused: None, keep_mounted=True, folder_name=UPDATES)
         prune(context, name)
@@ -163,9 +201,11 @@ def fetch(context, what, sha256):
 
 
 def prune(context, keep):
-    """Only the newest downloaded recovery stays on cache. save_on_cache has just left cache
-    mounted read-only for Flash a partition: it is opened for writing here and left read-only
-    again (2026-11-12 review: the old copies were never removed)."""
+    """Only the newest downloaded recovery stays on cache, by the rule the start of the recovery
+    uses (saved_boot.prune_updates; 2026-11-14 review: two rules for one folder). save_on_cache
+    has just left cache mounted read-only for Flash a partition: it is opened for writing here
+    and left read-only again (2026-11-12 review: the old copies were never removed)."""
+    import saved_boot
     with contextlib.suppress(OSError, fs.FilesystemError):
         volume = context.volume('cache')
         if not volume['mounted']:
@@ -176,9 +216,14 @@ def prune(context, keep):
         try:
             with fs.PinnedVolume(context, 'cache', writing=True) as pin:
                 with pin.directory(UPDATES) as folder:
-                    for name in os.listdir(folder):
-                        if name.startswith('recovery-') and name not in (keep, keep + '.json', keep + '.sha256'):
-                            os.unlink(name, dir_fd=folder)
+                    # The image just downloaded is the one Flash a partition is about to write: the
+                    # rule runs only when it is the newest there, so it never removes that one.
+                    def number(name):
+                        found = re.fullmatch(r'recovery-([0-9.]+)\.img', name)
+                        return tuple(int(part) for part in found.group(1).split('.') if part) if found else None
+                    others = [number(name) for name in os.listdir(folder) if name != keep and number(name) is not None]
+                    if number(keep) is not None and all(other < number(keep) for other in others):
+                        saved_boot.prune_updates(folder)
                     os.fsync(folder)
         finally:
             if reopen:
@@ -208,7 +253,7 @@ def main(argv=None):
         return 0
     except (OSError, ValueError, KeyError, fs.FilesystemError) as error:  # bootimage.ImageError is a ValueError
         print(json.dumps({'ok': False, 'operation': args.command, 'error': {
-            'code': getattr(error, 'code', None) or 'IO_ERROR', 'message': str(error)[:300]}}, separators=(',', ':')), flush=True)
+            'code': error_code(error, 'IO_ERROR'), 'message': str(error)[:300]}}, separators=(',', ':')), flush=True)
         return 2
 
 

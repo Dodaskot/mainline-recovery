@@ -105,6 +105,9 @@ msgstr "5 min"
 msgid "8 to 63 characters without spaces, with a letter and a digit. It is kept nowhere: remember it."
 msgstr "De 8 à 63 caractères sans espaces, avec une lettre et un chiffre. Elle n’est conservée nulle part : retenez-la."
 
+msgid "; %u device files left out"
+msgstr "; %u fichiers de périphérique ignorés"
+
 msgid "A backup can still be restored once one is installed"
 msgstr "Une sauvegarde pourra être restaurée dès qu’un système sera installé"
 
@@ -866,6 +869,9 @@ msgstr "Boot + blocs ext4 utilisés\nSauvegarder hors ligne le noyau Linux et le
 
 msgid "BOOT and allocated ext4 blocks are read and compressed. Existing files on the destination are retained."
 msgstr "BOOT et les blocs ext4 alloués sont lus et compressés. Les fichiers existants à destination sont conservés."
+
+msgid "BOOT could not be read, so nothing is offered for it."
+msgstr "BOOT n'a pas pu être lu, donc rien n'est proposé pour lui."
 
 msgid "BOOT gets the Linux kernel when the system is in place; the BOOT there now is kept on cache."
 msgstr "BOOT reçoit le noyau Linux une fois le système en place ; le BOOT actuel est conservé sur cache."
@@ -2217,6 +2223,9 @@ msgstr "Identité restaurée et vérifiée"
 msgid "If the backup also has a BOOT image, restore it the same way before starting Linux."
 msgstr "Si la sauvegarde contient aussi une image BOOT, restaurez-la de la même façon avant de démarrer Linux."
 
+msgid "If the installer of this ZIP stops without changing anything, the recovery writes the images of this ROM itself"
+msgstr "Si l'installateur de ce ZIP s'arrête sans rien modifier, le recovery écrit lui-même les images de cette ROM"
+
 msgid "IMAGE"
 msgstr "IMAGE"
 
@@ -2991,6 +3000,9 @@ msgstr "sans root"
 msgid "No saved system slots yet. Import a prepared bundle to keep the current Linux alongside another system."
 msgstr "Aucun emplacement système enregistré pour l'instant. Importez un paquet préparé pour garder le Linux actuel à côté d'un autre système."
 
+msgid "No screenshot while a password is on the screen"
+msgstr "Pas de capture d'écran tant qu'un mot de passe est à l'écran"
+
 msgid "No SD card is needed; the image stays saved after the installation."
 msgstr "Aucune carte SD n'est nécessaire ; l'image reste enregistrée après l'installation."
 
@@ -3633,6 +3645,9 @@ msgstr "Prêt depuis l’app Android : %s"
 msgid "Ready: %s"
 msgstr "Prêt : %s"
 
+msgid "Reason: %s"
+msgstr "Raison : %s"
+
 msgid "Reboot recovery"
 msgstr "Redémarrer le recovery"
 
@@ -4160,6 +4175,9 @@ msgstr "Capture enregistrée sur %s, dans A22xScreenshots"
 
 msgid "Screenshot saved to A22xScreenshots"
 msgstr "Capture enregistrée dans A22xScreenshots"
+
+msgid "Screenshot taken (preview: not saved)"
+msgstr "Capture d'écran prise (aperçu : non enregistrée)"
 
 msgid "Screenshot: press Volume down and Power together. It is saved to A22xScreenshots on an SD card or a USB drive, else on cache."
 msgstr "Capture d’écran : appuyez en même temps sur Volume bas et Marche/Arrêt. Elle est enregistrée dans A22xScreenshots sur une carte SD ou une clé USB, sinon sur cache."
@@ -5130,14 +5148,17 @@ msgstr "L’installateur de ce ZIP n’est ni un script ni un programme"
 msgid "The installer of this ZIP changed a partition it may not write: "
 msgstr "L’installateur de ce ZIP a modifié une partition qu’il ne doit pas écrire : "
 
+msgid "The installer of this ZIP changed partitions before it stopped, so the recovery did not write the images itself"
+msgstr "L'installateur de ce ZIP a modifié des partitions avant de s'arrêter : le recovery n'a donc pas écrit les images lui-même"
+
 msgid "The installer of this ZIP did not end in time and was stopped"
 msgstr "L’installateur de ce ZIP ne s’est pas terminé à temps et a été arrêté"
 
 msgid "The installer of this ZIP ended with an error"
 msgstr "L’installateur de ce ZIP s’est terminé avec une erreur"
 
-msgid "The installer of this ZIP stopped; the recovery writes the images of this ROM itself"
-msgstr "L'installateur de ce ZIP s'est arrêté ; le recovery écrit lui-même les images de cette ROM"
+msgid "The installer of this ZIP stopped without changing anything; the recovery wrote the images of this ROM itself and read them back"
+msgstr "L'installateur de ce ZIP s'est arrêté sans rien modifier ; le recovery a écrit lui-même les images de cette ROM et les a relues"
 
 msgid "The installer result did not match the requested environment or operation."
 msgstr "Le résultat de l'installateur ne correspondait pas à l'environnement ou à l'opération demandés."
@@ -5252,6 +5273,9 @@ msgstr "Le réseau est hors de portée."
 
 msgid "The new image is downloaded and checked first. Then Flash a partition shows it: the old content is saved, and a hold writes it."
 msgstr "La nouvelle image est d’abord téléchargée et vérifiée. Puis Flasher une partition la montre : l’ancien contenu est sauvegardé, et un appui long l’écrit."
+
+msgid "The new layout of super would not fit in its metadata"
+msgstr "La nouvelle disposition de super ne tiendrait pas dans ses métadonnées"
 
 msgid "The new recovery starts at the next restart into recovery. If it does not start, flash a working one from a computer in Download Mode."
 msgstr "Le nouveau recovery démarre au prochain redémarrage en recovery. S’il ne démarre pas, flashez-en un qui fonctionne depuis un ordinateur en mode Download."
@@ -5478,14 +5502,14 @@ msgstr "Les réglages de recovery sont endommagés. Le mot de passe ne peut pas 
 msgid "The recovery settings could not be read. The password cannot be checked, so the recovery stays locked."
 msgstr "Impossible de lire les réglages de recovery. Le mot de passe ne peut pas être vérifié : recovery reste verrouillé."
 
-msgid "The recovery wrote the images of this ROM itself and read them back"
-msgstr "Le recovery a écrit lui-même les images de cette ROM et les a relues"
-
 msgid "The recovery's own folder stays"
 msgstr "Le dossier propre du recovery reste"
 
 msgid "The regional file is of another version than the AP"
 msgstr "Le fichier régional est d’une autre version que l’AP"
+
+msgid "The releases could not be read (%s). Check again later."
+msgstr "Les versions n’ont pas pu être lues (%s). Vérifiez plus tard."
 
 msgid "The releases could not be read. Join Wi-Fi, then check again."
 msgstr "Impossible de lire les versions. Connectez-vous au Wi-Fi, puis vérifiez à nouveau."
@@ -5612,6 +5636,9 @@ msgstr "Le gestionnaire de systèmes n'a pas renvoyé de résultat valide."
 
 msgid "The system manager helper is not configured."
 msgstr "L'outil du gestionnaire de systèmes n'est pas configuré."
+
+msgid "The system on userdata could not be read"
+msgstr "Le système sur userdata n'a pas pu être lu"
 
 msgid "The system transaction completed. Read the refreshed active system before restarting Linux."
 msgstr "La transaction système est terminée. Consultez le système actif actualisé avant de redémarrer Linux."
@@ -5904,9 +5931,6 @@ msgstr "Cette image place son système sur btrfs, que ce recovery ne sait pas li
 msgid "This image keeps its system on xfs, which this recovery cannot read"
 msgstr "Cette image place son système sur xfs, que ce recovery ne sait pas lire"
 
-msgid "This installer is a program"
-msgstr "Cet installateur est un programme"
-
 msgid "This installer is a program: it can map and rewrite the logical partitions of super by itself"
 msgstr "Cet installateur est un programme : il peut mapper et réécrire lui-même les partitions logiques de super"
 
@@ -6039,6 +6063,9 @@ msgstr "Un démontage normal est utilisé. Les systèmes de fichiers occupés so
 msgid "This volume cannot be written"
 msgstr "Ce volume ne peut pas être écrit"
 
+msgid "This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4"
+msgstr "Ce volume ne peut pas contenir un fichier aussi grand : FAT32 s’arrête à 4 Gio. Utilisez exFAT ou ext4"
+
 msgid "This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4, or leave super out"
 msgstr "Ce volume ne peut pas contenir un fichier aussi gros : FAT32 s’arrête à 4 Gio. Utilisez exFAT ou ext4, ou laissez super de côté"
 
@@ -6086,6 +6113,9 @@ msgstr "Trop d'essais. Réessayez dans %u s"
 
 msgid "Too many files are selected at once"
 msgstr "Trop de fichiers sélectionnés à la fois"
+
+msgid "too many files to count"
+msgstr "trop de fichiers pour les compter"
 
 msgid "Touch panel"
 msgstr "Écran tactile"

@@ -31,26 +31,22 @@ TOOL_NAMES = frozenset({"partclone.ext4", "partclone.chkimg", "partclone.restore
                         "zstd", "e2fsck", "blkid", "dumpe2fs", "mkfs.ext4"})
 GEOMETRY = {"boot": (41, 33554432), "userdata": (54, 53393489920)}
 # 2026-11-13, the owner: "the Linux backup did not work". A Linux installation grows userdata to the
-# end of the eMMC (storage.userdata_sizes, install.userdata_sizes); this workflow refused that size.
+# end of the eMMC (storage.userdata_fits); this workflow refused that size.
 DISK = Path("/sys/block/mmcblk0/size")
 PHONE = Path("/etc/a22x-recovery/device.json")
 
 
 def size_admitted(label, size):
-    """Whether a partition may have SIZE: BOOT its own; userdata stock or grown to the end of the
-    eMMC (storage.userdata_sizes), on the phone that of its own eMMC, 64 GB or 128 GB. Elsewhere
-    (a computer qualifying a snapshot, fixtures) the eMMC is not this one: any admitted eMMC."""
-    if size == GEOMETRY[label][1]:
-        return True
+    """Whether a partition may have SIZE: BOOT its own. userdata on the phone: partition 54 of this
+    phone's eMMC, 64 GB or 128 GB (storage.userdata_fits). Elsewhere (a computer qualifying a
+    snapshot, fixtures) only the sizes known from a phone: the 64 GB phone's stock and grown ones, or
+    GEOMETRY's (2026-11-14 review: any multiple of 512 in a 70 GB range was taken)."""
     if label != "userdata":
-        return False
+        return size == GEOMETRY[label][1]
     import storage
     if PHONE.is_file() and DISK.is_file():
-        return size in storage.userdata_sizes(int(DISK.read_text()))
-    if size <= 0 or size % 512:
-        return False
-    sectors = size // 512 + storage.USERDATA_START
-    return storage.disk_admitted(sectors + 8192) or storage.disk_admitted(sectors + 33)
+        return storage.userdata_fits(size, int(DISK.read_text()))
+    return size == GEOMETRY["userdata"][1] or size in storage.userdata_sizes(122142720)
 
 
 def _trusted_regular(path, *, executable=False):

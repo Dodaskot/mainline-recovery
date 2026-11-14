@@ -125,8 +125,7 @@ class FileArchive(unittest.TestCase):
         # through the link; a device node was made as it came.
         victim = self.sd / 'victim.txt'
         victim.write_text('keep')
-        for name, members in (('link.tar', [('x', tarfile.LNKTYPE, '../victim.txt', b''), ('x', tarfile.REGTYPE, '', b'OVERWRITTEN')]),
-                              ('dev.tar', [('disk', tarfile.BLKTYPE, '', b'')])):
+        for name, members in (('link.tar', [('x', tarfile.LNKTYPE, '../victim.txt', b''), ('x', tarfile.REGTYPE, '', b'OVERWRITTEN')]),):
             raw = io.BytesIO()
             with tarfile.open(fileobj=raw, mode='w') as tar:
                 for member, kind, link, data in members:
@@ -139,6 +138,20 @@ class FileArchive(unittest.TestCase):
                 fa.unpack(self.ctx, 'sdcard-p1', None, '/' + name, True, self.progress)
             self.assertEqual(caught.exception.code, 'ARCHIVE_UNSAFE')
         self.assertEqual(victim.read_text(), 'keep')
+        # 2026-11-14 review: a device node (a container's whiteout in a home) is passed over and
+        # counted, and the rest is unpacked; before, the whole unpacking stopped.
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode='w') as tar:
+            info = tarfile.TarInfo('disk')
+            info.type, info.devmajor, info.devminor = tarfile.CHRTYPE, 0, 0
+            tar.addfile(info)
+            info = tarfile.TarInfo('kept.txt')
+            info.size = 2
+            tar.addfile(info, io.BytesIO(b'ok'))
+        (self.sd / 'dev.tar').write_bytes(raw.getvalue())
+        out = fa.unpack(self.ctx, 'sdcard-p1', None, '/dev.tar', True, self.progress)
+        self.assertEqual((out['entries'], out['skipped']), (2, 1))
+        self.assertEqual(sorted(p.name for p in (self.sd / 'dev').iterdir()), ['kept.txt'])
         # A hard link inside the archive's own folder is kept.
         raw = io.BytesIO()
         with tarfile.open(fileobj=raw, mode='w') as tar:
@@ -166,6 +179,51 @@ class FileArchive(unittest.TestCase):
                 check(info, str(root))
         fine = tarfile.TarInfo('home/u/notes.txt')
         self.assertEqual(check(fine, str(root)).name, 'home/u/notes.txt')
+        # 2026-11-14 review: a link named like the folder itself ('home' -> '.') would have made the
+        # system's root the place of every later 'home/...'; a file of that name is refused too.
+        for kind in (tarfile.SYMTYPE, tarfile.REGTYPE):
+            info = tarfile.TarInfo('home')
+            info.type, info.linkname = kind, '.' if kind == tarfile.SYMTYPE else ''
+            with self.assertRaises(tarfile.FilterError):
+                check(info, str(root))
+        folder = tarfile.TarInfo('home')
+        folder.type = tarfile.DIRTYPE
+        self.assertEqual(check(folder, str(root)).name, 'home')
+        # 2026-11-14 review: a link is judged where it is made; one that is there already, leading
+        # out of /home, is replaced by tarfile, not written through: restoring it is fine.
+        (root / 'home/u').mkdir()
+        (root / 'srv/shared').mkdir(parents=True)
+        (root / 'home/u/shared').symlink_to('../../srv/shared')
+        again = tarfile.TarInfo('home/u/shared')
+        again.type, again.linkname = tarfile.SYMTYPE, '../../srv/shared'
+        self.assertEqual(check(again, str(root)).name, 'home/u/shared')
+        # A file of that name would be written through the link: still refused.
+        through = tarfile.TarInfo('home/u/shared')
+        with self.assertRaises(tarfile.FilterError):
+            check(through, str(root))
+
+    def test_a_folder_on_fat_may_come_back_with_another_inode(self):
+        # 2026-11-14 review: FAT and exFAT give a folder a new inode number when it comes back into the
+        # cache; the folder had not changed. Elsewhere a changed folder is still refused, by its name
+        # in the archive.
+        entries = []
+        fa.walk(os.open(self.home, os.O_RDONLY | os.O_DIRECTORY), 'Документи', os.stat(self.home).st_dev, 'docs', entries)
+        where = next(e[0] for e in entries if e[1] == 'вкладене')
+        where.ident = (where.ident[0], where.ident[1] + 1)
+        opener = fa.Opener()
+        self.addCleanup(opener.close)
+        self.addCleanup(os.close, where.base)
+        with self.assertRaises(fs.FilesystemError) as caught:
+            opener.fd(where)
+        self.assertEqual((caught.exception.code, caught.exception.details['file']), ('FILE_CHANGED', 'docs'))
+        opener.close()
+        from unittest import mock
+        with mock.patch.object(fa, 'stable_inodes', return_value=False):
+            self.assertGreaterEqual(opener.fd(where), 0)
+        mountinfo = self.root / 'mountinfo'
+        mountinfo.write_text('36 25 8:1 / /mnt/a rw - vfat /dev/sda1 rw\n37 25 8:2 / /mnt/b rw - ext4 /dev/sda2 rw\n')
+        self.assertFalse(fa.stable_inodes(os.makedev(8, 1), str(mountinfo)))
+        self.assertTrue(fa.stable_inodes(os.makedev(8, 2), str(mountinfo)))
 
     def test_many_folders_need_few_descriptors(self):
         # 2026-11-13 review: every folder walked stayed open; 1100 folders under a limit of 1024 failed.

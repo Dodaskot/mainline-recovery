@@ -146,8 +146,16 @@ class Writer:
         try:
             write_all(self.pipe, data)
         except OSError:
-            self.abort()
-            raise write_failure(said(self.errors)) from None
+            raise write_failure(self.failed()) from None
+
+    def failed(self):
+        """Why the stream stopped: the encryption's own error when there is one (a full card, a
+        file too large for FAT32), else what zstd said (2026-11-14 review: an encrypted copy reported
+        only a broken pipe)."""
+        cause = self.abort()
+        if isinstance(cause, OSError) and cause.errno and not isinstance(cause, BrokenPipeError):
+            return os.strerror(cause.errno)
+        return said(self.errors)
 
     def begin(self, name, size):
         if self.left or self.pad:
@@ -173,7 +181,7 @@ class Writer:
         self.put(bytes(1024))
         self.proc.stdin.close()
         if self.proc.wait() != 0:
-            raise write_failure(said(self.errors))
+            raise write_failure(self.failed())
         try:
             # zstd wrote through the same open file, so its end is where the footer goes.
             if self.out == self.fd:
@@ -195,8 +203,11 @@ class Writer:
         if self.proc.poll() is None:
             self.proc.kill()
         self.proc.wait()
-        with contextlib.suppress(BaseException):
+        try:
             self.stack.__exit__(ArchiveError, ArchiveError('ARCHIVE_WRITE_FAILED', 'aborted'), None)
+        except BaseException as error:  # noqa: BLE001 - the encryption's error is returned as the cause
+            return error
+        return None
 
 
 def footer(fd):

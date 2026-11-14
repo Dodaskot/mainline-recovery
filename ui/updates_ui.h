@@ -35,6 +35,9 @@ static void complete_updates_job(App*a,const Json*j,int kind,bool ok){
             a->upd_rec_newer=json_bool(j,json_get(j,rec,"newer"),0)==1;int latest=json_get(j,rec,"latest");
             if(latest>=0&&j->tokens[latest].type==J_OBJECT){jstring(j,latest,"version",a->upd_rec_latest,sizeof(a->upd_rec_latest));jstring(j,latest,"sha256",a->upd_rec_sha,sizeof(a->upd_rec_sha));}
         }
+        /* No published release read is never up to date (2026-11-14 review: GitHub's 403 came as a
+           number, read as no error at all). */
+        if(!a->upd_rec_error[0]&&!a->upd_rec_latest[0])copy(a->upd_rec_error,sizeof(a->upd_rec_error),"UPDATE_UNAVAILABLE");
         a->upd_boot_kind[0]=a->upd_boot_state[0]=a->upd_boot_latest[0]=a->upd_boot_sha[0]=0;a->upd_boot_newer=false;
         if(boot>=0){
             jstring(j,boot,"kind",a->upd_boot_kind,sizeof(a->upd_boot_kind));jstring(j,boot,"state",a->upd_boot_state,sizeof(a->upd_boot_state));
@@ -48,7 +51,7 @@ static void complete_updates_job(App*a,const Json*j,int kind,bool ok){
     if(!token[0]||path[0]!='/'){files_problem(a,"UPDATE_FAILED","The helper did not return a result.",UPDATES);return;}
     a->flash_restore=a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;
     copy(a->flash_volume,sizeof(a->flash_volume),"cache");copy(a->flash_volume_token,sizeof(a->flash_volume_token),token);
-    copy(a->flash_path,sizeof(a->flash_path),path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);
+    copy(a->flash_path,sizeof(a->flash_path),path);a->flash_member[0]=0;a->flash_after_targets=true;screen(a,FLASH);/* 2026-11-14 review: a list that cannot start drops the pending flash */if(!start_flash_job(a,J_FLASH_TARGETS)&&!a->preview){a->flash_after_targets=false;a->flash_after_label[0]=0;}
 }
 static void render_updates(App*a){
     heading(a,"Updates","This recovery and the Linux BOOT, from the internet.",true);
@@ -58,14 +61,17 @@ static void render_updates(App*a){
     else{
         snprintf(line,sizeof(line),T("Installed: %s"),a->upd_rec_installed[0]?a->upd_rec_installed:"?");text(a,52,330,0,TEXT,line);
         if(a->upd_rec_latest[0]){snprintf(line,sizeof(line),T("Published: %s"),a->upd_rec_latest);text(a,52,372,0,TEXT,line);}
-        const char*note=a->upd_rec_error[0]?"The releases could not be read. Join Wi-Fi, then check again.":
-            (a->upd_rec_newer?"A newer recovery is published.":"This recovery is up to date.");
-        wrapped(a,52,414,616,0,a->upd_rec_newer?GREEN:MUTED,note,2);
+        char failed[192];snprintf(failed,sizeof(failed),T("The releases could not be read (%s). Check again later."),a->upd_rec_error);
+        const char*note=!strcmp(a->upd_rec_error,"NO_NETWORK")?tr("The releases could not be read. Join Wi-Fi, then check again."):
+            a->upd_rec_error[0]?failed:tr(a->upd_rec_newer?"A newer recovery is published.":"This recovery is up to date.");
+        raw_text(true);wrapped(a,52,414,616,0,a->upd_rec_newer&&!a->upd_rec_error[0]?GREEN:MUTED,note,2);raw_text(false);
     }
     button(a,(Rect){46,476,628,74},"Update recovery",A_UPDATES_RECOVERY,free_ui&&a->updates_known&&a->upd_rec_newer,true,0);
     rounded(a,(Rect){28,590,664,330},24,PANEL);icon_tile(a,A_OS,46,606,56,ICON_FILL);text(a,120,616,1,TEXT,"Linux BOOT");
     if(a->updates_known){
-        const char*note=!strcmp(a->upd_boot_kind,"android")?"BOOT holds Android. It is changed in Install, Android.":
+        /* "unknown": BOOT could not be read, neither Android nor Linux (2026-11-14 review). */
+        const char*note=strcmp(a->upd_boot_kind,"android")&&strcmp(a->upd_boot_kind,"linux")?"BOOT could not be read, so nothing is offered for it.":
+            !strcmp(a->upd_boot_kind,"android")?"BOOT holds Android. It is changed in Install, Android.":
             (!strcmp(a->upd_boot_state,"current")?"BOOT holds the current Linux release.":
             (!strcmp(a->upd_boot_state,"older")?"A newer Linux BOOT is published.":"BOOT holds a Linux kernel of another build. Update only if you want the release."));
         if(a->upd_boot_latest[0]){snprintf(line,sizeof(line),T("Published: %s"),a->upd_boot_latest);text(a,52,684,0,TEXT,line);}

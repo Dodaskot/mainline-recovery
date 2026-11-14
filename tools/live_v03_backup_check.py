@@ -25,8 +25,8 @@ import uuid
 RECOVERY_BYTES = 40 * 1024 * 1024
 REPOSITORY = Path('/mnt/backup/A22xBackups')
 RUN = Path('/run/a22x-recovery')
-LOCK = '/run/lock/a22x-mainline-recovery.lock'
-ENV_FD = 'A22X_RECOVERY_LOCK_FD'
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from operation_lock import DEVICE_LOCK as LOCK, ENV_FD  # noqa: E402  one definition (2026-11-14 review)
 
 
 def require(value, message):

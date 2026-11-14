@@ -36,7 +36,9 @@ def write_cpio(entries):
         blob.extend(b'\0' * (-len(blob) % 4))
     for fields, name, data in entries:
         add(fields, name, data)
-    add([0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], 'TRAILER!!!', b'')
+    # newc fields: ino, mode, uid, gid, nlink, mtime, ...; the trailer has nlink 1 as cpio(1) writes it
+    # (2026-11-14 review: the 1 had landed on mtime).
+    add([0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], 'TRAILER!!!', b'')
     blob.extend(b'\0' * (-len(blob) % 512))
     return bytes(blob)
 
@@ -90,12 +92,17 @@ def main():
             add(name, dirmode[1], b'')
     for item in a.add:
         name, host = item.split('=', 1)
+        if name in byname:
+            # 2026-11-14 review: a second entry of the same name stayed beside the base's one.
+            sys.exit('--add %s: the base image has it already; use --replace' % name)
         ensure_dir(name.rpartition('/')[0])
         path = Path(host)
         add(name, 0o100755 if path.stat().st_mode & 0o111 else 0o100644, path.read_bytes())
         report[name] = {'before': None, 'after': hashlib.sha256(path.read_bytes()).hexdigest()}
     for item in a.link:
         name, target = item.split('=', 1)
+        if name in byname:
+            sys.exit('--link %s: the base image has it already' % name)
         ensure_dir(name.rpartition('/')[0])
         add(name, 0o120777, target.encode())
     if a.bytecode:
@@ -110,8 +117,12 @@ def main():
             code = compile(source, '/' + name, 'exec', dont_inherit=True)
             parent, _, base = name.rpartition('/')
             ensure_dir(parent + '/__pycache__')
-            add(f'{parent}/__pycache__/{base[:-3]}.cpython-314.pyc', 0o100644,
-                bytes(_code_to_hash_pyc(code, importlib.util.source_hash(source), True)))
+            pyc = f'{parent}/__pycache__/{base[:-3]}.cpython-314.pyc'
+            data = bytes(_code_to_hash_pyc(code, importlib.util.source_hash(source), True))
+            if pyc in byname:
+                byname[pyc][2] = data  # the base's own bytecode is replaced, never doubled
+            else:
+                add(pyc, 0o100644, data)
         report['bytecode'] = {'modules': len(names), 'magic': importlib.util.MAGIC_NUMBER.hex()}
     build = json.loads(byname['etc/a22x-recovery/build.json'][2])
     build['version'] = a.version
@@ -120,12 +131,22 @@ def main():
     byname['etc/a22x-recovery/build.json'][2] = json.dumps(build, indent=2, sort_keys=True).encode() + b'\n'
     # 2026-11-13: the build records name the folders of the computer they were made on (a user's
     # home); a public image gets them replaced. Nothing checks these records against a hash.
+    # 2026-11-14 review: a folder such as "/" (WORK at the root) replaced every slash, and the sealed
+    # platform profile was changed with the rest. Only a real folder of two levels or more is
+    # replaced, never in a sealed record, and every record must still be JSON afterwards.
     for item in a.scrub:
-        text, replacement = (part.encode() for part in item.split('=', 1))
+        text, _, replacement = item.partition('=')
+        parts = [part for part in text.split('/') if part]
+        if not text.startswith('/') or len(parts) < 2 or '..' in parts:
+            sys.exit('--scrub %r: only an absolute folder of two levels or more is replaced' % text)
         for name, entry in byname.items():
-            if name.startswith('etc/a22x-recovery/') and name.endswith('.json') and text in entry[2]:
-                entry[2] = entry[2].replace(text, replacement)
-                report.setdefault('scrubbed', []).append(name)
+            if not (name.startswith('etc/a22x-recovery/') and name.endswith('.json')) or text.encode() not in entry[2]:
+                continue
+            if 'distro-platform' in name or b'"seal"' in entry[2]:
+                sys.exit('--scrub: %s is sealed and names %s; it cannot be changed here' % (name, text))
+            entry[2] = entry[2].replace(text.encode(), replacement.encode())
+            json.loads(entry[2])
+            report.setdefault('scrubbed', []).append(name)
     ramdisk = a.output / 'ramdisk.cpio.gz'
     with open(ramdisk, 'wb') as f:
         f.write(gzip.compress(write_cpio(entries), 9, mtime=0))

@@ -420,7 +420,7 @@ def filesystem_kind(prefix):
 
 def detect(fd, compression):
     """Which partition an image belongs on, from its first bytes."""
-    largest = install.GEOMETRY['userdata'][2]
+    largest = install.MAX_TARGET  # userdata of a 128 GB phone too (2026-11-13 review)
     image_format = layout(fd, compression, largest)
     reader = open_reader(fd, compression, largest)
     prefix = bytearray()

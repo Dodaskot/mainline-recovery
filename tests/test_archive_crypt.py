@@ -89,7 +89,7 @@ class Crypt(unittest.TestCase):
         written = 0
         try:
             resource.setrlimit(resource.RLIMIT_FSIZE, (1 << 20, hard))
-            with self.assertRaises(OSError):
+            with self.assertRaises(OSError) as caught:
                 with ac.sink(fd, 'pw') as writer:
                     block = bytes(1 << 16)
                     while written < 64 << 20:
@@ -100,6 +100,9 @@ class Crypt(unittest.TestCase):
             os.close(fd)
             shutil.rmtree(path.parent)
         self.assertLess(written, 8 << 20)
+        # 2026-11-14 review: what failed first is said, not the writer's broken pipe.
+        import errno
+        self.assertEqual(caught.exception.errno, errno.EFBIG)
 
     def test_without_a_password_nothing_changes(self):
         fd = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_TRUNC, 0o600)

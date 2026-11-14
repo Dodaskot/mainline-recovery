@@ -97,6 +97,9 @@ def advance_clock(record, now=None, setter=None):
     return value
 
 
+RETRIES, RETRY_SECONDS = 10, 3
+
+
 def apply_record(record, remember=None, load=None, store=None):
     """Apply a handoff; returns what was taken, without secrets."""
     import settings
@@ -104,9 +107,18 @@ def apply_record(record, remember=None, load=None, store=None):
     remember = remember or wifi.remember
     load, store = load or settings.load, store or settings.store
     networks, language, zone = checked(record)
+    unsaved = []
     for ssid, password in reversed(networks):
-        remember(ssid, wifi.psk(ssid, password) if password else '')
-    changed = {}
+        # remember() changes nothing while the saved list cannot be read (the settings volume busy at
+        # the start, 2026-11-14 review of wifi.py); the hand-off file is taken already, so it is tried
+        # again for a while, and what still could not be saved is named.
+        for attempt in range(RETRIES):
+            if remember(ssid, wifi.psk(ssid, password) if password else '') is not False:
+                break
+            time.sleep(RETRY_SECONDS)
+        else:
+            unsaved.append(ssid.decode('utf-8', 'replace'))
+    changed = {'wifi_not_saved': unsaved} if unsaved else {}
     if language or zone:
         current = load()
         if language:

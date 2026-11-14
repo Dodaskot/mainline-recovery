@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -57,13 +58,45 @@ class Updates(unittest.TestCase):
         self.assertGreater(updates.version_key('0.6.1000'), updates.version_key('0.6.999'))
         self.assertEqual(updates.version_key('nightly'), ())
         # 2026-11-12 review: a public build calls itself 0.6.NN-public.
-        self.assertEqual(updates.version_key('0.6.206-public'), (0, 6, 206))
+        self.assertEqual(updates.version_key('0.6.206-public'), updates.version_key('0.6.206'))
         self.assertGreater(updates.version_key('0.6.207'), updates.version_key('0.6.206-public'))
         self.assertGreater(updates.version_key('0.6.206-r2'), updates.version_key('0.6.206'))
         # 1.0.0 (2026-11-13): after every 0.6, public or not, and never the other way round.
         self.assertGreater(updates.version_key('v1.0.0'), updates.version_key('0.6.235-public'))
         self.assertGreater(updates.version_key('v1.0.0'), updates.version_key('0.6.206'))
         self.assertLess(updates.version_key('v0.6.206'), updates.version_key('1.0.0-public'))
+        # 2026-11-14 review: other suffixes, fewer numbers and revisions.
+        self.assertEqual(updates.version_key('0.6.206-g1a2b3c-dirty'), updates.version_key('0.6.206'))
+        self.assertGreater(updates.version_key('v1.0.0'), updates.version_key('0.6.206-g1a2b3c-dirty'))
+        self.assertEqual(updates.version_key('1.0'), updates.version_key('1.0.0'))
+        self.assertNotEqual(updates.version_key('1.0.0-r1'), updates.version_key('1.0.0.1'))
+        self.assertGreater(updates.version_key('1.0.0-r1'), updates.version_key('1.0.0'))
+        self.assertGreater(updates.version_key('1.0.1'), updates.version_key('1.0.0-r10'))
+        self.assertEqual(updates.version_key('v1.0.0-public-r2'), updates.version_key('1.0.0-r2'))
+        self.assertEqual(updates.version_key('1.0.0 extra'), ())
+        self.assertEqual((updates.version_name('v1.0.0'), updates.version_name('1.0.0-r10'), updates.version_name('0.6.206-public')),
+                         ('1.0.0', '1.0.0.0.10', '0.6.206'))
+        with self.assertRaises(updates.fs.FilesystemError):
+            updates.version_name('')
+
+    def test_a_failed_check_is_said_as_text_and_boot_errors_keep_the_recovery_half(self):
+        # 2026-11-14 review: urllib's HTTPError carries the status as a number in .code.
+        import urllib.error
+        self.assertEqual(updates.error_code(urllib.error.HTTPError('u', 403, 'rate limit', {}, None)), 'HTTP_403')
+        self.assertEqual(updates.error_code(OSError(5, 'eio')), 'UPDATE_UNAVAILABLE')
+        self.assertEqual(updates.error_code(updates.fs.FilesystemError('X_CODE', 'm')), 'X_CODE')
+        context = updates.fs.FixtureContext(self.root)
+        with mock.patch.object(updates, 'latest_recovery', side_effect=urllib.error.HTTPError('u', 404, 'gone', {}, None)), \
+                mock.patch('distro.network_joined', return_value=True):
+            found = updates.check(context)
+        self.assertEqual((found['recovery']['error'], found['recovery']['newer']), ('HTTP_404', False))
+        # BOOT that cannot be read: the recovery's half stays, BOOT is not taken for Android.
+        with mock.patch.object(updates, 'boot_state', side_effect=OSError(5, 'Input/output error')), \
+                mock.patch('distro.network_joined', return_value=True):
+            found = updates.check(context)
+        self.assertEqual((found['recovery']['newer'], found['boot']['kind'], found['boot']['error']), (True, 'unknown', 'IO_ERROR'))
+        with mock.patch('distro.boot_identity', side_effect=updates.fs.FilesystemError('SHORT_READ', 'short')):
+            self.assertEqual(updates.boot_state(context)['kind'], 'unknown')
 
     def test_a_newer_recovery_is_offered_and_an_older_one_is_not(self):
         code, found = self.call('check')
@@ -111,6 +144,17 @@ class Updates(unittest.TestCase):
         code, done = self.call('fetch', '--what', 'recovery', '--sha256', self.config['recovery_release']['sha256'])
         self.assertEqual(code, 0, done)
         self.assertEqual(sorted(p.name for p in (self.root / 'cache/a22x-recovery/updates').glob('recovery-*.img')), ['recovery-0.6.203.img'])
+        # 2026-11-14 review: a revision is no part of the patch number in the file name, and the
+        # rule of the start (keep the newest) decides; a download is never removed for an older one.
+        self.release(recovery_image(), '0.6.203-r10')
+        code, done = self.call('fetch', '--what', 'recovery', '--sha256', self.config['recovery_release']['sha256'])
+        self.assertEqual((code, done['path']), (0, '/a22x-recovery/updates/recovery-0.6.203.0.10.img'))
+        self.assertEqual(sorted(p.name for p in (self.root / 'cache/a22x-recovery/updates').glob('recovery-*.img')), ['recovery-0.6.203.0.10.img'])
+        self.release(recovery_image(), '0.6.203')
+        code, done = self.call('fetch', '--what', 'recovery', '--sha256', self.config['recovery_release']['sha256'])
+        self.assertEqual(code, 0, done)
+        self.assertEqual(sorted(p.name for p in (self.root / 'cache/a22x-recovery/updates').glob('recovery-*.img')),
+                         ['recovery-0.6.203.0.10.img', 'recovery-0.6.203.img'])
 
 
 if __name__ == '__main__':

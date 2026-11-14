@@ -174,11 +174,16 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
     case $target in
         arch)
             have() { pacman -Si "$1" >/dev/null 2>&1; }
-            # With the fresh lists the system is brought up to date in the same step: Arch does not
-            # support a partial upgrade (2026-11-13 review: new programs on old libraries).
-            add() { pacman -Syu --noconfirm --needed "$@"; }
+            add() { pacman -S --noconfirm --needed "$@"; }
             has() { pacman -Qq "$1" >/dev/null 2>&1; }
-            pacman -Sy --noconfirm >/dev/null 2>&1 ;;
+            # The system is brought up to date once, before any package: Arch does not support a
+            # partial upgrade (2026-11-13 review). Not for each package (2026-11-14 review: one
+            # upgrade that cannot go through then kept every package out). When it cannot go through,
+            # nothing is installed onto an older system; the reason is said.
+            if ! pacman -Syu --noconfirm >/dev/null 2>&1; then
+                say "packages need a system upgrade first: pacman -Syu failed"
+                names=
+            fi ;;
         debian)
             DEBIAN_FRONTEND=noninteractive
             export DEBIAN_FRONTEND

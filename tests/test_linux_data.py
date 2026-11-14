@@ -241,6 +241,108 @@ class LinuxData(unittest.TestCase):
         (top / 'etc/apk/world').write_text('alpine-base\nhtop\nfish>=3.0\nfoo@testing\n')
         self.assertEqual(ld.packages_of(fd, 'alpine'), ['alpine-base', 'fish', 'foo', 'htop'])
 
+    def backup_now(self):
+        done = ld.backup(self.ctx, ['home', 'accounts', 'settings', 'packages'], 'sdcard-p1', None, True, self.progress)
+        return done['archive']['path']
+
+    def unmount_card(self):
+        config = json.loads((self.root / 'filesystem-fixture.json').read_text())
+        config['volumes'][1]['mounted'] = False
+        (self.root / 'filesystem-fixture.json').write_text(json.dumps(config))
+        (self.root / '.filesystem-state.json').unlink(missing_ok=True)
+        return fs.FixtureContext(self.root)
+
+    def test_a_backup_on_a_card_that_is_only_inserted_restores(self):
+        # 2026-11-14 review: the page listed such a backup, and its restore said VOLUME_NOT_MOUNTED.
+        path = self.backup_now()
+        ctx = self.unmount_card()
+        token = ctx.volume('sdcard-p1')['volume_token']
+        back = ld.restore(ctx, 'sdcard-p1', token, path, ['home'], True, self.progress)
+        self.assertEqual(back['parts'], ['home'])
+        self.assertFalse(fs.FixtureContext(self.root).volume('sdcard-p1')['mounted'])  # let go again
+
+    def test_a_failure_after_unpacking_takes_the_staging_folder_with_it(self):
+        # 2026-11-14 review: a failure while the recovery's script was put in left the staged
+        # password hashes, keys and Wi-Fi in the system.
+        path = self.backup_now()
+        from unittest import mock
+        with mock.patch.object(ld, 'SCRIPT', self.root / 'no-such-script.sh'):
+            with self.assertRaises(OSError):
+                ld.restore(fs.FixtureContext(self.root), 'sdcard-p1', None, path, ['accounts', 'settings'], True, self.progress)
+        self.assertFalse((self.data / 'var/tmp/a22x-restore').exists())
+
+    def test_a_link_named_home_does_not_move_where_homes_go(self):
+        # 2026-11-14 review: 'home' -> '.' first, then 'home/etc/shadow' landed in the system's /etc.
+        import io
+        import tarfile
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode='w') as tar:
+            link = tarfile.TarInfo('home')
+            link.type, link.linkname = tarfile.SYMTYPE, '.'
+            tar.addfile(link)
+            evil = tarfile.TarInfo('home/etc/shadow')
+            evil.size = 5
+            tar.addfile(evil, io.BytesIO(b'owned'))
+        packed = subprocess.run(['zstd', '-q', '-c'], input=raw.getvalue(), capture_output=True, check=True).stdout
+        archive = self.root / 'evil.tar.zst'
+        archive.write_bytes(packed)
+        before = (self.data / 'etc/shadow').read_text()
+        fd = os.open(archive, os.O_RDONLY)
+        self.addCleanup(os.close, fd)
+        with self.assertRaises(fs.FilesystemError) as caught:
+            ld.unpack_into(fd, str(self.data), ['home'], self.progress)
+        self.assertEqual(caught.exception.code, 'ARCHIVE_UNSAFE')
+        self.assertEqual((self.data / 'etc/shadow').read_text(), before)
+        self.assertTrue((self.data / 'home').is_dir() and not (self.data / 'home').is_symlink())
+        self.assertFalse((self.data / 'var/tmp/a22x-restore').exists())
+
+    def test_a_home_too_large_still_shows_its_system_and_caches_are_not_walked(self):
+        # 2026-11-14 review: ~/.cache was walked whole before it was left out, and a home too large
+        # for one archive made the page say there was no Linux system.
+        from unittest import mock
+        import file_archive as fa
+        for n in range(60):
+            (self.data / 'home/alex/.cache/junk' / ('f%02d' % n)).write_text('x')
+        with mock.patch.object(fa, 'MAX_ENTRIES', 40):
+            seen = ld.inspect(self.ctx)
+        self.assertTrue(seen['linux'] and not seen['reason'], seen)
+        with mock.patch.object(fa, 'MAX_ENTRIES', 3):
+            seen = ld.inspect(self.ctx)
+        self.assertEqual((seen['linux'], seen['reason'], seen['parts']['home'], seen['accounts']), (True, 'SELECTION_TOO_LARGE', -1, ['alex']))
+
+    def test_arch_is_upgraded_once_and_never_partly(self):
+        # 2026-11-14 review: pacman -Syu for every package meant one upgrade that could not go
+        # through kept every package out, each one tried again in vain.
+        staged = self.root / 'staged'
+        system = self.root / 'arch'
+        (system / 'etc').mkdir(parents=True)
+        staged.mkdir()
+        (system / 'etc/os-release').write_text('ID=archarm\nID_LIKE=arch\n')
+        (staged / 'manifest.json').write_text('{}')
+        (staged / 'packages.txt').write_text('htop\nfirefox\n')
+        (staged / 'source-family').write_text('arch\n')
+        (staged / 'aliases.tsv').write_text('firefox|firefox-esr|firefox\n')
+        stubs = self.root / 'pacman-stubs'
+        stubs.mkdir()
+        log = self.root / 'pacman.log'
+        (stubs / 'pacman').write_text('#!/bin/sh\necho "pacman $*" >> "%s"\n'
+                                      'case "$1" in -Syu) exit $UPGRADE ;; -Qq) grep -qx "$2" "%s.installed" 2>/dev/null ;; '
+                                      '-Si) exit 0 ;; -S) shift; for p; do case $p in -*) ;; *) echo "$p" >> "%s.installed" ;; esac; done ;; esac\n'
+                                      % (log, log, log))
+        (stubs / 'pacman').chmod(0o755)
+        for upgrade, installs in (('1', False), ('0', True)):
+            log.unlink(missing_ok=True)
+            env = dict(os.environ, A22X_ROOT=str(system), A22X_FAKE_ROOT='1', UPGRADE=upgrade, PATH=str(stubs) + ':' + os.environ['PATH'])
+            out = subprocess.run(['/bin/sh', str(ROOT / 'linux_data_restore.sh'), '--staged', str(staged), '--home-done',
+                                  '--parts', 'packages'], env=env, capture_output=True, text=True)
+            calls = log.read_text().splitlines()
+            self.assertEqual(sum(1 for c in calls if c.startswith('pacman -Syu')), 1, calls)
+            self.assertEqual(any(c.startswith('pacman -S ') for c in calls), installs, calls)
+            if not installs:
+                self.assertIn('a22x: packages need a system upgrade first: pacman -Syu failed', out.stdout)
+            else:
+                self.assertIn('a22x: packages 2 0', out.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

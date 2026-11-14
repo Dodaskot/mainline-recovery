@@ -27,6 +27,7 @@ SAVED_BOOT = 'a22x-recovery/saved-boot'
 # Where Flash a partition keeps what a partition held before a write (flash.ROLLBACK_FOLDER).
 ROLLBACKS = 'A22xPartitionBackups'
 UPDATES = 'a22x-recovery/updates'  # updates.py downloads recoveries here
+VBMETA_FOLDER = 'a22x-recovery/vbmeta'  # root.py VBMETA_DIR: vbmeta prepared for root
 ROLLBACK_NAME = re.compile(r'(.+)-(\d{8}-\d{6})(?:-(\d+))?\.img')
 
 
@@ -198,8 +199,11 @@ def tidy_folder(folder):
                 os.close(meta_fd)
             saved = int(meta.get('saved', 0) or 0)
             # 2026-11-13 review: every image was read whole at each save and start; a copy saved
-            # since keeps its content key in its description.
+            # since keeps its content key in its description. 2026-11-14 review: only while the
+            # image is still the size the description gives.
             key = meta.get('content') if isinstance(meta.get('content'), str) and len(meta['content']) == 64 else None
+            if key is not None and os.stat(name, dir_fd=folder, follow_symlinks=False).st_size != meta.get('bytes'):
+                key = None
             if key is None:
                 fd = fs.open_regular(name, dir_fd=folder)
                 try:
@@ -217,15 +221,47 @@ def tidy_folder(folder):
         except (OSError, ValueError, AttributeError, fs.FilesystemError):
             continue
         entries.append((key, not name.startswith('stock-'), saved, name))
-    kept = {}
+    kept, checked = {}, set()
     for key, _, _, name in sorted(entries):
         if key in kept.values():
+            # A copy goes only when the one that stays really holds that content: its description
+            # alone is not trusted for that (2026-11-14 review: a damaged stock- copy with its old
+            # description would have had the one whole copy removed).
+            twin = next(other for other, value in kept.items() if value == key)
+            if twin not in checked:
+                if image_key(folder, twin) != key:
+                    kept[twin] = None
+                    kept[name] = key
+                    continue
+                checked.add(twin)
             for suffix in ('', '.json', '.sha256'):
                 with contextlib.suppress(FileNotFoundError):
                     os.unlink(name + suffix, dir_fd=folder)
             continue
         kept[name] = key
-    return kept
+    return {name: key for name, key in kept.items() if key is not None}
+
+
+def image_key(folder, name):
+    """content_key of the image NAME in FOLDER as it is on disk; None when it cannot be read."""
+    try:
+        fd = fs.open_regular(name, dir_fd=folder)
+    except (OSError, fs.FilesystemError):
+        return None
+    try:
+        size = os.fstat(fd).st_size
+        data, at = bytearray(), 0
+        while at < size:
+            part = os.pread(fd, min(4 << 20, size - at), at)
+            if not part:
+                return None
+            data.extend(part)
+            at += len(part)
+        return content_key(bytes(data))
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
 
 
 def prune_rollbacks(folder, keep=None):
@@ -382,7 +418,9 @@ def make_room(pin, downloadable=None):
     stays: the stock BOOT, a Linux BOOT that cannot be downloaded again, settings, keys, Wi-Fi."""
     if downloadable is None:
         downloadable = downloadable_boots()
-    for name, tidy in ((SAVED_BOOT, prune_orphans), (SAVED_BOOT, tidy_folder), (SAVED_BOOT, prune_rooted),
+    # 2026-11-14 review: save_on_cache leaves .part- files in UPDATES and the vbmeta folder too.
+    for name, tidy in ((SAVED_BOOT, prune_orphans), (UPDATES, prune_orphans), (VBMETA_FOLDER, prune_orphans),
+                       (SAVED_BOOT, tidy_folder), (SAVED_BOOT, prune_rooted),
                        (SAVED_BOOT, lambda folder: prune_downloadable(folder, downloadable)), (ROLLBACKS, prune_rollbacks),
                        (UPDATES, prune_updates)):
         with contextlib.suppress(FileNotFoundError, NotADirectoryError, fs.FilesystemError, OSError):
@@ -545,12 +583,14 @@ def save_on_cache(context, name, image, meta, progress, keep_mounted=False, fold
                         finally:
                             os.close(side)
                     os.rename(part, name, src_dir_fd=folder, dst_dir_fd=folder)
-                    os.fsync(folder)
                 except BaseException:
                     for leftover in (part, name + '.json', name + '.sha256'):
                         with contextlib.suppress(OSError):
                             os.unlink(leftover, dir_fd=folder)
                     raise
+                # Once the image has its name, its description stays with it whatever happens
+                # next (2026-11-14 review: a failed fsync removed the description of a whole image).
+                os.fsync(folder)
             finally:
                 os.close(folder)
             os.sync()

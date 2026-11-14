@@ -39,6 +39,10 @@ MAX_JSON = 65536
 MAX_LOG = 16384
 START_SECONDS = 10.0
 STOP_SECONDS = 8.0
+# How long a stop request waits for its answer: the supervisor stops the responder (up to 5 s),
+# flushes the exported filesystem (syncfs has no bound) and restores the gadget before it answers
+# (2026-11-14 review: 9 s, then a stop that was still going on was reported as failed).
+STOP_ANSWER_SECONDS = 120.0
 libc = ctypes.CDLL(None, use_errno=True)
 
 
@@ -196,7 +200,7 @@ def request(context, record, operation, token=None):
     require(stat.S_ISSOCK(st.st_mode) and st.st_uid == os.geteuid() and
             stat.S_IMODE(st.st_mode) == 0o600, 'UNSAFE_SOCKET', 'USB control socket must be private')
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-        client.settimeout(STOP_SECONDS + 1 if operation == 'stop' else 2)
+        client.settimeout(STOP_ANSWER_SECONDS if operation == 'stop' else 2)
         client.connect(str(path))
         pid, uid, _ = struct.unpack('3i', client.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
         require(uid == os.geteuid() and pid == record['pid'], 'SERVICE_STALE', 'USB control peer changed')
@@ -211,8 +215,17 @@ def request(context, record, operation, token=None):
 
 def status(context):
     record = context.record()
-    if record and process_live(record) and record['state'] in ('active', 'stopping'):
-        return request(context, record, 'status')
+    if record and process_live(record) and record['state'] == 'stopping':
+        # 2026-11-14 review: a stopping supervisor accepts no more requests; asking it waited 2 s and
+        # failed. Its own record says how far it is.
+        return snapshot(context, record)
+    if record and process_live(record) and record['state'] == 'active':
+        try:
+            return request(context, record, 'status')
+        except OSError:
+            # It began to stop between the record and the request.
+            now = context.record() or record
+            return snapshot(context, now, reason=None if now.get('state') != 'active' else 'SERVICE_BUSY')
     if record and not record.get('clean', False):
         return snapshot(context, record, False, 'SERVICE_STALE' if not process_live(record) else None)
     try:
@@ -418,6 +431,16 @@ def serve(context, args):
     child = gadget = server = socket_identity = session = None
     retained = bytearray()
     error = None
+    running = True
+
+    # 2026-11-14 review: the handlers came only once the export was active; a SIGTERM during setup,
+    # after the gadget was unbound, ended the process without its cleanup, and USB networking with
+    # SSH over the cable stayed gone. Before active a stop unwinds the setup; after it, it ends the loop.
+    def signal_stop(*unused):
+        nonlocal running
+        if record['state'] != 'active':
+            raise StopRequested(errno.EINTR, 'USB sharing was stopped while it started')
+        running = False
     # All mutations below run with both singleton and storage lease. Borrowing
     # an SSH session lease here would permit its parent to bypass export locking.
     require(ENV_FD not in os.environ, 'INHERITED_SESSION', 'Start USB sharing outside an administrator SSH lease')
@@ -431,6 +454,8 @@ def serve(context, args):
         previous = context.record()
         require(not previous or previous.get('clean', False), 'SERVICE_STALE',
                 'An unclean previous USB session requires recovery restart')
+        for number in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(number, signal_stop)
         try:
             context.save(record)
             lease = stack.enter_context(operation_lock(context.fs.lock_path, context.mode))
@@ -475,13 +500,6 @@ def serve(context, args):
             server.settimeout(0.25)
             record['state'] = 'active'
             context.save(record)
-            running = True
-
-            def signal_stop(*unused):
-                nonlocal running
-                running = False
-            for number in (signal.SIGTERM, signal.SIGINT):
-                signal.signal(number, signal_stop)
             stop_connection = None
             while running:
                 require(child.poll() is None, 'USB_RESPONDER_FAILED', 'The MTP responder exited unexpectedly')
@@ -597,6 +615,11 @@ def start(context, args):
     return snapshot(context, context.record(), reason='USB_START_PENDING')
 
 
+class StopRequested(OSError):
+    """SIGTERM or SIGINT before the export was active: setup ends through its own cleanup."""
+    code = 'USB_STOP_REQUESTED'
+
+
 class Parser(argparse.ArgumentParser):
     def error(self, message):
         fs.fail('INVALID_ARGUMENT', message)
@@ -634,7 +657,13 @@ def main(argv=None):
             record = context.record()
             require(record and record.get('session_token') == args.expected_session_token,
                     'SESSION_CHANGED', 'The USB export session changed')
-            result = request(context, record, 'stop', args.expected_session_token)
+            try:
+                result = request(context, record, 'stop', args.expected_session_token)
+            except TimeoutError:
+                # The supervisor took the stop and is still releasing (flushing the export): that is a
+                # stop going on, not a failed one (2026-11-14 review).
+                now = context.record() or record
+                result = snapshot(context, now, reason='USB_STOP_PENDING' if process_live(now) else None)
             if result.get('ok') and result.get('state') == 'stopped':
                 deadline = time.monotonic() + 1
                 while process_live(record) and time.monotonic() < deadline:

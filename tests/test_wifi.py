@@ -133,6 +133,8 @@ class FakeSupplicant(threading.Thread):
             self.attached.add(peer)
             return 'OK'
         if command == 'SCAN':
+            if getattr(self, 'busy', False):
+                return 'FAIL-BUSY'
             threading.Timer(0.05, self.event, ('CTRL-EVENT-SCAN-RESULTS ',)).start()
             return 'OK'
         if command == 'SCAN_RESULTS':
@@ -232,6 +234,59 @@ class TestControlSocket(unittest.TestCase):
         self.assertEqual(caught.exception.code, 'WIFI_NOT_FOUND')
         self.assertEqual(self.fake.networks['0'].get('scan_ssid'), '1')
         self.assertEqual(self.fake.networks['0'].get('key_mgmt'), 'NONE')
+
+
+    def test_a_driver_that_stays_busy_is_not_a_fresh_search(self):
+        # 2026-11-14 review: six FAIL-BUSY and no results of its own gave the old list as new.
+        self.fake.busy = True
+        with mock.patch.object(w.time, 'sleep', lambda seconds: None):
+            with self.assertRaises(w.WifiError) as caught:
+                w.scan()
+        self.assertEqual(caught.exception.code, 'WIFI_SCAN_FAILED')
+
+    def test_a_failed_join_writes_down_that_the_old_network_is_gone(self):
+        # 2026-11-14 review: the old network had been let go, and state.json still said joined.
+        self.assertTrue(w.connect(b'Home', 'correct horse', False)['connected'])
+        written = []
+        password = Path(self.tmp.name, 'pw')
+        password.write_text('wrong password')
+        with mock.patch.object(w, 'write_state', written.append), mock.patch('builtins.print'):
+            self.assertEqual(w.main(['connect', '--ssid', 'Home', '--password-file', str(password)]), 2)
+        self.assertEqual(len(written), 1)
+        self.assertFalse(written[0]['connected'])
+
+    def test_auto_keeps_a_network_joined_already(self):
+        # 2026-11-14 review: auto went on to the next saved network and undid the owner's choice.
+        self.assertTrue(w.connect(b'Home', 'correct horse', False)['connected'])
+        with mock.patch.object(w, 'connect', side_effect=AssertionError('no second join')):
+            result = w.auto()
+        self.assertTrue(result['connected'] and result['ssid'] == 'Home')
+
+    def test_saved_networks_unknown_are_not_replaced(self):
+        # 2026-11-14 review: with the settings volume busy the list read as empty, and the next
+        # network alone replaced all the others on the disk.
+        (self.disk / 'a22x-recovery').mkdir()
+        (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [
+            {'ssid_hex': b'Other'.hex(), 'psk': 'a' * 64, 'added': 1}]}))
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: None):
+            self.assertFalse(w.remember(b'Home', FakeSupplicant.KEY))
+            with self.assertRaises(w.WifiError) as caught:
+                w.forget(b'Other')
+            self.assertEqual(caught.exception.code, 'WIFI_SAVED_UNAVAILABLE')
+        self.assertFalse(Path(self.tmp.name, 'saved-ram.json').exists())
+        self.assertTrue(w.remember(b'Home', FakeSupplicant.KEY))
+        names = [bytes.fromhex(n['ssid_hex']) for n in json.loads((self.disk / 'a22x-recovery/wifi.json').read_text())['networks']]
+        self.assertEqual(names, [b'Home', b'Other'])
+        self.assertEqual([p.name for p in (self.disk / 'a22x-recovery').iterdir()], ['wifi.json'])
+
+    def test_a_damaged_saved_list_holds_no_network(self):
+        # 2026-11-14 review: a list, or entries that are no objects, raised AttributeError.
+        ram = Path(self.tmp.name, 'saved-ram.json')
+        for damaged in ('["x"]', '{"networks": ["x", 3]}', '{"networks": [{"ssid_hex": "zz"}]}', '{"networks": 5}'):
+            ram.write_text(damaged)
+            self.assertEqual(w.saved_read(), [], damaged)
+        ram.write_text(json.dumps({'networks': ['x', {'ssid_hex': b'Home'.hex(), 'psk': 'k'}]}))
+        self.assertEqual(w.saved_read(), [{'ssid_hex': b'Home'.hex(), 'psk': 'k'}])
 
 
 if __name__ == '__main__':

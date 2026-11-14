@@ -53,10 +53,14 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
     }
     if(kind==J_LD_INSPECT){
         a->ld_linux=json_bool(j,json_get(j,0,"linux"),0)==1;a->ld_os[0]=a->ld_accounts[0]=0;a->ld_home=a->ld_settings=0;a->ld_account_count=0;a->ld_packages=-1;
+        jstring(j,0,"reason",a->ld_reason,sizeof(a->ld_reason));
         if(a->ld_linux){
             int os=json_get(j,0,"os"),parts=json_get(j,0,"parts");if(os>=0)jstring(j,os,"name",a->ld_os,sizeof(a->ld_os));
             ld_names(j,json_get(j,0,"accounts"),a->ld_accounts,sizeof(a->ld_accounts));
-            if(parts>=0){a->ld_home=json_uint(j,json_get(j,parts,"home"),0);a->ld_settings=json_uint(j,json_get(j,parts,"settings"),0);
+            /* -1: not counted (a home too large to walk; 2026-11-14 review), kept as UINT64_MAX. */
+            if(parts>=0){int home=json_get(j,parts,"home"),settings=json_get(j,parts,"settings");
+                a->ld_home=home>=0&&j->text[j->tokens[home].start]=='-'?UINT64_MAX:json_uint(j,home,0);
+                a->ld_settings=settings>=0&&j->text[j->tokens[settings].start]=='-'?UINT64_MAX:json_uint(j,settings,0);
                 a->ld_account_count=(unsigned int)json_uint(j,json_get(j,parts,"accounts"),0);
                 int packages=json_get(j,parts,"packages");a->ld_packages=packages>=0&&j->tokens[packages].type==J_PRIMITIVE&&j->text[j->tokens[packages].start]!='-'?(int)json_uint(j,packages,0):-1;}
         }
@@ -65,7 +69,9 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->ld_dest_count<LD_DESTS;i=json_next(j,i)){
             LdDest*d=&a->ld_dest[a->ld_dest_count++];jstring(j,i,"volume",d->id,sizeof(d->id));jstring(j,i,"label",d->label,sizeof(d->label));d->free=json_uint(j,json_get(j,i,"free_bytes"),0);}
         if(a->ld_dest_index>=(int)a->ld_dest_count)a->ld_dest_index=0;
-        a->ld_archive_count=0;a->ld_page=0;list=json_get(j,0,"archives");
+        /* The page of the list stays: a password typed for a backup on page 2 left the page 1 up
+           (2026-11-14 review); it starts at 1 when the page is opened (A_LD). */
+        a->ld_archive_count=0;list=json_get(j,0,"archives");
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->ld_archive_count<LD_ARCHIVES;i=json_next(j,i)){
             LdArchive*x=&a->ld_archives[a->ld_archive_count++];memset(x,0,sizeof(*x));
             jstring(j,i,"volume",x->volume,sizeof(x->volume));jstring(j,i,"volume_token",x->token,sizeof(x->token));jstring(j,i,"path",x->path,sizeof(x->path));
@@ -117,11 +123,16 @@ static void render_linux_data(App*a){
         button(a,(Rect){28,1340,664,84},"Refresh",A_LD_REFRESH,ui_free(a),false,0);return;}
     rounded(a,(Rect){28,236,664,110},24,PANEL);icon_tile(a,ICON_LINUX,46,256,64,ICON_FILL);
     if(a->ld_linux){raw_text(true);ellipsis(a,128,252,540,1,TEXT,a->ld_os[0]?a->ld_os:"Linux");ellipsis(a,128,298,540,0,MUTED,a->ld_accounts[0]?a->ld_accounts:"-");raw_text(false);}
-    else{text(a,128,252,1,TEXT,"No Linux system on userdata");ellipsis(a,128,298,540,0,MUTED,"A backup can still be restored once one is installed");}
+    else if(!a->ld_reason[0]||!strcmp(a->ld_reason,"NO_LINUX")){text(a,128,252,1,TEXT,"No Linux system on userdata");ellipsis(a,128,298,540,0,MUTED,"A backup can still be restored once one is installed");}
+    else{
+        /* Why the system could not be read, not a silent no-system line (2026-11-14 review). */
+        char why[160];snprintf(why,sizeof(why),T("Reason: %s"),a->ld_reason);
+        text(a,128,252,1,TEXT,"The system on userdata could not be read");raw_text(true);ellipsis(a,128,298,540,0,RED,why);raw_text(false);
+    }
     char detail[LD_PARTS][64],bytes[48];
-    human_bytes(a->ld_home,bytes,sizeof(bytes));snprintf(detail[0],sizeof(detail[0]),"%s",bytes);
+    if(a->ld_home==UINT64_MAX)copy(detail[0],sizeof(detail[0]),tr("too many files to count"));else{human_bytes(a->ld_home,bytes,sizeof(bytes));snprintf(detail[0],sizeof(detail[0]),"%s",bytes);}
     snprintf(detail[1],sizeof(detail[1]),"%u",a->ld_account_count);
-    human_bytes(a->ld_settings,bytes,sizeof(bytes));snprintf(detail[2],sizeof(detail[2]),"%s",bytes);
+    if(a->ld_settings==UINT64_MAX)copy(detail[2],sizeof(detail[2]),"—");else{human_bytes(a->ld_settings,bytes,sizeof(bytes));snprintf(detail[2],sizeof(detail[2]),"%s",bytes);}
     if(a->ld_packages>=0)snprintf(detail[3],sizeof(detail[3]),"%d",a->ld_packages);else copy(detail[3],sizeof(detail[3]),"—");
     for(unsigned int n=0;n<LD_PARTS;n++)ld_row(a,362+(int)n*86,ld_part_titles[n],a->ld_linux?detail[n]:"",(a->ld_parts>>n)&1u,a->ld_linux&&(n!=3||a->ld_packages>=0),A_LD_PART+(int)n);
     char label[200];
@@ -166,7 +177,7 @@ static void render_linux_data_restore(App*a){
     button(a,(Rect){28,1320,664,104},"Hold 3 seconds: restore",A_LD_RESTORE,ui_free(a)&&a->ld_linux&&(a->ld_restore_parts&x->parts),true,3000);
 }
 static bool ld_action(App*a,int id){
-    if(id==A_LD){if(ui_free(a)){a->ld_known=false;if(!a->ld_parts)a->ld_parts=15u;screen(a,LINUX_DATA);start_ld_job(a,J_LD_INSPECT);}return true;}
+    if(id==A_LD){if(ui_free(a)){a->ld_known=false;a->ld_page=0;if(!a->ld_parts)a->ld_parts=15u;screen(a,LINUX_DATA);start_ld_job(a,J_LD_INSPECT);}return true;}
     if(a->screen==LINUX_DATA){
         if(id==A_BACK){reopen(a,came_from(a,BACKUP));return true;}
         if(id==A_LD_REFRESH){if(ui_free(a)){a->ld_known=false;start_ld_job(a,J_LD_INSPECT);a->dirty=true;}return true;}

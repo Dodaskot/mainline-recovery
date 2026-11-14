@@ -143,6 +143,8 @@ def interface_text(path):
         text = text[:start] + text[text.index('\nstatic void usage(') if '\nstatic void usage(' in text[start:] else len(text):]
         cut = text.find('int main(')
         text = text[:cut] if cut > 0 else text
+    # A compile-time check's message is for whoever builds, never shown (2026-11-14 review).
+    text = re.sub(r'_Static_assert\([^;]*\);', '', text)
     return [match.group(1) for match in STRING.finditer(text)]
 
 
