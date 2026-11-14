@@ -473,13 +473,60 @@ class Damaged(unittest.TestCase):
                   ('never', 'now'): 'userdata',    # a cache this recovery never writes
                   ('absent', 'now'): 'userdata',   # no usable filesystem on cache
                   ('now', 'later+file'): None,     # the settings are on userdata, not writable now
-                  ('now', 'dead'): None}           # userdata cannot be looked at: the start could not read either
+                  ('now', 'dead'): 'cache',        # userdata cannot be looked at: an empty cache takes them (review 23)
+                  ('never', 'dead'): None}         # ... but not past a cache that could never have taken them
         for (cache, userdata), target in expect.items():
             with self.subTest(cache=cache, userdata=userdata):
                 written, _ = self.every_state(cache, userdata, lambda: settings.write_disk({'theme': 'y'}))
                 landed = [label for label in ('cache', 'userdata') if (self.root / label / settings.RELATIVE).is_file()
                           and json.loads((self.root / label / settings.RELATIVE).read_text()).get('theme') == 'y']
                 self.assertEqual((written, landed), (target is not None, [target] if target else []))
+
+    def test_a_fresh_phone_opens_whatever_userdata_shows(self):
+        # 2026-11-14 review (23): no settings, no mark, and a userdata that would not mount, or a list
+        # of volumes failing with a bare OSError for it, locked the recovery at every start.
+        for userdata in ('dead', 'now'):
+            with self.subTest(userdata=userdata):
+                read, _ = self.every_state('now', userdata, self.read_now)
+                self.assertEqual(read, {})
+        real = FakeContext.volume
+
+        def vanishing(context, label, *args):
+            if label == 'userdata':
+                raise FileNotFoundError(2, 'uevent')
+            return real(context, label, *args)
+        self.write('cache', json.dumps({'theme': 'aurora'}))
+        with mock.patch.object(FakeContext, 'volume', vanishing):
+            self.assertEqual(settings.read_disk(), {'theme': 'aurora'})
+        # A mark on the cache, or a cache that never takes settings, still locks: a password may be there.
+        (self.root / 'cache' / settings.RELATIVE).unlink()
+        (self.root / 'cache' / settings.PASSWORD_MARK).touch()
+        read, _ = self.every_state('now', 'dead', self.read_now)
+        self.assertIsInstance(read, settings.Unreadable)
+
+    def test_a_journal_left_by_a_reset_is_replayed_before_the_settings_are_read(self):
+        # 2026-11-14 review (23): a read-only look does not replay the ext4 journal, so a save cut by a
+        # reset read as the state before it. Only for a filesystem this recovery may write, once.
+        seen = []
+        volume = {'id': 'cache', 'mounted': False, 'mountable': True, 'needs_recovery': True, 'volume_token': 't'}
+
+        class Context:
+            def volume(self, label):
+                return dict(volume)
+
+            def mount(self, label, mode, confirmed, token):
+                seen.append((label, mode))
+                volume['needs_recovery'] = False
+
+            def unmount(self, label):
+                seen.append((label, 'unmount'))
+        self.assertFalse(settings._ready(Context(), 'cache')['needs_recovery'])
+        self.assertEqual(seen, [('cache', 'rw'), ('cache', 'unmount')])
+        del seen[:]
+        settings._ready(Context(), 'cache')
+        volume.update(needs_recovery=True, read_only_reason_code='FSCRYPT_KEYS_UNAVAILABLE')
+        settings._ready(Context(), 'cache')
+        self.assertEqual(seen, [])
 
     def test_a_theme_that_cannot_be_copied_does_not_lock_the_phone(self):
         # 2026-11-14 review: an EIO on one theme made read_disk say the settings could not be read.

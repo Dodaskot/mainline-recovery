@@ -4,9 +4,9 @@ one by one in both directions; this walks them all, as the review suggested).
 P1: a password stored and not cleared never reads as "no password".
 P2: with no password stored (never set, cleared, or a set or clear that stopped halfway), nothing
     asks for userdata to be erased.
-P3: with no password and the settings on a cache that can be read, the recovery opens: a volume
-    after them that cannot be looked at locks nothing (2026-11-14 review: userdata that would not
-    mount locked such a phone for good).
+P3: with no password and a cache that can be read and can take the settings, the recovery opens,
+    whether the cache holds settings or not: a volume after it that cannot be looked at locks
+    nothing (2026-11-14 reviews: userdata that would not mount locked such a phone for good).
 
 Each case: a start state, a first operation done whole, a second one stopped at every step it
 writes (a crash, or an I/O error), each under several states of the two volumes, as filesystem.py
@@ -47,6 +47,7 @@ KINDS = {  # mountable, mounted, write_supported, read_only_reason_code, reason_
     'nofs': (False, False, False, None, 'ENCRYPTED_OR_UNRECOGNIZED_USERDATA', False, False),
     'holders': (False, False, False, None, 'PARTITION_HAS_BLOCK_HOLDERS', False, False),
     'flaky': None,   # the list of volumes fails (a card or a stick coming or going)
+    'sysfs': None,   # the same, as the bare OSError a vanishing sysfs entry gives
     'blink': None}   # fails once in a run, then shows the volume as 'now'
 READABLE = ('now', 'later', 'outside', 'never')
 BASE = {'language': 'uk', 'theme': 'graphite'}
@@ -55,7 +56,7 @@ OP_KINDS = (('now', 'now'), ('now', 'later'), ('later', 'now'), ('nofs', 'now'),
             ('flaky', 'now'), ('now', 'flaky'), ('blink', 'now'), ('now', 'blink'), ('holders', 'now'))
 READ_KINDS = (('now', 'now'), ('later', 'later'), ('outside', 'now'), ('never', 'now'), ('now', 'dead'), ('dead', 'now'),
               ('nofs', 'now'), ('now', 'nofs'), ('nofs', 'nofs'), ('flaky', 'now'), ('now', 'flaky'), ('blink', 'now'),
-              ('holders', 'now'))
+              ('holders', 'now'), ('now', 'sysfs'), ('sysfs', 'now'), ('now', 'holders'))
 EVENTS = ('none', 'folder lost', 'folder a dangling link', 'folder a link to a real folder', 'settings a link to another file',
           'settings a folder', 'corrupt', 'mark lost', 'userdata mark unreadable', 'settings unreadable')
 
@@ -94,6 +95,8 @@ class Context:
                 self.world.blinked.add(label)
                 raise settings.fs.FilesystemError('BLOCK_GEOMETRY_CHANGED', 'The block devices changed')
             return 'now'
+        if kind == 'sysfs':
+            raise FileNotFoundError(errno.ENOENT, 'uevent')
         if kind == 'flaky':
             raise settings.fs.FilesystemError('BLOCK_GEOMETRY_CHANGED', 'The block devices changed')
         return kind
@@ -124,7 +127,7 @@ class Properties(unittest.TestCase):
         @contextlib.contextmanager
         def volume_root(context, label, mode):
             kind = self.world.kinds[label]
-            kind = 'now' if kind in ('blink', 'flaky') else kind
+            kind = 'now' if kind in ('blink', 'flaky', 'sysfs') else kind
             ro, rw = KINDS[kind][5:]
             if not (rw if mode == 'rw' else ro):
                 raise OSError(errno.EBUSY, 'cannot open %s %s' % (label, mode))
@@ -279,6 +282,11 @@ class Properties(unittest.TestCase):
                         password in ('no', 'maybe-set') or (password == 'maybe-clear' and event == 'none')):
                     self.assertNotIsInstance(outcome, settings.Damaged, ('P2',) + case)
                 if password == 'no' and event == 'none' and cache_holds and at['cache'] in READABLE and not restored:
+                    self.assertIsInstance(outcome, dict, ('P3',) + case)
+                if (password == 'no' and event == 'none' and at['cache'] in ('now', 'later', 'outside')
+                        and not self.keepers(seen) and not restored):
+                    # No password, and a cache that can be read and can take the settings: whatever
+                    # userdata shows, the recovery opens.
                     self.assertIsInstance(outcome, dict, ('P3',) + case)
                 if kinds == ('nofs', 'nofs'):
                     # No filesystem on either partition: nothing can be kept, the recovery opens.
