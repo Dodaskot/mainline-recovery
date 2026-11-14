@@ -305,7 +305,9 @@ def install(context, code, data):
 def remove(context, code):
     """A theme that comes with the image cannot leave it, so a note hides it instead."""
     require(re.fullmatch(r'[a-z0-9-]{3,23}', code), 'THEME_BAD_CODE', 'This is not a theme name')
-    bundled = (BUNDLED / (code + '.theme')).is_file()
+    # A failed look at the image is an error, never "not bundled" (2026-11-14 review: the theme then
+    # came back after a restart, its note never written).
+    bundled = settings.present(BUNDLED / (code + '.theme'))
     (settings.RAM_THEMES / (code + '.theme')).unlink(missing_ok=True)
     if bundled:
         write_file(settings.RAM_THEMES, code + '.hidden', b'')

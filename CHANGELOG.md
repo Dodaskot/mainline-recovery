@@ -94,6 +94,13 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   volume failed, and forgetting a network not saved needs no volume; homes and settings that each
   fit are offered, and the backup button says when the chosen parts together are too many.
 
+- **Fixes from the seventh review** (13 findings): the settings file is opened as a regular file
+  is proven on its descriptor; anything else where it should be (a folder, a link) is damaged
+  settings, never none; the themes of every volume looked at are copied again; reading and writing
+  choose the same volume when no settings exist yet; a volume that fails to close after the work no
+  longer undoes it; forgetting a Wi-Fi network asks the disk, not the copy in RAM; the installer
+  pages take a saved network's key by the same rule as Wi-Fi.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

@@ -212,12 +212,16 @@ def _read_list(root):
     """The list in ROOT: none when the file is not there; a file that cannot be looked at raises,
     never read as none (2026-11-14 review: Path.is_file() said no file on any error, and the next
     remember wrote one network over all the others)."""
-    import settings
-    path = root / SAVED_RELATIVE
-    if not settings.present(path):
-        return []
+    _beside()
+    import filesystem as fs
     try:
-        return _networks(json.loads(path.read_text()))
+        fd = fs.open_regular(root / SAVED_RELATIVE)
+    except FileNotFoundError:
+        return []
+    with os.fdopen(fd, 'rb') as stream:
+        data = stream.read()
+    try:
+        return _networks(json.loads(data.decode()))
     except ValueError:
         return []
 
@@ -279,17 +283,19 @@ def saved_key(ssid):
 
 
 def forget(ssid):
-    known = saved_known()
-    if known is not None and all(n.get('ssid_hex') != ssid.hex() for n in known):
-        # Not saved: nothing to write, and no reason to need the volume (2026-11-14 review).
-        return {**state(), 'saved_count': len(known)}
     kept = []
 
     def without(current):
         kept[:] = [n for n in current if n.get('ssid_hex') != ssid.hex()]
         return kept
+    # The list on disk, under the lock, decides; RAM only follows it (2026-11-14 review: a stale RAM
+    # copy said a network on disk was not saved). When the volume cannot be written now, a network
+    # the disk does not hold is forgotten already: no reason to fail (2026-11-14 review before).
     saved = _update(without)
     if saved is None:
+        status, current = _settings_volumes('ro', _read_list)
+        if status == 'ok' and all(n.get('ssid_hex') != ssid.hex() for n in current):
+            return {**state(), 'saved_count': len(current)}
         fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     # A failed write is said: the network would come back at the next start (2026-11-14 review).
     if saved is False:

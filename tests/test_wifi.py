@@ -342,21 +342,45 @@ class TestControlSocket(unittest.TestCase):
             self.assertIs(w.remember(b'Next', FakeSupplicant.KEY), False)
 
     def test_a_list_that_cannot_be_looked_at_is_never_replaced(self):
-        # 2026-11-14 review: a stat that failed read as no list, and remember wrote one network over five.
+        # 2026-11-14 reviews: a stat that failed read as no list, and remember wrote one network over
+        # five. Through the real path (settings_root, _look, choose): the volume cannot be looked at,
+        # so the list is busy, nothing is written, and the hand-off may try again.
+        import contextlib
+        import settings
+        import filesystem as fs
         (self.disk / 'a22x-recovery').mkdir()
         listed = {'networks': [{'ssid_hex': ('Net%d' % n).encode().hex(), 'psk': 'a' * 64} for n in range(5)]}
         (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps(listed))
         Path(self.tmp.name, 'saved-ram.json').unlink(missing_ok=True)
-        import settings
-        real = os.stat
+
+        class Context:
+            lock_path, mode = '/nonexistent', 'fixture'
+
+            def volume(self, label):
+                return {'mounted': False, 'mountable': label == 'cache', 'write_supported': True, 'read_only_reason_code': None}
+
+        @contextlib.contextmanager
+        def volume_root(context, label, mode):
+            yield self.disk
+        real = os.lstat
 
         def failing(path, *args, **kwargs):
             if str(path).endswith('wifi.json'):
                 raise OSError(5, 'Input/output error')
             return real(path, *args, **kwargs)
-        with mock.patch.object(settings.os, 'stat', failing):
-            self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), False)
+        with mock.patch.object(settings, 'volume_root', volume_root), mock.patch.object(settings.os, 'lstat', failing), \
+                mock.patch('operation_lock.operation_lock', lambda *a, **k: contextlib.nullcontext()), \
+                mock.patch.object(fs, 'DeviceContext', Context), mock.patch.object(w, '_settings_volumes', REAL_SETTINGS_VOLUMES):
+            self.assertIsNone(w.remember(b'Home', FakeSupplicant.KEY))
         self.assertEqual(json.loads((self.disk / 'a22x-recovery/wifi.json').read_text()), listed)
+
+    def test_forget_asks_the_disk_not_a_stale_copy_in_ram(self):
+        # 2026-11-14 review: a RAM copy without a network on disk made forget report it gone.
+        (self.disk / 'a22x-recovery').mkdir()
+        (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [{'ssid_hex': b'Home'.hex(), 'psk': 'a' * 64}]}))
+        Path(self.tmp.name, 'saved-ram.json').write_text(json.dumps({'networks': []}))
+        self.assertEqual(w.forget(b'Home')['saved_count'], 0)
+        self.assertEqual(json.loads((self.disk / 'a22x-recovery/wifi.json').read_text())['networks'], [])
 
     def test_a_volume_that_fails_to_close_after_the_action_keeps_its_result(self):
         # 2026-11-14 review: an unmount that failed after the write was said busy, and the write was

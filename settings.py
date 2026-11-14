@@ -19,6 +19,7 @@ Download Mode, and that the password cannot cover.
 """
 import argparse
 import contextlib
+import errno
 import hashlib
 import hmac
 import json
@@ -148,14 +149,58 @@ def copy_themes(root):
 
 
 def present(path):
-    """Whether PATH is a regular file: False only when it is not there; any other failure to look
+    """Whether PATH is a regular file: False only when nothing is there; any other failure to look
     (EIO, EACCES, a damaged inode) is raised (2026-11-14 review: Path.is_file() answers False to
-    every error, so settings that could not be looked at read as none, and the phone opened
-    without its password)."""
+    every error). For a file this recovery ships or keeps in RAM; settings are looked at by entry()."""
     try:
         return stat.S_ISREG(os.stat(path).st_mode)
     except (FileNotFoundError, NotADirectoryError):
         return False
+
+
+def entry(path):
+    """Whether anything is at PATH, as the settings file: False only when nothing is (ENOENT); a
+    folder, a link, a FIFO, or a file where a folder of the path should be, all count as there, to
+    be read and found damaged; any other failure to look is raised (2026-11-14 reviews: an error,
+    then anything that was no regular file, read as no settings, and the phone opened without
+    its password)."""
+    try:
+        os.lstat(path)
+        return True
+    except FileNotFoundError:
+        return False
+    except NotADirectoryError:
+        return True
+
+
+def read_regular(path, label):
+    """The text of the settings file at PATH on LABEL: None when nothing is there; Damaged when what
+    is there is no regular file or no text; Unreadable when it cannot be read now. Opened as
+    filesystem.open_regular opens: its type proven on the descriptor, links never followed, so
+    nothing changes between the look and the read (2026-11-14 review)."""
+    try:
+        fd = fs.open_regular(path)
+    except FileNotFoundError:
+        return None
+    except NotADirectoryError as error:
+        raise Damaged('The settings on %s are damaged' % label, label) from error
+    except fs.FilesystemError as error:
+        if error.code == 'REGULAR_FILE_REQUIRED':
+            raise Damaged('The settings on %s are damaged' % label, label) from error
+        raise Unreadable('The settings on %s cannot be read now' % label) from error
+    except OSError as error:
+        if error.errno == errno.ELOOP:  # a link where the file should be
+            raise Damaged('The settings on %s are damaged' % label, label) from error
+        raise Unreadable('The settings on %s cannot be read now' % label) from error
+    try:
+        with os.fdopen(fd, 'rb') as stream:
+            data = stream.read()
+    except OSError as error:
+        raise Unreadable('The settings on %s cannot be read now' % label) from error
+    try:
+        return data.decode()
+    except UnicodeDecodeError as error:
+        raise Damaged('The settings on %s are damaged' % label, label) from error
 
 
 def read_disk():
@@ -171,19 +216,13 @@ def read_disk():
     context = fs.DeviceContext()
     with operation_lock(context.lock_path, context.mode):
         try:
-            with settings_root(context, 'ro') as (label, root):
-                copy_themes(root)
-                path = root / RELATIVE
-                if not present(path):
-                    return {}
+            # The themes of every volume looked at, as before (2026-11-14 review: only the chosen one's).
+            with settings_root(context, 'ro', visit=copy_themes) as (label, root):
                 # 2026-11-12 review: a file that cannot be read now (EIO, a busy card) is not a
                 # damaged one: it is no reason to offer erasing userdata, and still opens nothing.
-                try:
-                    text = path.read_text()
-                except UnicodeDecodeError as error:
-                    raise Damaged('The settings on %s are damaged' % label, label) from error
-                except OSError as error:
-                    raise Unreadable('The settings on %s cannot be read now' % label) from error
+                text = read_regular(root / RELATIVE, label)
+                if text is None:
+                    return {}
                 try:
                     return checked(json.loads(text), label)
                 except ValueError as error:
@@ -220,7 +259,7 @@ def choose(states, mode):
     are written only there, and only when it can be written now; a volume that can take them only
     later is no reason to put them elsewhere: Unreadable, the caller keeps them in RAM and tries
     again. Tested against every pair of states in tests/test_settings_damaged.py."""
-    target = None
+    target = fallback = None
     for label, there, holds, write in states:
         if not there:
             continue
@@ -229,14 +268,25 @@ def choose(states, mode):
         if holds:
             target = (label, write)
             break
-        if target is None and (mode == 'ro' or write != 'never'):
+        # The same place for reading and writing when no volume holds them (2026-11-14 review: a
+        # theme written to userdata beside a cache never written here was read from cache).
+        if target is None and write != 'never':
             target = (label, write)
+        fallback = fallback or (label, write)
+    if target is None and mode == 'ro':
+        target = fallback  # only volumes never written here: nothing to read, from the first
     if target is None:
         raise NoSettingsVolume('No volume is there for the settings')
     label, write = target
     if mode != 'ro' and write != 'now':
         raise Unreadable('The settings volume %s cannot be written now' % label)
     return label
+
+
+def _close(opened):
+    """Close a volume this call no longer needs: a failure to unmount it is no failure of the work."""
+    with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
+        opened.close()
 
 
 def _look(context, label, mode, relative, opened):
@@ -254,46 +304,63 @@ def _look(context, label, mode, relative, opened):
         try:
             root = opened.enter_context(volume_root(context, label, 'rw'))
         except (OSError, ValueError, fs.FilesystemError):
-            opened.close()
+            _close(opened)
         else:
             try:
-                return True, present(root / relative), 'now', root
+                return True, entry(root / relative), 'now', root
             except OSError:
                 return True, None, 'now', None
     try:
         root = opened.enter_context(volume_root(context, label, 'ro'))
-        holds = present(root / relative)
+        holds = entry(root / relative)
     except (OSError, ValueError, fs.FilesystemError):
-        opened.close()
+        _close(opened)
         return True, None, write, None
     if mode != 'ro':
-        opened.close()
+        _close(opened)
         root = None
     return True, holds, write, root
 
 
 @contextlib.contextmanager
-def settings_root(context, mode, relative=RELATIVE):
+def settings_root(context, mode, relative=RELATIVE, visit=None):
     """(label, root) of the volume choose() gives, open in MODE; RELATIVE: another file kept the
-    same way (the saved Wi-Fi networks). Volumes are looked at in order until one holds the file,
-    each opened once; every other is closed before the caller works in the chosen one, and all
-    of them whatever fails. Called under the operation lock."""
-    with contextlib.ExitStack() as everything:
+    same way (the saved Wi-Fi networks); VISIT(root) for each volume looked at that is open
+    read-only (read_disk copies the themes of each). Volumes are looked at in order until one holds
+    the file or cannot be looked at, each opened once; every other is closed before the caller works
+    in the chosen one, and all of them whatever fails. When the caller's work is done, a failure to
+    close a volume afterwards does not undo it (2026-11-14 review: a password written to disk was
+    said kept in RAM, a theme added said lost, settings read said unreadable). Called under the
+    operation lock."""
+    everything = contextlib.ExitStack()
+    try:
         looked = []
         for label in VOLUMES:
             opened = contextlib.ExitStack()
             everything.callback(opened.close)
             there, holds, write, root = _look(context, label, mode, relative, opened)
             looked.append((label, there, holds, write, root, opened))
+            if visit is not None and mode == 'ro' and root is not None:
+                visit(root)
             if holds is not False:  # the holder, or one that cannot be looked at: choose stops there
                 break
-        label = choose([entry[:4] for entry in looked], mode)
-        root = next(entry[4] for entry in looked if entry[0] == label)
-        for entry in looked:
-            if entry[0] != label:
-                entry[5].close()
-        assert root is not None  # choose gives a volume _look left open: readable, and writable for 'rw'
+        label = choose([entry_[:4] for entry_ in looked], mode)
+        root = next(entry_[4] for entry_ in looked if entry_[0] == label)
+        for entry_ in looked:
+            if entry_[0] != label:
+                _close(entry_[5])
+        if root is None:  # never by choose's contract; said, not asserted (python -O drops asserts)
+            raise Unreadable('The settings volume %s was not opened' % label)
+    except BaseException:
+        everything.close()
+        raise
+    try:
         yield label, root
+    except BaseException:
+        everything.close()
+        raise
+    with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
+        everything.close()
 
 
 def write_disk(record):
@@ -330,11 +397,14 @@ def remember(record):
 def load():
     """An unread disk is an error. Taking it for an empty one would lose the password on the next save.
     A damaged copy in RAM is read again from the disk."""
-    if RAM_COPY.is_file():
-        try:
-            return checked(json.loads(RAM_COPY.read_text()))
-        except ValueError:
-            pass
+    # Not there is the only reason to read the disk; a copy that cannot be read now is an error,
+    # never replaced by the older one on disk (2026-11-14 review: is_file() said no copy on any error).
+    try:
+        return checked(json.loads(RAM_COPY.read_text()))
+    except FileNotFoundError:
+        pass
+    except ValueError:
+        pass
     deadline = time.monotonic() + LOCK_WAIT
     while True:
         try:

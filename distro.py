@@ -1860,8 +1860,6 @@ def image_slot(name, live):
     return candidate
 
 
-SAVED_WIFI_RAM = Path('/run/a22x-recovery/wifi-saved.json')
-SAVED_WIFI = Path('a22x-recovery/wifi.json')
 
 
 def saved_key(context, ssid):
@@ -1869,14 +1867,19 @@ def saved_key(context, ssid):
     The interface marks a network joined from the saved list, whose password it never had."""
     def listed(text):
         return [n for n in json.loads(text).get('networks', []) if isinstance(n, dict)]
-    ram = context.root / 'wifi-saved.json' if context.mode == 'fixture' else SAVED_WIFI_RAM
-    networks = None
-    if ram.is_file():
-        with contextlib.suppress(OSError, ValueError):
-            networks = listed(ram.read_text())
-    if networks is None:
-        networks = catalog_volumes(context, 'ro', lambda root: listed((root / SAVED_WIFI).read_text())
-                                   if (root / SAVED_WIFI).is_file() else []) or []
+    if context.mode == 'fixture':
+        try:
+            networks = listed((context.root / 'wifi-saved.json').read_text())
+        except FileNotFoundError:
+            networks = []
+        except (OSError, ValueError):
+            networks = None
+    else:
+        # As wifi.py keeps them: its RAM copy, else the volume settings_root chooses (2026-11-14
+        # review: here a failed stat read as no list, and only cache was asked).
+        import wifi
+        networks = wifi.saved_known()
+    require(networks is not None, 'WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     for network in networks:
         if network.get('ssid_hex') == ssid.encode().hex():
             key = network.get('psk', '')

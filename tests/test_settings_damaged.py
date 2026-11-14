@@ -84,12 +84,12 @@ class Damaged(unittest.TestCase):
         """2026-11-12 review: EIO or EACCES on the file offered erasing settings and userdata."""
         self.write('cache', json.dumps(GOOD))
         self.write('userdata', json.dumps({'theme': 'x'}))
-        real = Path.read_text
+        real = settings.fs.open_regular
         def failing(path, *a, **k):
-            if path.parent.parent.name == 'cache':
+            if Path(path).parent.parent.name == 'cache':
                 raise OSError(5, 'Input/output error')
             return real(path, *a, **k)
-        with mock.patch.object(Path, 'read_text', failing):
+        with mock.patch.object(settings.fs, 'open_regular', failing):
             with self.assertRaises(settings.Unreadable):
                 settings.read_disk()
             self.assertEqual(settings.reset_damaged(), 1)
@@ -213,6 +213,19 @@ class Damaged(unittest.TestCase):
                                    and kinds[label] not in ('absent', 'dead')), None)
                     if written:
                         self.assertEqual(len(landed), 1)
+                        # An oracle apart from settings.choose, read_disk's rule as it was written
+                        # before both shared it: in order, past volumes not there, the first that
+                        # holds the file; one that cannot be looked at first is no reading.
+                        reads = None
+                        for label in ('cache', 'userdata'):
+                            if kinds[label] == 'absent':
+                                continue
+                            if kinds[label] == 'dead':
+                                break
+                            if (self.root / label / settings.RELATIVE).exists():
+                                reads = label
+                                break
+                        self.assertEqual(reads, landed[0], (cache, userdata))
                         # Never written while the settings cannot be read now...
                         self.assertNotIsInstance(before, OSError)
                         # ... where they are read from, or with none anywhere, on the first volume that may take them...
@@ -233,19 +246,61 @@ class Damaged(unittest.TestCase):
         # replaced the file with a record without it.
         self.write('cache', json.dumps(GOOD))
         before = (self.root / 'cache' / settings.RELATIVE).read_text()
-        real = os.stat
+        real = os.lstat
 
         def failing(path, *args, **kwargs):
             if str(path).endswith(str(settings.RELATIVE)) and '/cache/' in str(path):
                 raise PermissionError(13, 'Permission denied')
             return real(path, *args, **kwargs)
-        with mock.patch.object(settings.os, 'stat', failing):
+        with mock.patch.object(settings.os, 'lstat', failing):
             with self.assertRaises(settings.Unreadable):
                 settings.read_disk()
             self.assertFalse(settings.write_disk({'theme': 'y'}))
         self.assertEqual((self.root / 'cache' / settings.RELATIVE).read_text(), before)
         self.assertFalse((self.root / 'userdata' / settings.RELATIVE).exists())
         self.assertFalse(settings.present(self.root / 'cache' / 'none.json'))
+
+    def test_what_is_no_regular_file_is_damaged_never_none(self):
+        # 2026-11-14 review: a folder or a dangling link where settings.json should be read as no
+        # settings, and the phone opened without its password.
+        target = self.root / 'cache' / settings.RELATIVE
+        for make in (lambda: target.mkdir(), lambda: target.symlink_to('/nonexistent/settings.json')):
+            if target.is_symlink() or target.is_file():
+                target.unlink()
+            elif target.is_dir():
+                target.rmdir()
+            make()
+            with self.assertRaises(settings.Damaged):
+                settings.read_disk()
+        self.assertFalse((self.root / 'userdata' / settings.RELATIVE).exists())
+
+    def test_themes_of_every_volume_looked_at_are_copied(self):
+        # 2026-11-14 review: read_disk copied the themes of the chosen volume only.
+        self.write('userdata', json.dumps(GOOD))
+        copied = []
+        with mock.patch.object(settings, 'copy_themes', lambda root: copied.append(Path(root).name)):
+            settings.read_disk()
+        self.assertEqual(copied, ['cache', 'userdata'])
+
+    def test_with_no_settings_anywhere_reads_and_writes_choose_one_volume(self):
+        # 2026-11-14 review: beside a cache never written here, themes went to userdata and were read from cache.
+        states = [('cache', True, False, 'never'), ('userdata', True, False, 'now')]
+        self.assertEqual((settings.choose(states, 'ro'), settings.choose(states, 'rw')), ('userdata', 'userdata'))
+        only = [('cache', True, False, 'never')]
+        self.assertEqual(settings.choose(only, 'ro'), 'cache')
+        with self.assertRaises(settings.NoSettingsVolume):
+            settings.choose(only, 'rw')
+
+    def test_a_volume_that_fails_to_close_after_the_work_keeps_the_work(self):
+        # 2026-11-14 review: a password written to disk was said kept in RAM because the unmount failed.
+        @contextlib.contextmanager
+        def closing_fails(context, label, mode):
+            self.calls.append(('open', label, mode))
+            yield self.root / label
+            raise OSError(16, 'Device or resource busy')
+        with mock.patch.object(settings, 'volume_root', closing_fails):
+            self.assertTrue(settings.write_disk({'theme': 'y'}))
+        self.assertEqual(json.loads((self.root / 'cache' / settings.RELATIVE).read_text())['theme'], 'y')
 
     def test_the_rows_the_reviews_named(self):
         expect = {('later', 'now'): None,          # cache busy a moment: kept in RAM, never moved to userdata
