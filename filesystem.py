@@ -2383,7 +2383,9 @@ def parser():
 
 # Wipe → Cache, as TWRP's (2026-11-10): everything on the volume except what the recovery keeps there
 # (its settings, keys, saved Wi-Fi networks, plans and scripts in a22x-recovery).
-WIPE_KEEP = {'cache': ('a22x-recovery', 'lost+found')}
+# The mark of a recovery password (settings.PASSWORD_MARK) stays with the settings it guards
+# (2026-11-14 review: every Samsung firmware install and Wipe cache removed it).
+WIPE_KEEP = {'cache': ('a22x-recovery', '.a22x-recovery-password', 'lost+found')}
 
 
 def wipe_contents(context, ident, confirmed=False, expected=None):

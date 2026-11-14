@@ -15,10 +15,16 @@ The rule is `settings.choose`; its tests check every state of both volumes again
 what the next start reads. The saved Wi-Fi networks (`a22x-recovery/wifi.json`)
 follow the same rule.
 
+Only a regular file `a22x-recovery/settings.json` in a real folder counts as settings.
 While a password is set, an empty file `.a22x-recovery-password` stays at the root of
-the volume that keeps the settings. Settings found nowhere while it is there are
-damaged (exit 4), never "no password": the phone stays locked until the damaged
-settings are reset together with userdata. Clearing the password removes it.
+the volume that keeps the settings (written before the password, kept by Wipe cache
+and firmware installs, added at the start for a password set by an older release).
+Settings found nowhere while a volume carries it, or found without a password while
+another volume carries it, are damaged (exit 4), never "no password": the phone stays
+locked until the damaged settings are reset together with userdata. Clearing the
+password removes it from every volume. Erasing the settings volume itself (its
+format, or cache.img flashed in Download Mode) gives the defaults: that takes
+Download Mode, where any recovery can be flashed, which no password here covers.
 
 ```
 settings.py status

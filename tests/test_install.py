@@ -20,6 +20,7 @@ import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import install as i
+from operation_lock import ENV_FD
 
 
 def sparse(chunks, *, block=4096, declared=None, checksum=0, extension=b''):
@@ -298,7 +299,7 @@ class Lifecycle(unittest.TestCase):
         argv = [sys.executable, '-B', str(Path(i.__file__)), '--mode', 'fixture', '--fixture', str(f.root)]
         args = ['boot-plan', '--source-volume', 'sdcard-p1', '--source-path', '/linux.img',
                 '--expected-source-token', f.token, '--backup-path', str(f.backup), '--output', str(f.root / 'review.json')]
-        env = {key: value for key, value in os.environ.items() if key != i.ENV_FD}
+        env = {key: value for key, value in os.environ.items() if key != ENV_FD}
         made = subprocess.run(argv + args, capture_output=True, env=env, timeout=15)
         self.assertEqual(made.returncode, 0, made.stderr)
         review = json.loads(made.stdout)

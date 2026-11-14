@@ -443,10 +443,13 @@ class TestControlSocket(unittest.TestCase):
             self.assertEqual(REAL_SETTINGS_VOLUMES('rw', lambda root: 'written'), ('ok', 'written'))
             self.assertEqual(REAL_SETTINGS_VOLUMES('rw', lambda root: (_ for _ in ()).throw(OSError(5, 'eio'))), ('failed', None))
 
-    def test_forgetting_a_network_not_saved_needs_no_volume(self):
-        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('busy', None) if mode == 'rw' else ('ok', [])):
-            Path(self.tmp.name, 'saved-ram.json').unlink(missing_ok=True)
-            self.assertEqual(w.forget(b'Unknown')['saved_count'], 0)
+    def test_a_busy_volume_is_said_at_once_when_forgetting(self):
+        # 2026-11-14 review: a busy volume was waited for twice, rw then ro.
+        asked = []
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: (asked.append(mode), ('busy', None))[1]):
+            with self.assertRaises(w.WifiError) as caught:
+                w.forget(b'Unknown')
+        self.assertEqual((caught.exception.code, asked), ('WIFI_SAVED_UNAVAILABLE', ['rw']))
 
     def test_a_damaged_saved_list_holds_no_network(self):
         # 2026-11-14 review: a list, or entries that are no objects, raised AttributeError.

@@ -31,7 +31,7 @@ import zlib
 import bootimage
 import filesystem as fs
 from lp_metadata import drop_cached
-from operation_lock import operation_lock, ENV_FD, lease
+from operation_lock import operation_lock, lease as borrowed_lease
 
 CHUNK = 1024 * 1024
 MAX_JSON = 2 * CHUNK
@@ -698,7 +698,7 @@ class DeviceContext:
         it holds one, else under a lease of its own; while another operation runs, nothing is closed
         and the checks refuse super."""
         try:
-            with lease(self.lock_path, self.mode):  # the one borrowing rule (2026-11-14 review)
+            with borrowed_lease(self.lock_path, self.mode):  # the one borrowing rule (2026-11-14 review)
                 closed = self.fs.close_logical()
         except BlockingIOError:
             return []

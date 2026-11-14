@@ -14,16 +14,17 @@ DEVICE_LOCK = '/run/lock/a22x-mainline-recovery.lock'
 # The leases this process holds now, by lock path. A second flock of the same file through a new
 # descriptor would be refused even inside the same process, so a step that needs the lease asks
 # held() first and then runs inside the caller's lease (filesystem.py close_logical, 2026-11-12).
-# Each entry is (normalized lock path, thread): a lease is lent only within the thread that holds it
-# (2026-11-14 review: adbd's threads borrowed each other's lease; one read settings from a cache
-# the other had just unmounted, found none, and let adb in without the password).
+# Each entry is (the lock's real path, the holding thread object): a lease is lent only within the
+# thread that holds it (2026-11-14 reviews: adbd's threads borrowed each other's lease; a thread's
+# ident is reused once it ends, its object never is).
 _HELD = []
 
 
 def _key(path):
-    """The lock path as operation_lock records it: absolute and normalized (2026-11-14 review: '..'
-    kept in one spelling missed the lease recorded under the other)."""
-    return os.path.normpath(os.path.abspath(str(path)))
+    """The lock's real path, for the record of leases held only: one file under any spelling
+    (2026-11-14 reviews: '..' kept in one spelling missed the other; resolved by text it skipped a
+    link). operation_lock itself still refuses a path with a link in it."""
+    return os.path.realpath(str(path))
 # Set by the interface for a job it starts while its screenshot still holds the lease: until when
 # (CLOCK_MONOTONIC seconds) the job waits for it, MAX_WAIT at most (2026-11-14 review: a job started a
 # second after a screenshot to an unmounted card failed OPERATION_BUSY).
@@ -39,15 +40,22 @@ def _wait_until():
 
 
 def held(path=DEVICE_LOCK):
-    """Whether this process holds the lease for PATH now."""
-    return (_key(path), threading.get_ident()) in _HELD
+    """Whether this thread holds the lease for PATH now."""
+    return (_key(path), threading.current_thread()) in _HELD
+
+
+def _held_elsewhere(path):
+    """Whether another thread of this process holds the lease for PATH now."""
+    key, me = _key(path), threading.current_thread()
+    return any(entry == key and thread is not me for entry, thread in _HELD)
 
 
 @contextlib.contextmanager
 def lease(path=DEVICE_LOCK, mode='device'):
-    """The lease for PATH: this process's own when it holds it already (a step run inside its
-    caller's lease, as distro.py's saved Wi-Fi key), else a new one (2026-11-14 review: a second
-    flock of the same file in one process is refused, and the step failed busy every time)."""
+    """The lease for PATH: this thread's own when it holds it already (a step run inside its caller's
+    lease, as distro.py's saved Wi-Fi key), else a new one (2026-11-14 review: a second flock of the
+    same file in one process is refused, and the step failed busy every time). Another thread of the
+    process never borrows it."""
     if held(path):
         yield None
         return
@@ -72,7 +80,7 @@ def operation_lock(path, mode='device'):
     A helper cannot bypass another session's lock by setting the environment: the
     descriptor must name this exact lock, and flock must still succeed.
     """
-    path = Path(_key(path))
+    path = Path(path).absolute()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     for part in (path, *path.parents):
         if part.is_symlink():
@@ -83,6 +91,10 @@ def operation_lock(path, mode='device'):
         if inherited is not None:
             if not inherited.isdecimal() or int(inherited) < 3:
                 raise OSError(errno.EINVAL, 'Invalid inherited recovery lock descriptor')
+            # The inherited lease is this process's: one thread at a time (2026-11-14 review: a
+            # second thread duplicated it, and its flock on the same open file succeeded).
+            if _held_elsewhere(path):
+                raise BlockingIOError(errno.EWOULDBLOCK, 'Another thread holds the recovery lease')
             fd = os.dup(int(inherited))
         else:
             fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
@@ -97,7 +109,7 @@ def operation_lock(path, mode='device'):
                     raise
                 time.sleep(0.05)
         _regular(fd, path)
-        mine = (str(path), threading.get_ident())
+        mine = (_key(path), threading.current_thread())
         _HELD.append(mine)
         try:
             yield fd

@@ -83,6 +83,28 @@ class OperationLockTest(unittest.TestCase):
             self.assertTrue(ol.held(odd))
         self.assertEqual(seen, ['refused'])
 
+    def test_an_inherited_lease_is_lent_to_one_thread_only(self):
+        # 2026-11-14 review: with the lease inherited, a second thread duplicated it and its flock
+        # on the same open file succeeded.
+        import threading
+        import operation_lock as ol
+        fd = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        seen = []
+        with mock.patch.dict(os.environ, {ENV_FD: str(fd)}):
+            with operation_lock(self.path, 'device'):
+                def other():
+                    try:
+                        with ol.lease(self.path, 'device'):
+                            seen.append('borrowed')
+                    except BlockingIOError:
+                        seen.append('refused')
+                thread = threading.Thread(target=other)
+                thread.start()
+                thread.join()
+        self.assertEqual(seen, ['refused'])
+
     def test_child_reuses_lease_without_unlocking_parent_and_ui_is_blocked(self):
         with operation_lock(self.path, 'fixture') as fd:
             code = 'from operation_lock import operation_lock; import sys;\nwith operation_lock(sys.argv[1], "device"): print("CHILD_OK")'

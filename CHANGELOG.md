@@ -117,6 +117,14 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   the settings folder should be is damaged; the saved Wi-Fi list never removes the folder that also
   holds the settings; a RAM copy of the list that cannot be read is set right from the disk.
 
+- **Fixes from the tenth review** (19 findings): only a regular file counts as settings, and the
+  mark of a password decides what anything else means (no reset of userdata for a link a Linux
+  system made); settings without a password beside a mark on the other volume are damaged; the
+  mark is written before a password and removed after one, from every volume, survives Wipe cache
+  and firmware installs, is added at the start for passwords set by an older release, and a FIFO
+  there no longer hangs a save; an inherited lease is lent to one thread only; the reset opens
+  every volume it must change before userdata is erased.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

@@ -37,6 +37,13 @@ class FakeContext:
 
     def format(self, label, kind, confirmed, token):
         self.calls.append(('format', label, kind))
+        # As a format does: the volume comes back empty (its folder kept for the fake's mount).
+        volume = Path(self.root) / label
+        for child in list(volume.iterdir()) if volume.is_dir() else ():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
 
 
 class Damaged(unittest.TestCase):
@@ -260,45 +267,6 @@ class Damaged(unittest.TestCase):
         self.assertFalse((self.root / 'userdata' / settings.RELATIVE).exists())
         self.assertFalse(settings.present(self.root / 'cache' / 'none.json'))
 
-    def test_what_is_no_regular_file_is_damaged_never_none(self):
-        # 2026-11-14 review: a folder or a dangling link where settings.json should be read as no
-        # settings, and the phone opened without its password.
-        target = self.root / 'cache' / settings.RELATIVE
-        for make in (lambda: target.mkdir(), lambda: target.symlink_to('/nonexistent/settings.json')):
-            if target.is_symlink() or target.is_file():
-                target.unlink()
-            elif target.is_dir():
-                target.rmdir()
-            make()
-            with self.assertRaises(settings.Damaged):
-                settings.read_disk()
-        self.assertFalse((self.root / 'userdata' / settings.RELATIVE).exists())
-
-    def test_a_reset_removes_whatever_stands_where_the_settings_should_be(self):
-        # 2026-11-14 review: for a folder at settings.json, or a file where its folder should be,
-        # unlink failed after userdata was erased; every try erased it again and the phone stayed locked.
-        rel = settings.RELATIVE
-        for name, make in (('folder', lambda: (self.root / 'cache' / rel).mkdir()),
-                           ('file for its folder', lambda: (shutil.rmtree(self.root / 'cache' / rel.parent),
-                                                           (self.root / 'cache' / rel.parent).write_text('x'))),
-                           ('loop of links', lambda: (shutil.rmtree(self.root / 'cache' / rel.parent),
-                                                      os.symlink(rel.parent.name, self.root / 'cache' / rel.parent)))):
-            with self.subTest(name):
-                parent = self.root / 'cache' / rel.parent
-                if parent.is_symlink() or parent.is_file():
-                    parent.unlink()
-                elif parent.is_dir():
-                    shutil.rmtree(parent)
-                parent.mkdir()
-                make()
-                with self.assertRaises(settings.Damaged):
-                    settings.read_disk()
-                self.calls.clear()
-                self.assertEqual(settings.reset_damaged(), 0)
-                self.assertEqual([c for c in self.calls if c[0] == 'format'], [('format', 'userdata', 'ext4')])
-                self.assertEqual(settings.read_disk(), {})
-                (self.root / 'cache' / rel.parent).mkdir(exist_ok=True)
-
     def test_damaged_settings_stay_damaged_when_a_volume_fails_to_close(self):
         # 2026-11-14 review: the unmount's error replaced Damaged, and the reset was never offered.
         self.write('cache', '{not json')
@@ -319,13 +287,82 @@ class Damaged(unittest.TestCase):
             with self.assertRaises(settings.Unreadable):
                 settings.read_disk()
 
-    def test_a_dangling_link_for_the_settings_folder_is_damaged(self):
-        # 2026-11-14 review: a link there to a folder not there read as no settings, and the phone opened.
-        folder = self.root / 'cache' / settings.RELATIVE.parent
-        shutil.rmtree(folder)
-        folder.symlink_to('/nonexistent/folder')
-        with self.assertRaises(settings.Damaged):
+    def test_what_is_no_settings_file_counts_by_the_mark(self):
+        # 2026-11-14 reviews: read as none, a folder, a link or a file where the settings should be
+        # opened the phone; read as damaged, one a Linux system made had userdata erased with no
+        # password set. Only a regular file counts as settings, and the mark of a password decides.
+        rel = settings.RELATIVE
+        cache = self.root / 'cache'
+        shapes = {
+            'folder': lambda: (cache / rel).mkdir(),
+            'file for its folder': lambda: (shutil.rmtree(cache / rel.parent), (cache / rel.parent).write_text('x')),
+            'loop of links': lambda: (shutil.rmtree(cache / rel.parent), os.symlink(rel.parent.name, cache / rel.parent)),
+            'dangling link for its folder': lambda: (shutil.rmtree(cache / rel.parent), (cache / rel.parent).symlink_to('/nonexistent/f')),
+            'link to a real folder': lambda: (shutil.rmtree(cache / rel.parent), (cache / 'real').mkdir(exist_ok=True),
+                                              (cache / 'real/settings.json').write_text(json.dumps(GOOD)),
+                                              (cache / rel.parent).symlink_to('real'))}
+        for name, make in shapes.items():
+            for marked in (False, True):
+                with self.subTest(name, marked=marked):
+                    parent = cache / rel.parent
+                    if parent.is_symlink() or parent.is_file():
+                        parent.unlink()
+                    elif parent.is_dir():
+                        shutil.rmtree(parent)
+                    parent.mkdir()
+                    (cache / settings.PASSWORD_MARK).unlink(missing_ok=True)
+                    make()
+                    if not marked:
+                        self.assertEqual(settings.read_disk(), {})
+                        # A save puts real settings there in its place.
+                        self.assertTrue(settings.write_disk({'theme': 'y'}))
+                        self.assertEqual(settings.read_disk().get('theme'), 'y')
+                        continue
+                    (cache / settings.PASSWORD_MARK).write_text('')
+                    with self.assertRaises(settings.Damaged):
+                        settings.read_disk()
+                    self.calls.clear()
+                    self.assertEqual(settings.reset_damaged(), 0)
+                    self.assertEqual([c for c in self.calls if c[0] == 'format'], [('format', 'userdata', 'ext4')])
+                    self.assertFalse(os.path.lexists(cache / settings.PASSWORD_MARK))
+                    self.assertEqual(settings.read_disk(), {})
+
+    def test_settings_without_a_password_beside_a_mark_elsewhere_are_damaged(self):
+        # 2026-11-14 review: an older settings.json without a password on userdata opened the phone
+        # while cache said a password was set.
+        (self.root / 'cache' / settings.PASSWORD_MARK).write_text('')
+        self.write('userdata', json.dumps({'theme': 'old'}))
+        with self.assertRaises(settings.Damaged) as caught:
             settings.read_disk()
+        self.assertEqual((caught.exception.label, caught.exception.marks), ('cache', ('cache',)))
+        self.assertEqual(settings.reset_damaged(), 0)
+        self.assertEqual(settings.read_disk(), {})
+
+    def test_the_mark_goes_first_when_set_and_last_when_cleared(self):
+        # 2026-11-14 review of the order: a stop between the two must never leave a password unmarked.
+        record = {**GOOD}
+        order = []
+        real_set, real_drop = settings.set_mark, settings.drop_mark
+        real_replace = Path.replace
+        with mock.patch.object(settings, 'set_mark', lambda root: (order.append('mark'), real_set(root))), \
+                mock.patch.object(settings, 'drop_mark', lambda root: (order.append('unmark'), real_drop(root))), \
+                mock.patch.object(Path, 'replace', lambda self_, target: (order.append('settings'), real_replace(self_, target))[1]):
+            self.assertTrue(settings.write_disk(record))
+            self.assertTrue(settings.write_disk({k: v for k, v in record.items() if k not in ('hash', 'salt')}))
+        self.assertEqual(order, ['mark', 'settings', 'settings', 'unmark'])
+
+    def test_a_fifo_where_the_mark_goes_never_hangs(self):
+        # 2026-11-14 review: open() on a FIFO there hung the save forever under the lease.
+        os.mkfifo(self.root / 'cache' / settings.PASSWORD_MARK)
+        self.assertTrue(settings.write_disk({**GOOD}))
+        self.assertTrue((self.root / 'cache' / settings.PASSWORD_MARK).is_file())
+
+    def test_a_password_set_before_the_mark_gets_it_at_the_start(self):
+        # 2026-11-14 review: for passwords set by an older release the new guarantee did not hold.
+        self.write('cache', json.dumps(GOOD))
+        settings.RAM_COPY.unlink(missing_ok=True)
+        self.assertTrue(settings.load().get('hash'))
+        self.assertTrue((self.root / 'cache' / settings.PASSWORD_MARK).is_file())
 
     def test_a_password_once_set_never_reads_as_none(self):
         # 2026-11-14 review: every way of misreading "not there" opened the phone. The mark of a password

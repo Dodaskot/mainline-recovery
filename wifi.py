@@ -162,11 +162,12 @@ def networks_of(value):
     return whole
 
 
-def _drop_ram():
-    """The RAM copy gone, whatever it is (a folder too)."""
+def _drop_ram(folder_only=False):
+    """The RAM copy gone, whatever it is (a folder too); with FOLDER_ONLY only a folder, which no
+    write could replace."""
     if SAVED_RAM.is_dir() and not SAVED_RAM.is_symlink():
         shutil.rmtree(SAVED_RAM, ignore_errors=True)
-    else:
+    elif not folder_only:
         with contextlib.suppress(OSError):
             SAVED_RAM.unlink()
 
@@ -179,8 +180,7 @@ def _ram_saved(networks):
     _beside()
     import filesystem as fs
     try:
-        if SAVED_RAM.is_dir() and not SAVED_RAM.is_symlink():
-            _drop_ram()
+        _drop_ram(folder_only=True)
         _atomic(SAVED_RAM, {'networks': networks})
     except (OSError, fs.FilesystemError):
         _drop_ram()
@@ -306,8 +306,8 @@ def saved_key(ssid):
 
 def forget(ssid):
     """Removed in one locked read and write of the list on disk, copied to RAM (2026-11-14 reviews: a
-    stale RAM copy decided). When the volume cannot be written now, the disk read-only says whether
-    the network is saved at all; one it does not hold is forgotten already, and RAM is set right."""
+    stale RAM copy decided; a second wait and a second mount when busy). A volume that cannot be
+    had now is said at once."""
     kept = []
 
     def without(networks):
@@ -315,9 +315,6 @@ def forget(ssid):
         return kept
     saved = _update(without)
     if saved is None:
-        status, current = _settings_volumes('ro', _read_and_keep)
-        if status == 'ok' and all(n.get('ssid_hex') != ssid.hex() for n in current):
-            return {**state(), 'saved_count': len(current)}
         fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     # A failed write is said: the network would come back at the next start (2026-11-14 review).
     if saved is False:
