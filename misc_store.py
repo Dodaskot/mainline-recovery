@@ -219,9 +219,9 @@ def _write_slot(fd, name, index, generation, payload):
 def write(name, payload):
     """PAYLOAD (bytes) as record NAME, in both slots: first over the one that is not the newest whole
     copy, read back, then over that one, so a stop at any point leaves a whole copy of the record
-    before or after. Called under the operation lock. OSError when misc cannot be written or a copy
-    cannot be read now; Foreign when another's bytes are in the area and it is not this
-    recovery's (see owned)."""
+    before or after. Called under the operation lock. OSError when misc cannot be written, or when
+    the area is not this recovery's yet and a slot of it cannot be read now; Foreign when another's
+    bytes are in the area and it is not this recovery's (see owned)."""
     _name(name)
     if len(payload) > PAYLOAD_MAX:
         raise ValueError('The %s record is too large for misc' % name)
@@ -229,10 +229,16 @@ def write(name, payload):
     try:
         area = _area(fd)
         slots = area[name]
-        if any(slot[0] == 'foreign' for pair in area.values() for slot in pair) and not owned(area):
-            raise Foreign(errno.EEXIST, 'Another program keeps data in the area of the %s record' % name)
-        if any(slot[0] == 'unreadable' for slot in slots):
-            raise OSError(errno.EIO, 'A copy of the %s record cannot be read now' % name)
+        if not owned(area):
+            # Taken only when every slot of the area was seen: one that cannot be read may hold
+            # another's bytes (2026-11-14 review).
+            if any(slot[0] == 'unreadable' for pair in area.values() for slot in pair):
+                raise OSError(errno.EIO, 'A slot of misc cannot be read now')
+            if any(slot[0] == 'foreign' for pair in area.values() for slot in pair):
+                raise Foreign(errno.EEXIST, 'Another program keeps data in the area of the %s record' % name)
+        # A copy of its own that cannot be read is written over: the new record replaces whatever
+        # it held, and the write repairs it (2026-11-14 review: refused, a lasting EIO kept every
+        # save in RAM).
         whole = [index for index in (0, 1) if slots[index][0] == 'valid']
         newest = max(whole, key=lambda index: slots[index][1]) if whole else None
         generation = slots[newest][1] if newest is not None else 0

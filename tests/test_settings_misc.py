@@ -154,6 +154,25 @@ class Misc(unittest.TestCase):
         self.legacy = dict(SECRET)
         self.assertEqual(settings.read_disk(), SECRET)  # read from there too
 
+    def test_a_volume_without_a_filesystem_now_is_never_taken_for_one_emptied(self):
+        # 2026-11-14 review: the flag was set while userdata showed no filesystem for a moment.
+        misc_store.write('wifi', b'{"networks": []}')
+        settings.write_disk(dict(SECRET))
+        real = Context.volume
+        with mock.patch.object(Context, 'volume', lambda self, label: {**real(self, label), 'mountable': False,
+                               'reason_code': 'FILESYSTEM_DRIVER_UNAVAILABLE'} if label == 'userdata' else real(self, label)):
+            self.assertNotIn(settings.OLDER_STORE, settings.read_disk())
+        self.assertEqual(settings.read_disk(), {**SECRET, **GONE})
+
+    def test_the_mark_goes_before_the_settings_file(self):
+        # 2026-11-14 review: a stop between them left a mark without settings, which reads as damage.
+        misc_store.write('wifi', b'{"networks": []}')
+        settings.write_disk(dict(SECRET))
+        self.put_legacy('cache')
+        with mock.patch.object(settings, 'clear_entry', side_effect=OSError(5, 'eio')):
+            settings.read_disk()
+        self.assertEqual(self.legacy_files(), ['cache/a22x-recovery/settings.json'])
+
     def test_what_the_older_store_cannot_tell_is_never_copied(self):
         for error in (settings.Unreadable('userdata will not mount'), settings.Damaged('damaged', 'cache')):
             with self.subTest(error=type(error).__name__):

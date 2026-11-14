@@ -188,17 +188,38 @@ class Store(unittest.TestCase):
     def test_with_a_slot_unreadable_nothing_is_decided_on_ownership_or_repaired(self):
         ms.write('wifi', b'{}')
         ms.write('settings', b'x')
-        real_pread = os.pread
+        real_pread, real_pwrite = os.pread, os.pwrite
         wifi = ms.AREAS['wifi']
+        bad = {wifi}
 
         def pread(fd, size, offset):
-            if offset == wifi:
+            if offset in bad:
                 raise OSError(5, 'Input/output error')
             return real_pread(fd, size, offset)
-        with mock.patch('os.pread', pread):
+
+        def pwrite(fd, data, offset):
+            bad.discard(offset)  # as the eMMC does: a sector written is mapped anew
+            return real_pwrite(fd, data, offset)
+        with mock.patch('os.pread', pread), mock.patch('os.pwrite', pwrite):
             self.assertEqual(ms.state('settings'), (b'x', True, False))
-            with self.assertRaises(OSError):
-                ms.write('wifi', b'y')  # a copy of it cannot be read: not written over blindly
+            # In an area of ours, a copy that cannot be read is written over, which repairs it
+            # (2026-11-14 review: refused, a lasting EIO kept every save in RAM).
+            ms.write('wifi', b'y')
+        self.assertEqual(ms.state('wifi'), (b'y', True, True))
+        # An area not this recovery's yet is never taken while a slot of it cannot be read: it may
+        # hold another's bytes (2026-11-14 review).
+        ms.clear('wifi')
+        ms.clear('settings')
+        settings_first = ms.AREAS['settings']
+
+        def unread(fd, size, offset):
+            if offset == settings_first:
+                raise OSError(5, 'Input/output error')
+            return real_pread(fd, size, offset)
+        with mock.patch('os.pread', unread), self.assertRaises(OSError) as caught:
+            ms.write('wifi', b'z')
+        self.assertNotIsInstance(caught.exception, ms.Foreign)
+        self.assertIsNone(ms.read('wifi'))
 
     def test_a_write_stopped_between_the_copies_is_told(self):
         ms.write('settings', b'old')

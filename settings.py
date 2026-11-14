@@ -802,6 +802,9 @@ def _retire_volumes(context):
         try:
             volume = _volume(context, label)
             if volume is None:
+                # No filesystem seen now is no proof that none of the older store is there: it may
+                # come back (2026-11-14 review: the flag was set, and the volume never looked at again).
+                done = False
                 continue
             with volume_root(context, label, 'ro') as root:
                 root = _its_root(root, volume)
@@ -809,9 +812,11 @@ def _retire_volumes(context):
                     continue
             with volume_root(context, label, 'rw') as root:
                 root = _its_root(root, volume)
+                # The mark first: a stop between leaves settings that read as they are, never a mark
+                # without them, which reads as damage (2026-11-14 review).
+                drop_mark(root)
                 clear_entry(root, RELATIVE)
                 (root / RELATIVE).unlink(missing_ok=True)
-                drop_mark(root)
                 # The older Wi-Fi list too, now that misc holds its own: networks forgotten since
                 # never come back from it.
                 clear_file(root, WIFI_RELATIVE)

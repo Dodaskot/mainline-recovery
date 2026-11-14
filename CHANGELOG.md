@@ -37,7 +37,7 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   of those reviews: `sync()` before a save of the older store is said done, a card removed at
   the start is "cannot be read now", a command that does not come back is a failed look, and
   the check of cache in `ramdisk/init` has a limit of 120 s.
-  Tests: 907 Python, 110 backend, 106 UI self-tests, 23 of 23 UI targets (every stop of a write,
+  Tests: 910 Python, 110 backend, 106 UI self-tests, 23 of 23 UI targets (every stop of a write,
   a cut header, damage to either copy, a copy that cannot be read, another program's bytes,
   nothing outside the record's 64 KiB ever written). On the phone: 1.0.15 and then 1.0.16
   written to recovery, read back and started. At the first start the 16 settings and 5
