@@ -219,9 +219,9 @@ def _write_slot(fd, name, index, generation, payload):
 def write(name, payload):
     """PAYLOAD (bytes) as record NAME, in both slots: first over the one that is not the newest whole
     copy, read back, then over that one, so a stop at any point leaves a whole copy of the record
-    before or after. Called under the operation lock. OSError when misc cannot be written, or when
-    the area is not this recovery's yet and a slot of it cannot be read now; Foreign when another's
-    bytes are in the area and it is not this recovery's (see owned)."""
+    before or after. Called under the operation lock. OSError when misc cannot be written, or a copy
+    of the record cannot be read now; Foreign when the area is not this recovery's and holds
+    another's bytes, or a slot that cannot be read now (see owned)."""
     _name(name)
     if len(payload) > PAYLOAD_MAX:
         raise ValueError('The %s record is too large for misc' % name)
@@ -230,15 +230,18 @@ def write(name, payload):
         area = _area(fd)
         slots = area[name]
         if not owned(area):
-            # Taken only when every slot of the area was seen: one that cannot be read may hold
-            # another's bytes (2026-11-14 review).
-            if any(slot[0] == 'unreadable' for pair in area.values() for slot in pair):
-                raise OSError(errno.EIO, 'A slot of misc cannot be read now')
-            if any(slot[0] == 'foreign' for pair in area.values() for slot in pair):
-                raise Foreign(errno.EEXIST, 'Another program keeps data in the area of the %s record' % name)
-        # A copy of its own that cannot be read is written over: the new record replaces whatever
-        # it held, and the write repairs it (2026-11-14 review: refused, a lasting EIO kept every
-        # save in RAM).
+            # Taken only when every slot of the area was seen and none holds another's bytes: one
+            # that cannot be read may hold them. Not taken, the settings stay in the older store
+            # (Foreign; 2026-11-14 reviews).
+            if any(slot[0] in ('unreadable', 'foreign') for pair in area.values() for slot in pair):
+                raise Foreign(errno.EEXIST, 'The area of the %s record is not this recovery\'s' % name)
+        if any(slot[0] == 'unreadable' for slot in slots):
+            # Never past a copy of its own that cannot be read: it may be the newer one, of a save
+            # that stopped between the copies, and the older would be written back as the newest
+            # (2026-11-14 review: a password set read as none for good). The save stays in RAM
+            # (exit 3) until the copy reads again; a lasting media error there is one of the
+            # bounds in SETTINGS_API.md.
+            raise OSError(errno.EIO, 'A copy of the %s record cannot be read now' % name)
         whole = [index for index in (0, 1) if slots[index][0] == 'valid']
         newest = max(whole, key=lambda index: slots[index][1]) if whole else None
         generation = slots[newest][1] if newest is not None else 0

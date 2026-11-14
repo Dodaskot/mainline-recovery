@@ -202,10 +202,13 @@ class Store(unittest.TestCase):
             return real_pwrite(fd, data, offset)
         with mock.patch('os.pread', pread), mock.patch('os.pwrite', pwrite):
             self.assertEqual(ms.state('settings'), (b'x', True, False))
-            # In an area of ours, a copy that cannot be read is written over, which repairs it
-            # (2026-11-14 review: refused, a lasting EIO kept every save in RAM).
-            ms.write('wifi', b'y')
-        self.assertEqual(ms.state('wifi'), (b'y', True, True))
+            # Never past a copy of its own that cannot be read: it may be the newer one (2026-11-14
+            # review: the older was written back as the newest, a password set read as none).
+            with self.assertRaises(OSError) as refused:
+                ms.write('wifi', b'y')
+            self.assertNotIsInstance(refused.exception, ms.Foreign)
+        self.assertEqual(ms.state('wifi'), (b'{}', True, True))
+        del pwrite
         # An area not this recovery's yet is never taken while a slot of it cannot be read: it may
         # hold another's bytes (2026-11-14 review).
         ms.clear('wifi')
@@ -216,9 +219,8 @@ class Store(unittest.TestCase):
             if offset == settings_first:
                 raise OSError(5, 'Input/output error')
             return real_pread(fd, size, offset)
-        with mock.patch('os.pread', unread), self.assertRaises(OSError) as caught:
-            ms.write('wifi', b'z')
-        self.assertNotIsInstance(caught.exception, ms.Foreign)
+        with mock.patch('os.pread', unread), self.assertRaises(ms.Foreign):
+            ms.write('wifi', b'z')  # not taken: the settings stay in the older store
         self.assertIsNone(ms.read('wifi'))
 
     def test_a_write_stopped_between_the_copies_is_told(self):
