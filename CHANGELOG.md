@@ -14,20 +14,26 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   - a save was said done when it had reached only the journal of a cache that was already
     mounted, and read-only looks do not replay a journal: a hard reset seconds after a password
     was set could show the state before it. `sync()` now writes it in place before the save is
-    said done, and the journal of an ext4 the recovery may write is replayed once (mounted for
-    writing and unmounted) before the settings are read and before other volumes are searched
-    for a password mark when a password is cleared (review of review-25). Only a volume that is
-    not mounted: one that is mounted is never remounted by a look at the settings (tried, and
-    taken back after the review of review-26: it would have replayed the journal of a damaged
-    userdata the user had mounted read-only to save files). A mount command that does not come
-    back is a failed look, no longer a traceback with the exit code of a wrong password.
+    said done, and the journal of an ext4 the recovery may write is replayed before the settings
+    are read and before other volumes are searched for a password mark when a password is
+    cleared. It is replayed without a mount (`e2fsck -p -E journal_only`,
+    `filesystem.replay_journal`), and only for a volume that is not mounted. Replaying by a mount
+    for writing was tried first and taken back after the reviews of review-26 to review-29: the
+    kernel also cleared the orphan list, which restarts the phone on a damaged filesystem set to
+    panic on errors (Android formats cache so), a failure halfway left a mount behind, and a
+    volume the user had mounted read-only to save files was remounted. A command that does not
+    come back is a failed look, no longer a traceback with the exit code of a wrong password.
+    On the phone, with a scratch image in RAM copied as a reset would leave it: a file saved with
+    fsync alone is not in a read-only look, it is there after `replay_journal`, and a file saved
+    before `sync()` is there with no replay; the replay of the real cache exits 0 and mounts
+    nothing.
   One finding is left as it was, on purpose: a recovery that has never saved settings stays
   locked with "Try again" while a userdata it recognizes cannot be mounted. Passing such a
   userdata over was tried and taken back after the review of review-24: releases 0.6.180 to
   0.6.206 saved to userdata whenever cache could not be written at that moment, so a password
   may be there beside a cache that is whole and empty, and it would have read as none. The walk
   now starts from that state too.
-  Tests: 882 Python, 110 backend. On the phone (1.0.14, the new
+  Tests: 884 Python, 110 backend. On the phone (1.0.14, the new
   `settings.py` run from RAM): 16 fields read from cache, the same record saved and read back.
   The journal replay itself was not provoked on the phone (it needs a reset in the middle of a
   write).

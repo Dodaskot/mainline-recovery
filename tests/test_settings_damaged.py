@@ -512,8 +512,9 @@ class Damaged(unittest.TestCase):
             self.assertEqual(settings.read_disk(), {'theme': 'aurora'})
 
     def test_a_journal_left_by_a_reset_is_replayed_before_the_settings_are_read(self):
-        # 2026-11-14 review (23): a read-only look does not replay the ext4 journal, so a save cut by a
-        # reset read as the state before it. Only for a filesystem this recovery may write, once.
+        # 2026-11-14 reviews (23 to 29): a read-only look does not replay the ext4 journal, so a save
+        # cut by a reset read as the state before it. Replayed without a mount, once, only for a
+        # filesystem this recovery may write, and never for a volume that is mounted.
         seen = []
         volume = {'id': 'cache', 'mounted': False, 'mountable': True, 'needs_recovery': True, 'volume_token': 't'}
 
@@ -521,32 +522,31 @@ class Damaged(unittest.TestCase):
             def volume(self, label):
                 return dict(volume)
 
-            def mount(self, label, mode, confirmed, token):
-                seen.append((label, mode))
+            def replay(self, label, token):
+                seen.append((label, token))
                 volume['needs_recovery'] = False
 
-            def unmount(self, label):
-                seen.append((label, 'unmount'))
+            def mount(self, *args):
+                raise AssertionError('a look at the settings mounts nothing to replay a journal')
+            unmount = mount
         self.assertFalse(settings._ready(Context(), 'cache')['needs_recovery'])
-        self.assertEqual(seen, [('cache', 'rw'), ('cache', 'unmount')])
+        self.assertEqual(seen, [('cache', 't')])
         del seen[:]
         settings._ready(Context(), 'cache')
         volume.update(needs_recovery=True, read_only_reason_code='FSCRYPT_KEYS_UNAVAILABLE')
         settings._ready(Context(), 'cache')
-        self.assertEqual(seen, [])
-        # 2026-11-14 review (26): a volume that is mounted is never remounted by a look, whoever
-        # mounted it; and a mount command that does not come back is no traceback.
         for state in ({'read_only': True, 'mount_owner': 'filesystem'}, {'read_only': False, 'mount_owner': 'filesystem'},
                       {'read_only': True, 'mount_owner': 'storage'}):
             volume.update(needs_recovery=True, read_only_reason_code=None, mounted=True, **state)
             settings._ready(Context(), 'cache')
-            self.assertEqual(seen, [], state)
+        self.assertEqual(seen, [])
         volume.update(mounted=False)
-
-        class Hangs(Context):
-            def mount(self, label, mode, confirmed, token):
-                raise subprocess.TimeoutExpired('mount', 30)
-        self.assertTrue(settings._ready(Hangs(), 'cache')['needs_recovery'])
+        for failure in (subprocess.TimeoutExpired('e2fsck', 120), settings.fs.FilesystemError('JOURNAL_REPLAY_FAILED', 'x'),
+                        OSError(5, 'Input/output error')):
+            class Fails(Context):
+                def replay(self, label, token):
+                    raise failure
+            self.assertTrue(settings._ready(Fails(), 'cache')['needs_recovery'])  # looked at as it is
 
     def test_clearing_the_password_looks_for_other_marks_after_the_journal_is_replayed(self):
         # 2026-11-14 review (25): _drop_other_marks looked through _volume, so a mark that was only

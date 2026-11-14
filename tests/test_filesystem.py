@@ -1157,6 +1157,43 @@ class CheckRepairTest(FilesystemFixtureSupport):
         self.assertGreaterEqual(caught.exception.details['exit_code'], 8)
 
 
+class ReplayJournalTest(FilesystemFixtureSupport):
+    def test_a_journal_is_replayed_without_a_mount_and_garbage_is_refused(self):
+        import shutil
+        import subprocess
+        tools = [shutil.which(name) for name in ('mkfs.ext4', 'debugfs', 'e2fsck')]
+        if not all(tools):
+            self.skipTest('e2fsprogs are not installed on this host')
+        mkfs, debugfs, e2fsck = tools
+        image = self.root / 'cache.img'
+        with open(image, 'wb') as handle:
+            handle.truncate(16 << 20)
+        subprocess.run([mkfs, '-q', '-F', str(image)], check=True)
+
+        def flag():
+            with open(image, 'rb') as handle:
+                return fs.probe_magic(handle.read(8192))['needs_recovery']
+        self.assertFalse(flag())
+        self.assertEqual(fs.replay_journal(image, tool=e2fsck)['exit_code'], 0)  # nothing to replay
+        # A transaction left in the journal, as a reset leaves it: a block written through the
+        # journal and never put in place.
+        commands = self.root / 'journal.cmd'
+        commands.write_text('jo\njw -b 333 /dev/zero\njc\n')
+        subprocess.run([debugfs, '-w', '-f', str(commands), str(image)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.assertTrue(flag())
+        self.assertIn(fs.replay_journal(image, tool=e2fsck)['exit_code'], (0, 1))
+        self.assertFalse(flag())
+        garbage = self.root / 'zeros.img'
+        with open(garbage, 'wb') as handle:
+            handle.truncate(4 << 20)
+        self.assert_error('JOURNAL_REPLAY_FAILED', fs.replay_journal, garbage, e2fsck)
+        self.assert_error('CHECK_UNAVAILABLE', fs.replay_journal, image, str(self.root / 'none'))
+
+    def test_the_fixture_replays_nothing_and_answers_as_the_device_does(self):
+        self.assertEqual(fs.FixtureContext(self.root).replay('userdata')['volume']['id'], 'userdata')
+
+
 class ResizeTest(FilesystemFixtureSupport):
     """TWRP's "Resize File System": check, then grow ext2/3/4 to fill its partition."""
     def test_fixture_admission_matches_check(self):

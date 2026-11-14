@@ -439,23 +439,19 @@ def _ready(context, label):
     """_volume, after the journal of an ext4 this recovery may write was replayed: a read-only look
     does not replay it (noload), and a write cut short by a reset may be whole only in the journal,
     its blocks half in place: settings that read as older ones, as damaged, or not at all at every
-    start (2026-11-14 review). Mounted for writing once and unmounted, as distro.boot_check does;
-    when that fails the volume is looked at as it is. Only a volume that is not mounted: one that
-    is mounted is never remounted by a look at the settings, whoever mounted it and however (a
-    read-only mount the user made of a damaged userdata to save its files would have had its
-    journal replayed; a failure halfway left Flash without the mount it held: 2026-11-14 review).
-    Cache comes to every start with its journal replayed (ramdisk/init runs e2fsck -p on it before
-    anything mounts it), so this is for userdata, and for a userdata that something has mounted
-    read-only it does nothing: what is whole only in its journal then is a save that was never
-    said done. f2fs needs none: without its roll-forward (norecovery) it shows its last
-    checkpoint, which is whole and is what sync() writes before a save is said done."""
+    start (2026-11-14 review; seen on the phone: a file saved with fsync alone is not in a noload
+    view of the device as a reset leaves it). Replayed without a mount (filesystem.replay_journal),
+    and only for a volume that is not mounted: one that is mounted is left to whoever mounted it.
+    When the replay fails the volume is looked at as it is. Cache also comes to every start
+    replayed (ramdisk/init runs e2fsck -p on it before anything mounts it). f2fs needs none:
+    without its roll-forward (norecovery) it shows its last checkpoint, which is whole and is what
+    sync() writes before a save is said done."""
     volume = _volume(context, label)
     if (volume is None or volume.get('mounted') or not volume.get('needs_recovery')
             or volume.get('read_only_reason_code') in NEVER_WRITABLE):
         return volume
     try:
-        context.mount(label, 'rw', True, volume['volume_token'])
-        context.unmount(label)
+        context.replay(label, volume['volume_token'])
     except FAILS:
         pass
     return _volume(context, label)
