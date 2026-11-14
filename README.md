@@ -132,7 +132,9 @@ More, page by page: [docs/screenshots/en](docs/screenshots/en).
   (the USB network `172.16.42.1`).
 - An optional **password** locks the recovery and is asked on the phone before a
   computer gets a shell. When the settings that hold it cannot be read, the
-  recovery stays locked.
+  recovery stays locked. The settings, the password and the saved Wi-Fi networks are kept
+  twice, with checksums, in the free end of the `misc` partition, not on cache or userdata
+  ([SETTINGS_API.md](SETTINGS_API.md)).
 
 ### Interface
 

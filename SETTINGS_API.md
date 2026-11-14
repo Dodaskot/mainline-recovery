@@ -1,35 +1,28 @@
 # Settings helper
 
-`settings.py` keeps preferences and the optional password in
-`a22x-recovery/settings.json` on `cache`, or on `userdata` when `cache` holds no
-filesystem this recovery can ever write (none at all, or one that is only read here).
-Recovery runs from RAM, and `cache` survives a userdata wipe and an Android
-install. `/run/a22x-recovery/settings.json` avoids a mount for every read.
-
-A save goes where the next start reads the settings, and only then: to the volume
-that holds them, or, when none does, to the first volume that can ever take them.
-When that volume cannot be written at this moment (busy, mounted by another owner,
-read-only for now), nothing is moved elsewhere: the save stays in RAM (exit 3) and
+`settings.py` keeps preferences and the optional password in the `misc` partition, and
+the saved Wi-Fi networks beside them (since 2026-11-14, `misc_store.py`). Each is one record
+kept twice, in its own 64 KiB of the last 128 KiB of `misc` (settings at 384 KiB, Wi-Fi at
+448 KiB): each copy has a generation and a SHA-256, a read takes the newest whole copy, and a
+write replaces the older one, so a save that stops halfway leaves the one before it. No
+filesystem is involved: no mount, no journal, no older copy on another volume. Android uses
+only the first 64 KiB of `misc` (the bootloader message, the system space), the LK only its
+bootloader message, MediaTek's sysenv the `para` partition; bytes in the record's place that
+are not this recovery's are never written over. `/run/a22x-recovery/settings.json` avoids
+reading `misc` for every question; a save `misc` cannot take now stays in RAM (exit 3) and
 the interface tries again after 10 s, then each time twice as late, 5 min at most.
-The rule is `settings.choose`; its tests check every state of both volumes against
-what the next start reads. The saved Wi-Fi networks (`a22x-recovery/wifi.json`)
-follow the same rule.
 
-Only a regular file `a22x-recovery/settings.json` counts as settings, never a link; its folder
-may be a link only to a folder of the same volume. A partition without a filesystem holds
-nothing; a volume that cannot be found or read at the moment (the list of volumes failing
-while a card comes or goes, a mount that fails) is "cannot be read now" (exit 2), never
-"no settings". That holds beside an empty cache too: older releases (0.6.180 to 0.6.206)
-could save to userdata while cache was whole, so a recovery that never saved settings stays
-locked while a userdata it recognizes cannot be read.
-While a password is set, an empty file `.a22x-recovery-password` stays at the root of
-the volume that keeps the settings (written before the password, kept by Wipe cache
-and firmware installs, added at the start for a password set by an older release).
-Settings found nowhere while a volume carries it, or found without a password while
-another volume carries it, are damaged (exit 4), never "no password": the phone stays
-locked until the damaged settings are reset together with userdata. Clearing the
-password removes it from every volume. Erasing the settings volume itself (its
-format, or cache.img flashed in Download Mode) gives the defaults: that takes
+Releases up to 1.0.1 kept the settings in `a22x-recovery/settings.json` on `cache` (or on
+`userdata`), with a password mark beside them. While `misc` holds no record yet, that file is
+read as those releases read it and copied to `misc`, which decides from then on; the file is
+left in place and never read again. While that older file cannot be read (a userdata it
+recognizes that will not mount), the recovery stays locked (exit 2), as those releases did:
+a password may be there. The themes stay on `cache`, with the backups.
+
+`misc` that cannot be read is "cannot be read now" (exit 2), never "no settings". Both copies
+damaged are damaged settings (exit 4): the phone stays locked until they are reset together
+with userdata (userdata first, then both copies). One damaged copy is a save that stopped;
+the other decides. Erasing `misc` itself in Download Mode gives the defaults: that takes
 Download Mode, where any recovery can be flashed, which no password here covers.
 
 ```

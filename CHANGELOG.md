@@ -6,6 +6,34 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
 
 ## Not released yet (1.0.1)
 
+- **The settings, the password and the saved Wi-Fi networks are kept in `misc`**, not in a file
+  on cache or userdata (`misc_store.py`). Twelve rounds of review found, one after another, ways
+  for a filesystem to show an older state: a volume that would not mount, a card removed at the
+  start, a journal not yet replayed, an older release that saved to userdata. Each could read a
+  password as none or lock a phone without one. They are now kept as U-Boot keeps its redundant
+  environment: two copies of each record on the raw partition, each with a generation and a
+  SHA-256, in the last 128 KiB of `misc`. A read takes the newest whole copy, a write replaces
+  the older one, and a save that stops halfway leaves the one before it. That area was checked
+  free first:
+  - the Samsung kernel never touches `misc`;
+  - the LK writes only its bootloader message (the first 2 KiB);
+  - Android (`init`, `uncrypt`, `libbootloader_message`, `mtectrl`) uses only the first 64 KiB;
+  - MediaTek's sysenv writes `para` at 128 to 160 KiB, and `misc` only when `para` is missing;
+  - backups of `misc` from 2026-10-07 and the partition now hold zeros beyond 64 KiB.
+
+  Bytes in a record's place that are not this recovery's are never written over. The file of
+  an older release is read once, while `misc` holds no record, and copied. Themes stay on
+  cache. The journal replay added in the reviews before (by a mount, by `e2fsck`, by `debugfs`)
+  is gone again: nothing reads the settings from a filesystem after that first copy. What stays
+  of those reviews: `sync()` before a save of the older store is said done, a card removed at
+  the start is "cannot be read now", a command that does not come back is a failed look, and
+  the check of cache in `ramdisk/init` has a limit of 120 s.
+  Tests: 897 Python, 110 backend (every stop of a write, a cut header, damaged copies, another
+  program's bytes, and nothing outside the record's 64 KiB ever written). On the phone (1.0.14,
+  the new files run from RAM): the 16 settings and 5 saved networks copied from cache to `misc`,
+  saved and read back, both copies whole, the first 384 KiB of `misc` unchanged byte for byte;
+  the records were cleared afterwards, since the installed release still saves to cache.
+
 - **A save of the settings survives a reset, and a card removed at the start locks nothing**
   (the focused reviews of review-23 and review-24, all in `settings.py`):
   - the list of volumes failing with a bare `OSError` (a card or a stick removed while sysfs is
@@ -14,26 +42,10 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   - a save was said done when it had reached only the journal of a cache that was already
     mounted, and read-only looks do not replay a journal: a hard reset seconds after a password
     was set could show the state before it. `sync()` now writes it in place before the save is
-    said done, and the journal of an ext4 the recovery may write is replayed before the settings
-    are read and before other volumes are searched for a password mark when a password is
-    cleared. It is replayed without a mount, by `debugfs -w -R jr` (`filesystem.replay_journal`:
-    the journal and nothing more), only for a volume that is not mounted and whose partition is
-    not read-only, held exclusively meanwhile so that nothing mounts it, and for 15 s at most.
-    Two other ways were tried first and taken back after the reviews of review-26 to review-31.
-    A mount for writing: the kernel also cleared the orphan list, which restarts the phone on a
-    damaged filesystem set to panic on errors (Android formats cache so), and a failure halfway
-    left a mount behind. `e2fsck -p -E journal_only`: it also clears orphans, may go on to a
-    whole check or delete a damaged journal, and waits for ever after a write error. For that
-    last reason the check of cache in `ramdisk/init` now has a limit of 120 s (not yet run from
-    a flashed image). A command that does not come back is a failed look, no longer a traceback
-    with the exit code of a wrong password.
-    On the phone, with a scratch image in RAM copied as a reset would leave it and attached as a
-    block device: a file saved with fsync alone is not in a read-only look, it is there after
-    `replay_journal`, and the filesystem then passes `e2fsck -fn`; a file saved before `sync()`
-    is there with no replay; nothing can mount the device while it is replayed; the replay of
-    the real cache and userdata changes and mounts nothing.
+    said done (the replay of the journal tried after it is gone again: see the entry above).
   One finding is left as it was, on purpose: a recovery that has never saved settings stays
-  locked with "Try again" while a userdata it recognizes cannot be mounted. Passing such a
+  locked with "Try again" while a userdata it recognizes cannot be mounted (with `misc`, only
+  until the first start that reads the older store, which copies it). Passing such a
   userdata over was tried and taken back after the review of review-24: releases 0.6.180 to
   0.6.206 saved to userdata whenever cache could not be written at that moment, so a password
   may be there beside a cache that is whole and empty, and it would have read as none. The walk

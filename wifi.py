@@ -186,48 +186,88 @@ def _ram_saved(networks):
         _drop_ram()
 
 
+class _Busy(Exception):
+    """The saved list cannot be read now: not the same as none."""
+
+
+class _Misc:
+    """Where the saved list is kept since 2026-11-14: the wifi record in misc (misc_store), two whole
+    copies, no filesystem. A folder given in its place is the file of a release up to 1.0.1 (read
+    while misc holds no list yet; tests)."""
+
+
+MISC = _Misc()
+
+
 def _settings_volumes(mode, action):
-    """Run ACTION(root) on the volume that keeps the settings, under the lock they use: the saved list
-    lives beside them, chosen by where the settings are, never by where a list is (2026-11-14 review:
-    a list that was no file on cache sent reads and writes to an older one on userdata). Returns
-    ('ok', value); ('locked', None) when the lease cannot be had now; ('busy', None) when the volume
-    cannot be used now; ('failed', None) when ACTION itself failed on the volume (2026-11-14 reviews:
-    all of these were one answer)."""
+    """Run ACTION(MISC) under the lock the settings use (MODE: 'ro' or 'rw', kept for the callers).
+    Returns ('ok', value); ('locked', None) when the lease cannot be had now; ('busy', None) when the
+    list cannot be read now; ('failed', None) when ACTION's write failed (2026-11-14 reviews: all of
+    these were one answer)."""
     _beside()
     import filesystem as fs
-    import settings
     from operation_lock import lease
     context = fs.DeviceContext()
     deadline = time.monotonic() + LOCK_WAIT
     while True:
         try:
             with lease(context.lock_path, context.mode):
-                done = None
                 try:
-                    with settings.settings_root(context, mode) as (_, root):
-                        try:
-                            done = ('ok', action(root))
-                        except (OSError, ValueError, fs.FilesystemError):
-                            done = ('failed', None)
+                    return 'ok', action(MISC)
+                except _Busy:
+                    return 'busy', None
                 except (OSError, ValueError, fs.FilesystemError):
-                    # Closing the volume after the action is no reason to say it was not done
-                    # (2026-11-14 review: a write already made was said busy and done again).
-                    return done or ('busy', None)
-                return done
+                    return 'failed', None
         except BlockingIOError:
             if time.monotonic() > deadline:
                 return 'locked', None
             time.sleep(0.1)
 
 
+def _encoded(networks):
+    return (json.dumps({'schema': 'a22x.wifi.saved.v1', 'networks': networks}, ensure_ascii=True, sort_keys=True) + '\n').encode()
+
+
+def _legacy_list():
+    """The list a release up to 1.0.1 kept beside its settings file, read as it read it; _Busy when
+    that volume cannot be looked at now."""
+    _beside()
+    import filesystem as fs
+    import settings
+    try:
+        with settings.settings_root(fs.DeviceContext(), 'ro') as (_, root):
+            return _read_list(root)
+    except settings.NoSettingsVolume:
+        return []
+    except (OSError, ValueError, fs.FilesystemError, subprocess.SubprocessError) as error:
+        raise _Busy() from error
+
+
 def _read_list(root):
-    """The list in ROOT, read by settings.read_bytes: none when nothing is there, and none when what
-    is there is no list (no regular file, no JSON): a damaged list holds no network, and the next
-    write replaces it (2026-11-14 review: a folder or a link there failed every change for good); a
-    file that cannot be read now raises, never read as none (2026-11-14 review: the next remember
-    wrote one network over all the others)."""
+    """The saved list. In misc (ROOT is MISC): none when the record is damaged (a damaged list holds no
+    network, and the next write replaces it); while misc holds no list, the older release's file,
+    copied to misc then; _Busy when misc, or that file, cannot be read now (2026-11-14 review: read as
+    none, the next remember wrote one network over all the others). In a folder (the older file):
+    read by settings.read_bytes, none when nothing or no list is there, raised when it cannot be read."""
     _beside()
     import settings
+    if root is MISC:
+        import misc_store
+        try:
+            data = misc_store.read('wifi')
+        except misc_store.Damaged:
+            return []
+        except (OSError, ValueError) as error:
+            raise _Busy() from error
+        if data is None:
+            networks = _legacy_list()
+            with contextlib.suppress(OSError, ValueError):
+                misc_store.write('wifi', _encoded(networks))
+            return networks
+        try:
+            return networks_of(json.loads(data.decode()))
+        except ValueError:
+            return []
     try:
         data = settings.read_bytes(root, SAVED_RELATIVE)
     except settings.NotRegular:
@@ -273,9 +313,12 @@ def _change(change):
         # A damaged list that is no file goes; never a folder of its path, which also holds the
         # settings (2026-11-14 reviews): a folder that is no folder of the volume fails the write.
         # Written as the settings are (settings.write_bytes), through a link to a folder of the volume.
-        settings.clear_file(root, SAVED_RELATIVE)
-        value = {'schema': 'a22x.wifi.saved.v1', 'networks': networks}
-        settings.write_bytes(root, SAVED_RELATIVE, (json.dumps(value, ensure_ascii=True, sort_keys=True) + '\n').encode())
+        if root is MISC:
+            import misc_store
+            misc_store.write('wifi', _encoded(networks))
+        else:
+            settings.clear_file(root, SAVED_RELATIVE)
+            settings.write_bytes(root, SAVED_RELATIVE, _encoded(networks))
         _ram_saved(networks)
         return True
     status, _ = _settings_volumes('rw', update)

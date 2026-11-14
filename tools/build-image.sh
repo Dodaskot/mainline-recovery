@@ -157,7 +157,7 @@ python3 -B "$S/tools/build_v06_image.py" --base "$BASE" --output "build-v06-$NN"
     --replace "$R/backend/engine.py=$S/backend/engine.py" --replace "$R/backend/recoveryctl.py=$S/backend/recoveryctl.py" \
     --replace "$R/backend/qualification.py=$S/backend/qualification.py" \
     --replace "etc/a22x-recovery/distro-platform.json=$PRIVATE/distro-platform-v2.json" \
-    --add "$R/settings.py=$S/settings.py" --add "$R/themes.py=$S/themes.py" --add "$R/sysinfo.py=$S/sysinfo.py" \
+    --add "$R/settings.py=$S/settings.py" --add "$R/misc_store.py=$S/misc_store.py" --add "$R/themes.py=$S/themes.py" --add "$R/sysinfo.py=$S/sysinfo.py" \
     --add "$R/themes/beaver.theme=build-themes/beaver.theme" --add "$R/flash.py=$S/flash.py" \
     --add "$R/image_import.py=$S/image_import.py" --add "$R/a22x_adapter.py=$S/a22x_adapter.py" \
     --add "$R/platform/a22x-wmt=helpers/a22x-wmt" --add "$R/platform/conn-start.sh=$S/platform/conn-start.sh" \

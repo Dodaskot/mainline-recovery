@@ -112,32 +112,6 @@ def run_e2fsck(path, tool=E2FSCK):
     return {'result': 'repaired' if rc else 'clean', 'exit_code': rc, 'output': output}
 
 
-DEBUGFS = '/usr/sbin/debugfs'
-# A journal is a few megabytes and its replay takes a moment; the settings are read under the
-# operation lock, which others wait 20 s for.
-REPLAY_SECONDS = 15
-
-
-def replay_journal(path, tool=DEBUGFS):
-    """Replay the journal of an ext4 that is not mounted, and nothing more (debugfs "jr"): in user
-    space, so without a mount: the kernel clears no orphan list, an errors=panic filesystem restarts
-    nothing, and no mount is left behind when it fails. Not e2fsck: its journal_only also clears
-    orphans, may go on to a whole check or delete a damaged journal, and -p hangs on a write error
-    (2026-11-14 reviews; each seen with e2fsck 1.47.4). debugfs exits 0 whatever happened, so the
-    superblock is read again: done only when it is ext4 and asks for no recovery. A replay that is
-    stopped (the timeout kills it) leaves the journal to be replayed again."""
-    if not os.path.exists(tool):
-        fail('CHECK_UNAVAILABLE', 'This build of the recovery has no check for this filesystem', tool=tool)
-    done = subprocess.run([tool, '-w', '-R', 'jr', str(path)], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT, text=True, errors='replace', timeout=REPLAY_SECONDS)
-    with open(path, 'rb') as handle:
-        seen = probe_magic(handle.read(8192))
-    if seen.get('fs_type') != 'ext4' or seen.get('needs_recovery'):
-        fail('JOURNAL_REPLAY_FAILED', 'The journal could not be replayed', exit_code=done.returncode,
-             output=done.stdout[-600:])
-    return {'output': done.stdout[-600:]}
-
-
 def run_fsck(path, fs_type, tools=None):
     """Check and repair one filesystem by its kind. fsck.f2fs and fsck.fat exit as fsck does: 0 for a
     clean filesystem, 1 after repairs, 4 when errors stay, 8 or more when they could not work."""
@@ -670,9 +644,6 @@ class FixtureContext(BaseContext):
         atomic_state(self.state_path, state)
         return {'volume': self.volume(ident), 'checked': volume['fs_type'], 'result': 'clean', 'exit_code': 0, 'output': ''}
 
-    def replay(self, ident, expected=None):
-        return {'volume': self.volume(ident, expected)}
-
     @staticmethod
     def kept(state, ident):
         """What a mount or an unmount leaves of a volume's state: the filesystem it was formatted with."""
@@ -1196,28 +1167,6 @@ class DeviceContext(BaseContext):
         result = run_resize2fs(volume['path'])
         os.sync()
         return {'volume': self.volume(ident), 'checked': volume['fs_type'], **result}
-
-    def replay(self, ident, expected=None):
-        """Replay the journal of one unmounted ext4 volume without mounting it (replay_journal)."""
-        volume = self.volume(ident, expected)
-        if volume['mounted'] or any(m['devno'] == volume['device'] for m in all_namespace_mounts()):
-            fail('VOLUME_MOUNTED', 'Unmount the volume before its journal is replayed')
-        if volume.get('fs_type') != 'ext4':
-            fail('UNSUPPORTED_FILESYSTEM', 'Only ext4 keeps a journal this recovery replays')
-        if self.state()['volumes'].get(ident, {}).get('block_ro_guard'):
-            # A previous failed mount may have safely left its partition read-only (as in mount).
-            self._release_read_only(volume)
-            volume = self.volume(ident, volume['volume_token'])
-        if self._block_ro(volume):
-            fail('BLOCK_DEVICE_READ_ONLY', 'The partition is read-only; its journal is left as it is')
-        # Held exclusively while the journal is replayed: the kernel mounts nothing that is claimed
-        # so, and a partition that got mounted meanwhile cannot be claimed (EBUSY).
-        claim = os.open(volume['path'], os.O_RDONLY | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW)
-        try:
-            result = replay_journal(volume['path'])
-        finally:
-            os.close(claim)
-        return {'volume': self.volume(ident), **result}
 
     def check(self, ident, confirmed=False, expected=None):
         """Check and repair one unmounted ext2/3/4 volume, as TWRP's "Repair file system"."""

@@ -124,6 +124,13 @@ class Properties(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix='a22x-props-', dir=os.environ.get('TMPDIR')))
         self.addCleanup(shutil.rmtree, self.tmp, True)
+        # The store of releases up to 1.0.1 (settings.read_volumes, write_volumes), read since
+        # 2026-11-14 only while misc holds no record: tested here as it was, through load, store and
+        # reset_damaged too. The record in misc: tests/test_settings_misc.py.
+        for name, real in (('read_disk', settings.read_volumes), ('write_disk', settings.write_volumes)):
+            patcher = mock.patch.object(settings, name, real)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.world = None
 
         @contextlib.contextmanager

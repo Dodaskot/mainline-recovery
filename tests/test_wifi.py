@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import sys
 import tempfile
@@ -372,10 +373,14 @@ class TestControlSocket(unittest.TestCase):
             return real(path, *args, **kwargs)
         with mock.patch.object(settings, 'volume_root', volume_root), mock.patch.object(settings.os, 'open', failing), \
                 mock.patch('operation_lock.lease', lambda *a, **k: contextlib.nullcontext()), \
-                mock.patch.object(fs, 'DeviceContext', Context), mock.patch.object(w, '_settings_volumes', REAL_SETTINGS_VOLUMES):
-            # The list is kept beside the settings, so the volume is had; the list cannot be read: a
-            # change that failed, never one written over it.
-            self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), False)
+                mock.patch.object(fs, 'DeviceContext', Context), mock.patch.object(w, '_settings_volumes', REAL_SETTINGS_VOLUMES), \
+                mock.patch.dict(os.environ, {'A22X_MISC': str(Path(self.tmp.name, 'misc'))}):
+            # Since 2026-11-14 the list is in misc; while misc holds none, this older file is read and
+            # copied. It cannot be read: the list is busy, nothing is written, the hand-off tries again.
+            Path(self.tmp.name, 'misc').write_bytes(bytes(512 << 10))
+            self.assertIsNone(w.remember(b'Home', FakeSupplicant.KEY))
+            import misc_store
+            self.assertIsNone(misc_store.read('wifi'))
         self.assertEqual(json.loads((self.disk / 'a22x-recovery/wifi.json').read_text()), listed)
 
     def test_a_list_that_is_no_file_holds_no_network_and_is_replaced(self):
@@ -491,6 +496,75 @@ class TestControlSocket(unittest.TestCase):
             self.assertEqual(w.saved_read(), [], damaged)
         ram.write_text(json.dumps({'networks': ['x', {'ssid_hex': b'Home'.hex(), 'psk': 'k'}]}))
         self.assertEqual(w.saved_read(), [{'ssid_hex': b'Home'.hex(), 'psk': 'k'}])
+
+
+
+class SavedInMisc(unittest.TestCase):
+    """The saved list in misc (2026-11-14), through the real lock and record."""
+    def setUp(self):
+        import filesystem as fs
+        self.tmp = Path(tempfile.mkdtemp(prefix='a22x-wmisc-', dir=os.environ.get('TMPDIR')))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.misc = self.tmp / 'misc'
+        self.misc.write_bytes(bytes(512 << 10))
+        self.legacy = []
+        context = mock.Mock(lock_path=str(self.tmp / 'lock'), mode='fixture')
+        for patcher in (mock.patch.dict(os.environ, {'A22X_MISC': str(self.misc)}),
+                        mock.patch.object(w, 'SAVED_RAM', self.tmp / 'saved-ram.json'),
+                        mock.patch.object(fs, 'DeviceContext', lambda: context),
+                        mock.patch.object(w, '_legacy_list', lambda: self.legacy_list())):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def legacy_list(self):
+        if isinstance(self.legacy, Exception):
+            raise self.legacy
+        return list(self.legacy)
+
+    def names(self, networks):
+        return [bytes.fromhex(n['ssid_hex']) for n in networks]
+
+    def test_remember_and_forget_keep_the_list_in_misc(self):
+        import misc_store
+        self.assertTrue(w.remember(b'Home', 'a' * 64))
+        self.assertTrue(w.remember(b'Work', 'b' * 64))
+        self.assertEqual(self.names(json.loads(misc_store.read('wifi'))['networks']), [b'Work', b'Home'])
+        (self.tmp / 'saved-ram.json').unlink()
+        self.assertEqual(self.names(w.saved_known()), [b'Work', b'Home'])
+        self.assertEqual(w.forget(b'Home')['saved_count'], 1)
+        self.assertEqual(self.names(json.loads(misc_store.read('wifi'))['networks']), [b'Work'])
+
+    def test_an_older_file_is_copied_once_and_one_that_cannot_be_read_is_busy(self):
+        import misc_store
+        self.legacy = w._Busy()
+        self.assertIsNone(w.saved_known())
+        self.assertIsNone(w.remember(b'Home', 'a' * 64))
+        self.assertIsNone(misc_store.read('wifi'))
+        self.legacy = [{'ssid_hex': b'Old'.hex(), 'psk': 'c' * 64}]
+        self.assertEqual(self.names(w.saved_known()), [b'Old'])
+        self.legacy = []  # read once: misc decides from then on
+        (self.tmp / 'saved-ram.json').unlink()
+        self.assertEqual(self.names(w.saved_known()), [b'Old'])
+
+    def test_a_misc_that_cannot_be_read_or_written_is_said(self):
+        import misc_store
+        with mock.patch.dict(os.environ, {'A22X_MISC': str(self.tmp / 'missing')}):
+            self.assertIsNone(w.saved_known())
+            self.assertIsNone(w.remember(b'Home', 'a' * 64))
+        w.remember(b'Home', 'a' * 64)
+        with mock.patch.object(misc_store, 'write', side_effect=OSError(5, 'Input/output error')):
+            self.assertIs(w.remember(b'Work', 'b' * 64), False)
+            with self.assertRaises(w.WifiError) as caught:
+                w.forget(b'Home')
+            self.assertEqual(caught.exception.code, 'WIFI_SAVED_UNWRITTEN')
+        data = bytearray(self.misc.read_bytes())
+        for index in (0, 1):
+            data[misc_store.AREAS['wifi'] + index * misc_store.SLOT + misc_store.SECTOR] ^= 0xff
+        self.misc.write_bytes(bytes(data))
+        (self.tmp / 'saved-ram.json').unlink(missing_ok=True)
+        self.assertEqual(w.saved_known(), [])  # a damaged list holds no network...
+        self.assertTrue(w.remember(b'Work', 'b' * 64))  # ... and the next write replaces it
+        self.assertEqual(self.names(json.loads(misc_store.read('wifi'))['networks']), [b'Work'])
 
 
 if __name__ == '__main__':

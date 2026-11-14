@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: MIT
 """Recovery preferences and the optional password.
 
-Recovery runs from RAM, so they live in one small file on cache, or on userdata
-when cache has no filesystem this recovery can ever write (see choose()). Cache
-survives a userdata wipe and an Android install. A copy in RAM avoids a mount for
-every read, and holds a save the volume cannot take at this moment (exit 3).
+They are kept in the misc partition, twice, with a generation and a SHA-256 (misc_store.py; since
+2026-11-14): no filesystem, so no journal, mount or older copy on another volume can show an
+older state. A copy in RAM avoids reading misc for every question, and holds a save misc cannot
+take at this moment (exit 3). Releases up to 1.0.1 kept them in a file on cache, or on userdata
+when cache had no filesystem this recovery could write: while misc holds no record yet, that file
+is read as they read it (read_volumes) and copied to misc, which decides from then on; the file is
+left where it is and never read again.
 
 Exit 0 means yes or done, 1 means no, 2 an error, 3 kept in RAM until reboot,
 4 damaged settings. The password also guards SSH, UART and adb, see access_gate.py.
@@ -13,12 +16,10 @@ Exit 0 means yes or done, 1 means no, 2 an error, 3 kept in RAM until reboot,
 Settings that cannot be read, or are damaged, never mean "no password" (2026-11-12, audit): the
 recovery and the gate stay locked, and nothing is saved over them. Damaged ones can be erased only
 together with userdata (reset-damaged), as Android's reset does: whoever holds the phone does not
-get past the password and keep the data it guarded. "No password" needs proof: settings read
-without one, or none at all and no PASSWORD_MARK (a password set leaves that mark beside its
-volume's root, see choose and read_disk; 2026-11-14 reviews). Only a regular file counts as
-settings. Erasing the volume itself (its format, or cache.img flashed in Download Mode) takes
-mark and settings both and gives the defaults: whoever can do that can flash another recovery
-too, which no password here covers.
+get past the password and keep the data it guarded. Both copies in misc damaged are damaged
+settings; one damaged copy is a save that stopped, and the other decides. Erasing misc itself (in
+Download Mode) gives the defaults: whoever can do that can flash another recovery too, which no
+password here covers.
 """
 import argparse
 import contextlib
@@ -37,6 +38,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import filesystem as fs
+import misc_store
 from operation_lock import lease
 
 RAM_COPY = Path(os.environ.get('A22X_SETTINGS_RAM', '/run/a22x-recovery/settings.json'))
@@ -435,29 +437,6 @@ def _volume(context, label):
     raise Unreadable('The settings volume %s cannot be used now' % label)
 
 
-def _ready(context, label):
-    """_volume, after the journal of an ext4 this recovery may write was replayed: a read-only look
-    does not replay it (noload), and a write cut short by a reset may be whole only in the journal,
-    its blocks half in place: settings that read as older ones, as damaged, or not at all at every
-    start (2026-11-14 review; seen on the phone: a file saved with fsync alone is not in a noload
-    view of the device as a reset leaves it). Replayed without a mount (filesystem.replay_journal:
-    the journal and nothing more), and only for a volume that is not mounted: one that is mounted
-    is left to whoever mounted it. When the replay fails, or the partition is read-only, the volume
-    is looked at as it is. Cache also comes to every start replayed (ramdisk/init runs e2fsck -p
-    on it before anything mounts it). f2fs needs none:
-    without its roll-forward (norecovery) it shows its last checkpoint, which is whole and is what
-    sync() writes before a save is said done."""
-    volume = _volume(context, label)
-    if (volume is None or volume.get('mounted') or not volume.get('needs_recovery')
-            or volume.get('read_only_reason_code') in NEVER_WRITABLE):
-        return volume
-    try:
-        context.replay(label, volume['volume_token'])
-    except FAILS:
-        pass
-    return _volume(context, label)
-
-
 def _its_root(root, volume):
     """ROOT, when it is the root of VOLUME's own filesystem; Unreadable when the mountpoint shows
     something else (2026-11-14 review: a volume mounted elsewhere, twice or by a bind of a folder,
@@ -520,7 +499,7 @@ def _read_look(context, label, opened):
     look = {'label': label, 'there': True, 'known': False, 'holds': False, 'marked': False,
             'write': 'later', 'root': None}
     try:
-        volume = _ready(context, label)
+        volume = _volume(context, label)
     except Unreadable:
         return look
     if volume is None:
@@ -536,12 +515,14 @@ def _read_look(context, label, opened):
     return look
 
 
-def read_disk(details=None):
-    """The settings, by verdict() and settled(). Volumes are looked at in order, each once, until one
+def read_volumes(details=None):
+    """The settings as releases up to 1.0.1 kept them, on cache or userdata: read while misc holds no
+    record yet (read_disk), never written since but by tests that build its states (write_volumes).
+    The settings, by verdict() and settled(). Volumes are looked at in order, each once, until one
     holds the settings or cannot be looked at; when the holder's settings hold no password, the rest
     are looked at too, for a mark (2026-11-14 reviews: a mark after the holder was never seen; then
     every volume was mounted at every read). Empty only when no volume holds settings and none carries
-    the mark. DETAILS, a dict, gets {'holder', 'marked'} for ensure_mark (2026-11-14 review: a global).
+    the mark. DETAILS, a dict, gets {'holder', 'marked'} (2026-11-14 review: a global).
 
     A volume that cannot be found or read is not an empty one: taking it for one
     would show the phone unlocked and let the next save replace the password. Nor is a
@@ -645,7 +626,7 @@ def _look(context, label, mode, relative, opened):
     failure to open it so is 'later'; whether it holds the file, and carries PASSWORD_MARK, is then
     looked at read-only. A volume that cannot be looked at gives holds None."""
     try:
-        volume = _ready(context, label)
+        volume = _volume(context, label)
     except Unreadable:
         return True, None, None, None, False
     if volume is None:
@@ -727,9 +708,7 @@ def _drop_other_marks(context, keep, seen):
         found = seen.get(label)
         if found is None:
             try:
-                # _ready: a mark that is only in a journal not yet replayed would be missed here
-                # and found by the next read, which replays it (2026-11-14 review).
-                volume = _ready(context, label)
+                volume = _volume(context, label)
                 if volume is None:
                     continue
                 with volume_root(context, label, 'ro') as root:
@@ -737,12 +716,12 @@ def _drop_other_marks(context, keep, seen):
             except FAILS:
                 continue
         if found:
-            volume = _ready(context, label)
+            volume = _volume(context, label)
             with volume_root(context, label, 'rw') as root:
                 drop_mark(_its_root(root, volume))
 
 
-def write_disk(record):
+def write_volumes(record):
     """RECORD on the volume settings_root chooses, in the order that keeps both promises whatever
     stops it (2026-11-14 reviews):
       with a password: the settings, then PASSWORD_MARK beside them; a stop between leaves the
@@ -776,21 +755,58 @@ def write_disk(record):
             return False
 
 
-def ensure_mark(record, details):
-    """PASSWORD_MARK beside settings with a password that a release before it wrote, only where the
-    read (DETAILS) found it missing (2026-11-14 reviews: the guarantee did not hold for those; then
-    every start mounted cache for writing to add a mark that was there). The settings are read again
-    under the lease, so a password cleared meanwhile gets no mark. Best effort, at the start."""
-    holder = details.get('holder')
-    if not record.get('hash') or holder is None or details.get('marked'):
-        return
-    context = fs.DeviceContext()
+def _encode(record):
+    return (json.dumps(record, ensure_ascii=True, sort_keys=True) + '\n').encode()
+
+
+def _copy_themes(context):
+    """The themes to RAM from the volume themes.py keeps them on (settings_root's choice); best
+    effort: a volume that cannot be looked at now leaves the bundled themes only."""
     with contextlib.suppress(*FAILS):
-        with lease(context.lock_path, context.mode):
-            with settings_root(context, 'rw') as (label, root):
-                text = read_regular(root, RELATIVE, label) if label == holder else None
-                if text is not None and checked(json.loads(text), label).get('hash'):
-                    set_mark(root)
+        with settings_root(context, 'ro') as (_, root):
+            copy_themes(root)
+
+
+def read_disk(details=None):
+    """The settings: the record in misc (misc_store); while misc holds none, what read_volumes reads
+    from a release that kept them on cache or userdata, copied to misc then, which decides from
+    then on (when misc cannot take it now, it is read so again at the next start). Unreadable when
+    misc cannot be read now; Damaged when both copies there are damaged. DETAILS: see read_volumes."""
+    context = fs.DeviceContext()
+    with lease(context.lock_path, context.mode):
+        try:
+            data = misc_store.read('settings')
+        except misc_store.Damaged as error:
+            raise Damaged('The settings in misc are damaged', 'misc') from error
+        except FAILS as error:
+            raise Unreadable('The settings in misc cannot be read now') from error
+        if data is not None:
+            try:
+                record = checked(json.loads(data.decode()), 'misc')
+            except ValueError as error:
+                if isinstance(error, Damaged):
+                    raise
+                raise Damaged('The settings in misc are damaged', 'misc') from error
+            _copy_themes(context)
+            return record
+        record = read_volumes(details)
+        with contextlib.suppress(*FAILS):
+            misc_store.write('settings', _encode(record))
+        return record
+
+
+def write_disk(record):
+    """RECORD in misc: the older copy replaced, so the newest stays whole until the new one is
+    (misc_store.write). Never over damaged settings. False when misc cannot take it now (exit 3:
+    kept in RAM, tried again)."""
+    context = fs.DeviceContext()
+    with lease(context.lock_path, context.mode):
+        try:
+            misc_store.read('settings')
+            misc_store.write('settings', _encode(record))
+            return True
+        except (misc_store.Damaged, *FAILS):
+            return False
 
 
 def remember(record):
@@ -814,17 +830,15 @@ def load():
     except (FileNotFoundError, ValueError):
         pass
     deadline = time.monotonic() + LOCK_WAIT
-    details = {}
     while True:
         try:
-            record = read_disk(details)
+            record = read_disk()
             break
         except BlockingIOError:
             if time.monotonic() > deadline:
                 raise
             time.sleep(.1)
     remember(record)
-    ensure_mark(record, details)
     return record
 
 
@@ -837,7 +851,8 @@ def store(record):
 
 
 def reset_damaged():
-    """Erase damaged settings together with userdata. Exit 1 when the settings are not damaged:
+    """Erase damaged settings together with userdata (both copies in misc, or the file of an older
+    release with its marks). Exit 1 when the settings are not damaged:
     settings that cannot be read now are no proof. Every volume besides userdata that must change
     (the one that holds them, each that carries PASSWORD_MARK) is opened for writing first, so one
     that cannot be written stops the reset before anything is erased (2026-11-14 review: a mark that
@@ -854,7 +869,7 @@ def reset_damaged():
     with lease(context.lock_path, context.mode):
         with contextlib.ExitStack() as stack:
             others = {name: stack.enter_context(volume_root(context, name, 'rw'))
-                      for name in sorted({label, *marks} - {'userdata'})}
+                      for name in sorted({label, *marks} - {'userdata', 'misc'})}
             volume = context.volume('userdata')
             if volume['mounted']:
                 context.unmount('userdata', volume['volume_token'])
@@ -866,6 +881,8 @@ def reset_damaged():
                 clear_entry(root, RELATIVE)
                 (root / RELATIVE).unlink(missing_ok=True)
                 drop_mark(root)
+            if label == 'misc':
+                misc_store.clear('settings')
     RAM_COPY.unlink(missing_ok=True)
     os.sync()
     return 0

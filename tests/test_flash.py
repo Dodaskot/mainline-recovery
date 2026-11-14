@@ -522,7 +522,7 @@ class Settings(unittest.TestCase):
         os.environ['A22X_SETTINGS_RAM'] = str(self.root / 'ram.json')
         sys.modules.pop('settings', None)
         self.settings = importlib.import_module('settings')
-        self.real_read_disk = self.settings.read_disk
+        self.real_read_disk = self.settings.read_volumes  # the volume store; misc: test_settings_misc
         self.disk = {}
         self.writable = True
         patcher = mock.patch.multiple(self.settings, read_disk=lambda details=None: dict(self.disk), write_disk=self.save)

@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -53,6 +52,13 @@ class Damaged(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix='a22x-settings-', dir=os.environ.get('TMPDIR')))
         self.addCleanup(shutil.rmtree, self.root, True)
+        # The store of releases up to 1.0.1 (settings.read_volumes, write_volumes), read since
+        # 2026-11-14 only while misc holds no record: tested here as it was, through load, store and
+        # reset_damaged too. The record in misc: tests/test_settings_misc.py.
+        for name, real in (('read_disk', settings.read_volumes), ('write_disk', settings.write_volumes)):
+            patcher = mock.patch.object(settings, name, real)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.calls, self.readable = [], {'cache': True, 'userdata': True}
         self.writable = {'cache': True, 'userdata': True}
         for label in ('cache', 'userdata'):
@@ -377,18 +383,6 @@ class Damaged(unittest.TestCase):
         self.assertTrue(settings.write_disk({**GOOD}))
         self.assertTrue((self.root / 'cache' / settings.PASSWORD_MARK).is_file())
 
-    def test_a_password_set_before_the_mark_gets_it_at_the_start(self):
-        # 2026-11-14 review: for passwords set by an older release the new guarantee did not hold.
-        self.write('cache', json.dumps(GOOD))
-        settings.RAM_COPY.unlink(missing_ok=True)
-        self.assertTrue(settings.load().get('hash'))
-        self.assertTrue((self.root / 'cache' / settings.PASSWORD_MARK).is_file())
-        # Once it is there, a start opens nothing for writing (2026-11-14 review: every start did).
-        settings.RAM_COPY.unlink(missing_ok=True)
-        self.calls.clear()
-        self.assertTrue(settings.load().get('hash'))
-        self.assertNotIn('rw', [call[2] for call in self.calls if call[0] == 'open'])
-
     def test_a_password_once_set_never_reads_as_none(self):
         # 2026-11-14 review: every way of misreading "not there" opened the phone. The mark of a password
         # set, outside the settings folder, keeps missing settings locked until they are reset.
@@ -510,61 +504,6 @@ class Damaged(unittest.TestCase):
         self.write('cache', json.dumps({'theme': 'aurora'}))
         with mock.patch.object(FakeContext, 'volume', vanishing):
             self.assertEqual(settings.read_disk(), {'theme': 'aurora'})
-
-    def test_a_journal_left_by_a_reset_is_replayed_before_the_settings_are_read(self):
-        # 2026-11-14 reviews (23 to 29): a read-only look does not replay the ext4 journal, so a save
-        # cut by a reset read as the state before it. Replayed without a mount, once, only for a
-        # filesystem this recovery may write, and never for a volume that is mounted.
-        seen = []
-        volume = {'id': 'cache', 'mounted': False, 'mountable': True, 'needs_recovery': True, 'volume_token': 't'}
-
-        class Context:
-            def volume(self, label):
-                return dict(volume)
-
-            def replay(self, label, token):
-                seen.append((label, token))
-                volume['needs_recovery'] = False
-
-            def mount(self, *args):
-                raise AssertionError('a look at the settings mounts nothing to replay a journal')
-            unmount = mount
-        self.assertFalse(settings._ready(Context(), 'cache')['needs_recovery'])
-        self.assertEqual(seen, [('cache', 't')])
-        del seen[:]
-        settings._ready(Context(), 'cache')
-        volume.update(needs_recovery=True, read_only_reason_code='FSCRYPT_KEYS_UNAVAILABLE')
-        settings._ready(Context(), 'cache')
-        for state in ({'read_only': True, 'mount_owner': 'filesystem'}, {'read_only': False, 'mount_owner': 'filesystem'},
-                      {'read_only': True, 'mount_owner': 'storage'}):
-            volume.update(needs_recovery=True, read_only_reason_code=None, mounted=True, **state)
-            settings._ready(Context(), 'cache')
-        self.assertEqual(seen, [])
-        volume.update(mounted=False)
-        for failure in (subprocess.TimeoutExpired('e2fsck', 120), settings.fs.FilesystemError('JOURNAL_REPLAY_FAILED', 'x'),
-                        OSError(5, 'Input/output error')):
-            class Fails(Context):
-                def replay(self, label, token):
-                    raise failure
-            self.assertTrue(settings._ready(Fails(), 'cache')['needs_recovery'])  # looked at as it is
-
-    def test_clearing_the_password_looks_for_other_marks_after_the_journal_is_replayed(self):
-        # 2026-11-14 review (25): _drop_other_marks looked through _volume, so a mark that was only
-        # in userdata's journal stayed, and the next read found it beside settings without a password.
-        asked = []
-        real = settings._ready
-
-        def ready(context, label):
-            asked.append(label)
-            return real(context, label)
-        self.write('cache', json.dumps(GOOD))
-        (self.root / 'cache' / settings.PASSWORD_MARK).touch()
-        (self.root / 'userdata' / settings.PASSWORD_MARK).touch()
-        with mock.patch.object(settings, '_ready', ready):
-            self.assertTrue(settings.write_disk({'theme': 'y'}))
-        self.assertIn('userdata', asked)  # settings_root stopped at cache: only the look for marks asks
-        self.assertFalse((self.root / 'userdata' / settings.PASSWORD_MARK).exists())
-        self.assertEqual(settings.read_disk(), {'theme': 'y'})
 
     def test_a_theme_that_cannot_be_copied_does_not_lock_the_phone(self):
         # 2026-11-14 review: an EIO on one theme made read_disk say the settings could not be read.
