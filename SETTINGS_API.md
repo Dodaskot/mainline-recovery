@@ -15,7 +15,11 @@ The rule is `settings.choose`; its tests check every state of both volumes again
 what the next start reads. The saved Wi-Fi networks (`a22x-recovery/wifi.json`)
 follow the same rule.
 
-Only a regular file `a22x-recovery/settings.json` in a real folder counts as settings.
+Only a regular file `a22x-recovery/settings.json` counts as settings, never a link; its folder
+may be a link only to a folder of the same volume. A partition without a filesystem holds
+nothing; a volume that cannot be found or read at the moment (the list of volumes failing
+while a card comes or goes, a mount that fails) is "cannot be read now" (exit 2), never
+"no settings".
 While a password is set, an empty file `.a22x-recovery-password` stays at the root of
 the volume that keeps the settings (written before the password, kept by Wipe cache
 and firmware installs, added at the start for a password set by an older release).

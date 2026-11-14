@@ -513,10 +513,10 @@ def read_disk(details=None):
                 looks.append(look)
                 if look['there'] and (not look['known'] or look['holds']):
                     break
-            if not any(look['there'] for look in looks) and len(looks) == len(VOLUMES):
-                # No filesystem anywhere: nothing was looked into (2026-11-07: the eMMC came up as
-                # mmcblk1 and the defaults were shown).
-                raise NoSettingsVolume('No settings volume could be read')
+            # No filesystem on either partition (Android's encrypted userdata beside a cache never
+            # formatted): nothing can be kept, so nothing is: the defaults, never a recovery locked
+            # for good. A partition that is not found at all is Unreadable in _volume (2026-11-07:
+            # the eMMC came up as mmcblk1 and the defaults were shown).
             holder, marks = verdict(looks)
             roots = {look['label']: look['root'] for look in looks}
             # The themes of the volume that keeps the settings, or would keep them: written there and

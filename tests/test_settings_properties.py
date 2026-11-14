@@ -54,7 +54,8 @@ SECRET = {'hash': 'ab' * 32, 'salt': 'cd' * 16}
 OP_KINDS = (('now', 'now'), ('now', 'later'), ('later', 'now'), ('nofs', 'now'), ('now', 'dead'),
             ('flaky', 'now'), ('now', 'flaky'), ('blink', 'now'), ('now', 'blink'), ('holders', 'now'))
 READ_KINDS = (('now', 'now'), ('later', 'later'), ('outside', 'now'), ('never', 'now'), ('now', 'dead'), ('dead', 'now'),
-              ('nofs', 'now'), ('now', 'nofs'), ('flaky', 'now'), ('now', 'flaky'), ('blink', 'now'), ('holders', 'now'))
+              ('nofs', 'now'), ('now', 'nofs'), ('nofs', 'nofs'), ('flaky', 'now'), ('now', 'flaky'), ('blink', 'now'),
+              ('holders', 'now'))
 EVENTS = ('none', 'folder lost', 'folder a dangling link', 'folder a link to a real folder', 'settings a link to another file',
           'settings a folder', 'corrupt', 'mark lost', 'userdata mark unreadable', 'settings unreadable')
 
@@ -279,6 +280,9 @@ class Properties(unittest.TestCase):
                     self.assertNotIsInstance(outcome, settings.Damaged, ('P2',) + case)
                 if password == 'no' and event == 'none' and cache_holds and at['cache'] in READABLE and not restored:
                     self.assertIsInstance(outcome, dict, ('P3',) + case)
+                if kinds == ('nofs', 'nofs'):
+                    # No filesystem on either partition: nothing can be kept, the recovery opens.
+                    self.assertEqual(outcome, {}, ('P3',) + case)
                 shutil.rmtree(seen.base)
 
     def starts(self):
