@@ -533,6 +533,35 @@ class Damaged(unittest.TestCase):
         volume.update(needs_recovery=True, read_only_reason_code='FSCRYPT_KEYS_UNAVAILABLE')
         settings._ready(Context(), 'cache')
         self.assertEqual(seen, [])
+        # 2026-11-14 review (25): the recovery's own read-only mount, made before the first read, is
+        # replayed too and left read-only; a mount for writing, or another owner's, is not touched.
+        volume.update(read_only_reason_code=None, mounted=True, read_only=True, mount_owner='filesystem')
+        settings._ready(Context(), 'cache')
+        self.assertEqual(seen, [('cache', 'rw'), ('cache', 'ro')])
+        for other in ({'read_only': False}, {'mount_owner': 'storage'}):
+            del seen[:]
+            volume.update(needs_recovery=True, read_only=True, mount_owner='filesystem')
+            volume.update(other)
+            settings._ready(Context(), 'cache')
+            self.assertEqual(seen, [], other)
+
+    def test_clearing_the_password_looks_for_other_marks_after_the_journal_is_replayed(self):
+        # 2026-11-14 review (25): _drop_other_marks looked through _volume, so a mark that was only
+        # in userdata's journal stayed, and the next read found it beside settings without a password.
+        asked = []
+        real = settings._ready
+
+        def ready(context, label):
+            asked.append(label)
+            return real(context, label)
+        self.write('cache', json.dumps(GOOD))
+        (self.root / 'cache' / settings.PASSWORD_MARK).touch()
+        (self.root / 'userdata' / settings.PASSWORD_MARK).touch()
+        with mock.patch.object(settings, '_ready', ready):
+            self.assertTrue(settings.write_disk({'theme': 'y'}))
+        self.assertIn('userdata', asked)  # settings_root stopped at cache: only the look for marks asks
+        self.assertFalse((self.root / 'userdata' / settings.PASSWORD_MARK).exists())
+        self.assertEqual(settings.read_disk(), {'theme': 'y'})
 
     def test_a_theme_that_cannot_be_copied_does_not_lock_the_phone(self):
         # 2026-11-14 review: an EIO on one theme made read_disk say the settings could not be read.

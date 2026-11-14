@@ -15,14 +15,16 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
     mounted, and read-only looks do not replay a journal: a hard reset seconds after a password
     was set could show the state before it. `sync()` now writes it in place before the save is
     said done, and the journal of an ext4 the recovery may write is replayed once (mounted for
-    writing and unmounted) before the settings are read.
+    writing and unmounted) before the settings are read, before other volumes are searched for
+    a password mark when a password is cleared, and also when the recovery itself had the volume
+    mounted read-only before the first read (review of review-25).
   One finding is left as it was, on purpose: a recovery that has never saved settings stays
   locked with "Try again" while a userdata it recognizes cannot be mounted. Passing such a
   userdata over was tried and taken back after the review of review-24: releases 0.6.180 to
   0.6.206 saved to userdata whenever cache could not be written at that moment, so a password
   may be there beside a cache that is whole and empty, and it would have read as none. The walk
   now starts from that state too.
-  Tests: 881 Python, 110 backend. On the phone (1.0.14, the new
+  Tests: 882 Python, 110 backend. On the phone (1.0.14, the new
   `settings.py` run from RAM): 16 fields read from cache, the same record saved and read back.
   The journal replay itself was not provoked on the phone (it needs a reset in the middle of a
   write).

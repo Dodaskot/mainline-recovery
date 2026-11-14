@@ -432,15 +432,25 @@ def _ready(context, label):
     """_volume, after the journal of an ext4 this recovery may write was replayed: a read-only look
     does not replay it (noload), and a write cut short by a reset may be whole only in the journal,
     its blocks half in place: settings that read as older ones, as damaged, or not at all at every
-    start (2026-11-14 review). Mounted for writing once, as distro.boot_check does; when that fails
-    the volume is looked at as it is."""
+    start (2026-11-14 review). Mounted for writing once, as distro.boot_check does, and left as it
+    was found: unmounted, or read-only when the recovery itself had it mounted so before the first
+    read (the list of saved BOOTs, the updates: 2026-11-14 review); a volume mounted for writing
+    has its journal live, and one of another owner is not touched. When the replay fails the volume
+    is looked at as it is. f2fs needs none: without its roll-forward (norecovery) it shows its last
+    checkpoint, which is whole and is what sync() writes before a save is said done."""
     volume = _volume(context, label)
-    if (volume is None or volume.get('mounted') or not volume.get('needs_recovery')
+    if (volume is None or not volume.get('needs_recovery')
             or volume.get('read_only_reason_code') in NEVER_WRITABLE):
         return volume
+    mounted = volume.get('mounted')
+    if mounted and not (volume.get('read_only') and volume.get('mount_owner') == 'filesystem'):
+        return volume
     try:
-        context.mount(label, 'rw', True, volume['volume_token'])
-        context.unmount(label)
+        context.mount(label, 'rw', True, volume['volume_token'])  # filesystem.py unmounts its own first
+        if mounted:
+            context.mount(label, 'ro', True, context.volume(label)['volume_token'])
+        else:
+            context.unmount(label)
     except (OSError, ValueError, fs.FilesystemError):
         pass
     return _volume(context, label)
@@ -715,7 +725,9 @@ def _drop_other_marks(context, keep, seen):
         found = seen.get(label)
         if found is None:
             try:
-                volume = _volume(context, label)
+                # _ready: a mark that is only in a journal not yet replayed would be missed here
+                # and found by the next read, which replays it (2026-11-14 review).
+                volume = _ready(context, label)
                 if volume is None:
                     continue
                 with volume_root(context, label, 'ro') as root:
@@ -723,7 +735,7 @@ def _drop_other_marks(context, keep, seen):
             except (OSError, ValueError, fs.FilesystemError):
                 continue
         if found:
-            volume = _volume(context, label)
+            volume = _ready(context, label)
             with volume_root(context, label, 'rw') as root:
                 drop_mark(_its_root(root, volume))
 
