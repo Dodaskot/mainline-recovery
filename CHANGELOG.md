@@ -125,6 +125,15 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   there no longer hangs a save; an inherited lease is lent to one thread only; the reset opens
   every volume it must change before userdata is erased.
 
+- **Fixes from the eleventh review** (16 findings), checked by a walk over every state: every
+  volume is read in one pass, so a mark after the volume holding the settings is seen; one rule
+  (verdict, settled) says when "no password" holds; a password is written before its mark and a
+  clear removes the other volumes' marks first, so a stop at any step neither opens the phone nor
+  asks for userdata; settings behind a link are read as older releases wrote them; a mark that
+  cannot be looked at is never "no mark"; the saved Wi-Fi list lives beside the settings. A new test
+  walks the start states, both operations stopped at every step (a crash or an I/O error), the
+  states of both volumes and outside events, and checks the two promises after each.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

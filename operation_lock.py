@@ -18,6 +18,7 @@ DEVICE_LOCK = '/run/lock/a22x-mainline-recovery.lock'
 # thread that holds it (2026-11-14 reviews: adbd's threads borrowed each other's lease; a thread's
 # ident is reused once it ends, its object never is).
 _HELD = []
+_GUARD = threading.Lock()  # the check for another holder and the record of this one, as one step
 
 
 def _key(path):
@@ -91,10 +92,6 @@ def operation_lock(path, mode='device'):
         if inherited is not None:
             if not inherited.isdecimal() or int(inherited) < 3:
                 raise OSError(errno.EINVAL, 'Invalid inherited recovery lock descriptor')
-            # The inherited lease is this process's: one thread at a time (2026-11-14 review: a
-            # second thread duplicated it, and its flock on the same open file succeeded).
-            if _held_elsewhere(path):
-                raise BlockingIOError(errno.EWOULDBLOCK, 'Another thread holds the recovery lease')
             fd = os.dup(int(inherited))
         else:
             fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
@@ -110,7 +107,13 @@ def operation_lock(path, mode='device'):
                 time.sleep(0.05)
         _regular(fd, path)
         mine = (_key(path), threading.current_thread())
-        _HELD.append(mine)
+        with _GUARD:
+            # The lease is this process's: one thread at a time, checked and recorded as one step
+            # (2026-11-14 reviews: a second thread duplicated an inherited lease, and its flock on the
+            # same open file succeeded; then both passed the check before either was recorded).
+            if inherited is not None and _held_elsewhere(path):
+                raise BlockingIOError(errno.EWOULDBLOCK, 'Another thread holds the recovery lease')
+            _HELD.append(mine)
         try:
             yield fd
         finally:

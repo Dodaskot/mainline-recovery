@@ -91,12 +91,12 @@ class Damaged(unittest.TestCase):
         """2026-11-12 review: EIO or EACCES on the file offered erasing settings and userdata."""
         self.write('cache', json.dumps(GOOD))
         self.write('userdata', json.dumps({'theme': 'x'}))
-        real = settings.fs.open_regular
+        real = os.open
         def failing(path, *a, **k):
-            if Path(path).parent.parent.name == 'cache':
+            if str(path).endswith(str(settings.RELATIVE)) and Path(path).parent.parent.name == 'cache':
                 raise OSError(5, 'Input/output error')
             return real(path, *a, **k)
-        with mock.patch.object(settings.fs, 'open_regular', failing):
+        with mock.patch.object(settings.os, 'open', failing):
             with self.assertRaises(settings.Unreadable):
                 settings.read_disk()
             self.assertEqual(settings.reset_damaged(), 1)
@@ -130,9 +130,13 @@ class Damaged(unittest.TestCase):
                 self.chosen(mode)
         self.readable = {'cache': True, 'userdata': False}
         self.calls.clear()
-        self.assertTrue(settings.write_disk({'theme': 'y'}))
+        self.assertTrue(settings.write_disk({**GOOD, 'theme': 'y'}))
         # Opened once, for writing (2026-11-14 review: once read-only to choose it, then again).
         self.assertEqual([call for call in self.calls if call[0] == 'open'], [('open', 'cache', 'rw')])
+        # Clearing the password needs every volume looked at: a mark on one that cannot be may stay
+        # (2026-11-14 review), so it is refused, and the password stays.
+        self.assertFalse(settings.write_disk({'theme': 'z'}))
+        self.assertTrue(json.loads((self.root / 'cache' / settings.RELATIVE).read_text()).get('hash'))
 
     def test_a_volume_that_cannot_be_written_and_holds_nothing_is_passed_over(self):
         # 2026-11-14 review: Android's encrypted userdata, never writable here, made every first save
@@ -245,7 +249,9 @@ class Damaged(unittest.TestCase):
                         if not isinstance(before, OSError):
                             # Readable now, yet not written: the volume to write is not writable at this moment.
                             target = holder or next((label for label in ('cache', 'userdata') if kinds[label] not in ('absent', 'never')), None)
-                            self.assertTrue(target is None or kinds[target] != 'now', (target, kinds))
+                            # Or settings without a password while a volume there cannot be looked at,
+                            # whose mark could not be cleared (2026-11-14 review).
+                            self.assertTrue(target is None or kinds[target] != 'now' or 'dead' in kinds.values(), (target, kinds))
 
     def test_settings_that_cannot_be_looked_at_are_never_none(self):
         # 2026-11-14 review: Path.is_file() answers False to any error, so a settings file whose stat
@@ -253,13 +259,13 @@ class Damaged(unittest.TestCase):
         # replaced the file with a record without it.
         self.write('cache', json.dumps(GOOD))
         before = (self.root / 'cache' / settings.RELATIVE).read_text()
-        real = os.lstat
+        real = os.stat
 
         def failing(path, *args, **kwargs):
             if str(path).endswith(str(settings.RELATIVE)) and '/cache/' in str(path):
                 raise PermissionError(13, 'Permission denied')
             return real(path, *args, **kwargs)
-        with mock.patch.object(settings.os, 'lstat', failing):
+        with mock.patch.object(settings.os, 'stat', failing):
             with self.assertRaises(settings.Unreadable):
                 settings.read_disk()
             self.assertFalse(settings.write_disk({'theme': 'y'}))
@@ -283,7 +289,9 @@ class Damaged(unittest.TestCase):
     def test_settings_there_that_cannot_be_opened_are_never_none(self):
         # 2026-11-14 review: any ENOENT from the open (its reopen through /proc too) read as no settings.
         self.write('cache', json.dumps(GOOD))
-        with mock.patch.object(settings.fs, 'open_regular', side_effect=FileNotFoundError(2, 'No such file')):
+        real = os.open
+        with mock.patch.object(settings.os, 'open', lambda path, *a, **k: (_ for _ in ()).throw(FileNotFoundError(2, 'No such file'))
+                               if str(path).endswith(str(settings.RELATIVE)) else real(path, *a, **k)):
             with self.assertRaises(settings.Unreadable):
                 settings.read_disk()
 
@@ -312,6 +320,13 @@ class Damaged(unittest.TestCase):
                     parent.mkdir()
                     (cache / settings.PASSWORD_MARK).unlink(missing_ok=True)
                     make()
+                    if name == 'link to a real folder':
+                        # Read through the link, as releases before read and wrote them (2026-11-14
+                        # review): a password there is a password, mark or no mark.
+                        if marked:
+                            (cache / settings.PASSWORD_MARK).write_text('')
+                        self.assertTrue(settings.read_disk().get('hash'))
+                        continue
                     if not marked:
                         self.assertEqual(settings.read_disk(), {})
                         # A save puts real settings there in its place.
@@ -338,18 +353,19 @@ class Damaged(unittest.TestCase):
         self.assertEqual(settings.reset_damaged(), 0)
         self.assertEqual(settings.read_disk(), {})
 
-    def test_the_mark_goes_first_when_set_and_last_when_cleared(self):
-        # 2026-11-14 review of the order: a stop between the two must never leave a password unmarked.
+    def test_a_password_is_written_before_its_mark_and_cleared_before_the_mark_goes(self):
+        # 2026-11-14 reviews of the order: a stop between the steps must never leave a mark beside no
+        # settings (userdata would be asked for), nor settings without a password beside a mark elsewhere.
         record = {**GOOD}
         order = []
-        real_set, real_drop = settings.set_mark, settings.drop_mark
-        real_replace = Path.replace
+        real_set, real_drop, real_write = settings.set_mark, settings.drop_mark, settings.fs.atomic_state
         with mock.patch.object(settings, 'set_mark', lambda root: (order.append('mark'), real_set(root))), \
-                mock.patch.object(settings, 'drop_mark', lambda root: (order.append('unmark'), real_drop(root))), \
-                mock.patch.object(Path, 'replace', lambda self_, target: (order.append('settings'), real_replace(self_, target))[1]):
+                mock.patch.object(settings, 'drop_mark', lambda root: (order.append('unmark ' + Path(root).name), real_drop(root))), \
+                mock.patch.object(settings.fs, 'atomic_state', lambda path, value: (order.append('settings'), real_write(path, value))):
             self.assertTrue(settings.write_disk(record))
+            (self.root / 'userdata' / settings.PASSWORD_MARK).write_text('')  # a mark left on the other volume
             self.assertTrue(settings.write_disk({k: v for k, v in record.items() if k not in ('hash', 'salt')}))
-        self.assertEqual(order, ['mark', 'settings', 'settings', 'unmark'])
+        self.assertEqual(order, ['settings', 'mark', 'unmark userdata', 'settings', 'unmark cache'])
 
     def test_a_fifo_where_the_mark_goes_never_hangs(self):
         # 2026-11-14 review: open() on a FIFO there hung the save forever under the lease.
@@ -363,6 +379,11 @@ class Damaged(unittest.TestCase):
         settings.RAM_COPY.unlink(missing_ok=True)
         self.assertTrue(settings.load().get('hash'))
         self.assertTrue((self.root / 'cache' / settings.PASSWORD_MARK).is_file())
+        # Once it is there, a start opens nothing for writing (2026-11-14 review: every start did).
+        settings.RAM_COPY.unlink(missing_ok=True)
+        self.calls.clear()
+        self.assertTrue(settings.load().get('hash'))
+        self.assertNotIn('rw', [call[2] for call in self.calls if call[0] == 'open'])
 
     def test_a_password_once_set_never_reads_as_none(self):
         # 2026-11-14 review: every way of misreading "not there" opened the phone. The mark of a password

@@ -137,13 +137,14 @@ def volume_root(context, label, mode):
 def copy_themes(root):
     """Themes wait in RAM, so choosing one needs no mount. A theme that cannot be copied (EIO, a full
     /run) is left out: it says nothing about the settings, and read_disk must not take it for
-    settings that cannot be read (2026-11-14 review: the phone stayed locked at every start). Only
-    from real folders: never through a link where a folder should be (2026-11-14 review)."""
+    settings that cannot be read (2026-11-14 review: the phone stayed locked at every start). Read
+    as the settings are, through a link to their folder too; only regular files are copied."""
+    folder = root / THEMES
     try:
-        if _folders(root, THEMES / 'x') is not True or not stat.S_ISDIR(os.lstat(root / THEMES).st_mode):
+        if not folder.is_dir():
             return
         RAM_THEMES.mkdir(parents=True, exist_ok=True)
-        themes = (*(root / THEMES).glob('*.theme'), *(root / THEMES).glob('*.hidden'))
+        themes = (*folder.glob('*.theme'), *folder.glob('*.hidden'))
     except OSError:
         return
     for theme in themes:
@@ -156,7 +157,7 @@ def present(path):
     """Whether PATH is a regular file (following links): False when nothing is there and for anything
     that is no regular file, a loop of links too; a failure to look (EIO, EACCES) is raised
     (2026-11-14 reviews: Path.is_file() answers False to every error). For files this recovery ships
-    or keeps in RAM; whether a volume holds the settings is holds()'s question."""
+    or keeps in RAM, and as holds() for the settings."""
     try:
         return stat.S_ISREG(os.stat(path).st_mode)
     except (FileNotFoundError, NotADirectoryError):
@@ -167,46 +168,12 @@ def present(path):
         raise
 
 
-def _bad_folder(root, relative):
-    """The first folder of RELATIVE under ROOT that is no real folder (a link, a file), looked at
-    one by one without following links; None when all are real folders or one is missing."""
-    path = Path(root)
-    for part in Path(relative).parts[:-1]:
-        path = path / part
-        try:
-            st = os.lstat(path)
-        except FileNotFoundError:
-            return None
-        if not stat.S_ISDIR(st.st_mode):
-            return path
-    return None
-
-
-def _folders(root, relative):
-    """True when every folder of RELATIVE under ROOT is a real folder, None when one is missing,
-    False when one is no real folder."""
-    if _bad_folder(root, relative) is not None:
-        return False
-    path = Path(root)
-    for part in Path(relative).parts[:-1]:
-        path = path / part
-        if not os.path.lexists(path):
-            return None
-    return True
-
-
 def holds(root, relative):
-    """Whether a regular file is at ROOT/RELATIVE in real folders: only that counts as settings (or
-    as the saved Wi-Fi list). Nothing there, a folder, a link, a FIFO, or a folder of the path that is
-    no real folder: False, and PASSWORD_MARK decides whether that means no password (2026-11-14
-    reviews: read as none, any of these opened the phone; read as damaged, a link a Linux system
-    made had userdata erased with no password set). A failure to look is raised."""
-    if _folders(root, relative) is not True:
-        return False
-    try:
-        return stat.S_ISREG(os.lstat(Path(root) / relative).st_mode)
-    except FileNotFoundError:
-        return False
+    """Whether the settings (or the saved Wi-Fi list) are at ROOT/RELATIVE: a regular file reached
+    there, through links as the releases before this one read and wrote them (2026-11-14 review: a
+    password behind a link read as none). Nothing there, a folder, a FIFO, a dangling link or a loop:
+    False, and PASSWORD_MARK decides what that means. A failure to look is raised."""
+    return present(Path(root) / relative)
 
 
 class NotRegular(OSError):
@@ -214,43 +181,57 @@ class NotRegular(OSError):
 
 
 def read_bytes(root, relative):
-    """The bytes of the regular file at ROOT/RELATIVE, opened as filesystem.open_regular opens (its
-    type proven on the descriptor, links never followed, its folders real folders); None when
-    nothing is there; NotRegular when something else is; OSError when it cannot be read now. One
-    reader for the settings and the saved Wi-Fi list (2026-11-14 review)."""
-    folders = _folders(root, relative)
-    if folders is None:
-        return None
-    if folders is False:
-        raise NotRegular(errno.ENOTDIR, 'A folder of the path is no real folder')
+    """The bytes of the regular file at ROOT/RELATIVE (through links, never blocking on a FIFO); None
+    when holds() finds nothing; NotRegular when something else is there; OSError when it cannot be
+    read now, a file that holds() still sees but cannot be opened too (2026-11-14 reviews: an error
+    there read as nothing). One reader for the settings and the saved Wi-Fi list."""
     path = Path(root) / relative
     try:
-        fd = fs.open_regular(path)
-    except FileNotFoundError:
-        # Gone between the look and the open, or its reopen failed: "not there" only when a look
-        # finds nothing (2026-11-14 review: any ENOENT read as no settings).
-        if not os.path.lexists(path):
-            return None
-        raise OSError(errno.EIO, 'The file is there and could not be opened')
-    except NotADirectoryError as error:
-        raise NotRegular(errno.ENOTDIR, 'A file stands where a folder should be') from error
-    except fs.FilesystemError as error:
-        if error.code == 'REGULAR_FILE_REQUIRED':
-            raise NotRegular(errno.EINVAL, 'No regular file') from error
-        raise OSError(errno.EIO, str(error)) from error
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+    except (FileNotFoundError, NotADirectoryError):
+        if holds(root, relative):
+            raise OSError(errno.EIO, 'The file is there and could not be opened')
+        return None
     except OSError as error:
         if error.errno == errno.ELOOP:
-            raise NotRegular(errno.ELOOP, 'A link stands where the file should be') from error
+            raise NotRegular(errno.ELOOP, 'A loop of links stands where the file should be') from error
         raise
+    try:
+        regular = stat.S_ISREG(os.fstat(fd).st_mode)
+    except OSError:
+        os.close(fd)
+        raise
+    if not regular:  # a folder too: its type is proven on the descriptor before it is read
+        os.close(fd)
+        raise NotRegular(errno.EINVAL, 'No regular file')
     with os.fdopen(fd, 'rb') as stream:
         return stream.read()
+
+
+def _walk(root, relative):
+    """How the folders of RELATIVE under ROOT are, looked at once each without following links:
+    ('ok', None) all real folders; ('missing', None) one is not there; ('bad', path) one is no real
+    folder (a link, a file)."""
+    path = Path(root)
+    for part in Path(relative).parts[:-1]:
+        path = path / part
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            return 'missing', None
+        if not stat.S_ISDIR(st.st_mode):
+            return 'bad', path
+    return 'ok', None
 
 
 def clear_file(root, relative):
     """Remove ROOT/RELATIVE itself when it is no regular file (a folder, a link, a FIFO), never one of
     its folders: NotRegular when one of them is no real folder (2026-11-14 review: the Wi-Fi list
     removed the folder that also holds the settings, their password with them)."""
-    if _bad_folder(root, relative) is not None:
+    state, _ = _walk(root, relative)
+    if state == 'missing':
+        return
+    if state == 'bad':
         raise NotRegular(errno.ENOTDIR, 'A folder of the path is no real folder')
     target = Path(root) / relative
     try:
@@ -264,22 +245,31 @@ def clear_file(root, relative):
 
 
 def clear_entry(root, relative):
-    """clear_file, after removing a folder of the path that is no real folder: for the settings
-    only, on the volume that keeps them (their write, their reset), never for the Wi-Fi list."""
-    bad = _bad_folder(root, relative)
-    if bad is not None:
+    """clear_file, after removing a folder of the path that is no real folder (a link, a file): for
+    the settings only, on the volume that keeps them (their write, their reset), so they are written
+    in a real folder; never for the Wi-Fi list."""
+    state, bad = _walk(root, relative)
+    if state == 'bad':
         os.unlink(bad)
         return
     clear_file(root, relative)
 
 
-# Written at a volume's root before settings with a password are written there, removed after they
-# are written without one, from every volume, and by the reset of damaged settings. Settings found
-# nowhere while a volume carries it, or found without a password while another volume carries it,
-# are damaged, never "no password" (2026-11-14 reviews: every way of misreading "not there" opened
-# the phone). Outside a22x-recovery, so nothing that befalls that folder takes it; kept by every
-# wipe of cache's contents (filesystem.WIPE_KEEP).
-PASSWORD_MARK = Path('.a22x-recovery-password')
+# The mark that a password is set, at a volume's root (filesystem.PASSWORD_MARK, kept by every wipe
+# of cache's contents). "No password" needs proof (2026-11-14 reviews: every way of misreading "not
+# there" opened the phone): settings read without one, while no other volume carries the mark and
+# every volume there was looked at; or no settings anywhere and no mark anywhere. See verdict().
+PASSWORD_MARK = Path(fs.PASSWORD_MARK)
+
+
+def marked(root):
+    """Whether ROOT carries PASSWORD_MARK, whatever it is; a failure to look is raised, never "no mark"
+    (2026-11-14 review: os.path.lexists said no mark on EIO)."""
+    try:
+        os.lstat(Path(root) / PASSWORD_MARK)
+        return True
+    except FileNotFoundError:
+        return False
 
 
 def set_mark(root):
@@ -304,7 +294,7 @@ def drop_mark(root):
     target = Path(root) / PASSWORD_MARK
     if os.path.lexists(target):
         target.unlink()
-        _sync_folder(root)
+    _sync_folder(root)
 
 
 def _sync_folder(root):
@@ -332,51 +322,115 @@ def read_regular(root, relative, label):
         raise Damaged('The settings on %s are damaged' % label, label) from error
 
 
+def verdict(looks):
+    """Where the settings are, by what every volume showed: LOOKS in the order of VOLUMES, each
+    {'label', 'there', 'known', 'holds', 'marked'} ('known': it could be looked at). Returns
+    (holder or None, the labels that carry PASSWORD_MARK). Volumes not there are passed over (erased,
+    or no filesystem: the defaults, which only Download Mode can bring about, see the module); a
+    volume there that could not be looked at before the holder is Unreadable; with no holder, a mark
+    anywhere is Damaged (2026-11-14 reviews). See settled() for what the holder's record must show."""
+    if not any(look['there'] for look in looks):
+        # None is there at all: no volume was looked into, so nothing says "no settings" (2026-11-07:
+        # the eMMC came up as mmcblk1, cache was not found, and the defaults were shown).
+        raise NoSettingsVolume('No settings volume could be read')
+    holder = None
+    for look in looks:
+        if not look['there']:
+            continue
+        if not look['known']:
+            raise Unreadable('The settings volume %s cannot be read now' % look['label'])
+        if look['holds']:
+            holder = look['label']
+            break
+    marks = [look['label'] for look in looks if look['there'] and look['known'] and look['marked']]
+    if holder is None and marks:
+        raise Damaged('The settings are missing, and %s says a password was set' % marks[0], marks[0], marks)
+    return holder, marks
+
+
+def settled(looks, holder, record, marks):
+    """RECORD as read from HOLDER, when it may stand: a password always; no password only when no
+    other volume carries PASSWORD_MARK (an older copy otherwise: Damaged, 2026-11-14 review) and every
+    volume there could be looked at (a mark on one that could not is unknown: Unreadable)."""
+    if record.get('hash'):
+        return record
+    others = [label for label in marks if label != holder]
+    if others:
+        raise Damaged('The settings on %s hold no password, and %s says one was set' % (holder, others[0]),
+                      others[0], marks)
+    unknown = [look['label'] for look in looks if look['there'] and not look['known']]
+    if unknown:
+        raise Unreadable('The settings volume %s cannot be read now' % unknown[0])
+    return record
+
+
+# What the last read_disk of this process found: the holder, and whether it carries the mark
+# (ensure_mark adds one only where it is missing: 2026-11-14 review).
+LAST_READ = {'holder': None, 'marked': False}
+
+
 def read_disk():
-    """Empty only when a volume was really looked into, holds no settings, and no volume carries
-    PASSWORD_MARK.
+    """The settings, by verdict() and settled() over every volume, each looked at once read-only in
+    one pass (2026-11-14 review: a mark on a volume after the holder was never seen). Empty only
+    when no volume there holds settings and none carries the mark.
 
     A volume that cannot be found or read is not an empty one: taking it for one
     would show the phone unlocked and let the next save replace the password. Nor is a
     file that is there but damaged (2026-11-12, audit): before, the next volume was
-    asked, and userdata without settings unlocked the phone. The volume is the one
-    settings_root chooses, by the same rule as every write (2026-11-14 review: two
-    copies of the rule).
+    asked, and userdata without settings unlocked the phone.
     """
     context = fs.DeviceContext()
     with lease(context.lock_path, context.mode):
+        opened = contextlib.ExitStack()
         try:
-            marks = []
-            # The themes of the volume that keeps the settings only: themes are written there and
-            # nowhere else (settings_root 'rw' chooses the same volume), and a theme or note left on
-            # another volume by an older release would come back at every start, whatever removes
-            # it (2026-11-14 reviews: first only this volume's, then every volume's, were copied).
-            with settings_root(context, 'ro', marks=marks) as (label, root):
-                copy_themes(root)
-                # 2026-11-12 review: a file that cannot be read now (EIO, a busy card) is not a
-                # damaged one: it is no reason to offer erasing userdata, and still opens nothing.
-                text = read_regular(root, RELATIVE, label)
-                if text is not None:
-                    try:
-                        record = checked(json.loads(text), label)
-                    except ValueError as error:
-                        if isinstance(error, Damaged):
-                            raise
-                        raise Damaged('The settings on %s are damaged' % label, label, marks) from error
-                    elsewhere = [mark for mark in marks if mark != label]
-                    if not record.get('hash') and elsewhere:
-                        # Settings without a password while another volume says one was set: an older
-                        # copy, never proof (2026-11-14 review: it opened the phone).
-                        raise Damaged('The settings on %s hold no password, and %s says one was set'
-                                      % (label, elsewhere[0]), elsewhere[0], marks)
-                    return record
-            if marks:
-                raise Damaged('The settings are missing, and %s says a password was set' % marks[0], marks[0], marks)
-            return {}
+            looks = []
+            for label in VOLUMES:
+                look = {'label': label, 'there': False, 'known': False, 'holds': False, 'marked': False,
+                        'write': None, 'root': None}
+                looks.append(look)
+                try:
+                    volume = context.volume(label)
+                except fs.FilesystemError:
+                    continue
+                if not volume.get('mountable') and not volume.get('mounted'):
+                    continue
+                look.update(there=True, write='never' if volume.get('read_only_reason_code') in NEVER_WRITABLE else 'later')
+                try:
+                    root = opened.enter_context(volume_root(context, label, 'ro'))
+                    look.update(root=root, holds=holds(root, RELATIVE), marked=marked(root), known=True)
+                except (OSError, ValueError, fs.FilesystemError):
+                    pass
+            holder, marks = verdict(looks)
+            # The themes of the volume that keeps the settings, or would keep them: written there and
+            # nowhere else, so one left elsewhere never comes back (2026-11-14 reviews).
+            source = holder or next((look['label'] for look in looks if look['known'] and look['write'] != 'never'), None)
+            roots = {look['label']: look['root'] for look in looks}
+            if source is not None:
+                copy_themes(roots[source])
+            if holder is None:
+                LAST_READ.update(holder=None, marked=False)
+                return {}
+            # 2026-11-12 review: a file that cannot be read now (EIO, a busy card) is not a
+            # damaged one: it is no reason to offer erasing userdata, and still opens nothing.
+            try:
+                text = read_regular(roots[holder], RELATIVE, holder)
+            except Damaged as error:
+                raise Damaged(str(error), holder, marks) from error  # its reset clears every mark (2026-11-14 review)
+            if text is None:
+                raise Unreadable('The settings on %s changed while they were read' % holder)
+            try:
+                record = checked(json.loads(text), holder)
+            except ValueError as error:
+                raise Damaged('The settings on %s are damaged' % holder, holder, marks) from error
+            record = settled(looks, holder, record, marks)
+            LAST_READ.update(holder=holder, marked=holder in marks)
+            return record
         except (Damaged, Unreadable, NoSettingsVolume):
             raise
         except (OSError, ValueError, fs.FilesystemError) as error:
             raise Unreadable('The settings volume cannot be read now') from error
+        finally:
+            _close(opened)
 
 
 # A volume whose filesystem this recovery never writes: its read_only_reason_code (filesystem.py)
@@ -434,10 +488,10 @@ def _close(opened):
 
 
 def _look(context, label, mode, relative, opened):
-    """(there, holds, write, root, marked) of LABEL. ROOT is open in MODE in OPENED when it could be
-    opened so: for writing only a volume that may ever be written is tried, and any failure to
-    open it so is 'later'; whether it holds the file, and carries PASSWORD_MARK, is then looked at
-    read-only."""
+    """(there, holds, write, root, marked) of LABEL, for writing: ROOT is open in MODE in OPENED when
+    it could be opened so: only a volume that may ever be written is tried for writing, and any
+    failure to open it so is 'later'; whether it holds the file, and carries PASSWORD_MARK, is then
+    looked at read-only. A volume that cannot be looked at gives holds None."""
     try:
         volume = context.volume(label)
     except fs.FilesystemError:
@@ -452,41 +506,39 @@ def _look(context, label, mode, relative, opened):
             _close(opened)
         else:
             try:
-                return True, holds(root, relative), 'now', root, os.path.lexists(root / PASSWORD_MARK)
+                return True, holds(root, relative), 'now', root, marked(root)
             except OSError:
                 return True, None, 'now', None, False
     try:
         root = opened.enter_context(volume_root(context, label, 'ro'))
-        found, marked = holds(root, relative), os.path.lexists(root / PASSWORD_MARK)
+        found, mark = holds(root, relative), marked(root)
     except (OSError, ValueError, fs.FilesystemError):
         _close(opened)
         return True, None, write, None, False
     if mode != 'ro':
         _close(opened)
         root = None
-    return True, found, write, root, marked
+    return True, found, write, root, mark
 
 
 @contextlib.contextmanager
-def settings_root(context, mode, relative=RELATIVE, marks=None):
-    """(label, root) of the volume choose() gives, open in MODE; RELATIVE: another file kept the
-    same way (the saved Wi-Fi networks). Volumes are looked at in order until one holds
-    the file or cannot be looked at, each opened once; every other is closed before the caller works
-    in the chosen one, and all of them whatever fails. MARKS, a list, gets the labels of the volumes
-    looked at that carry PASSWORD_MARK, seen while they were open (2026-11-14 review: each was mounted
-    again to look). When the caller's work is done, a failure to close a volume afterwards does not
-    undo it (2026-11-14 review: a password written to disk was said kept in RAM, a theme added said
-    lost, settings read said unreadable). Called under the operation lock."""
+def settings_root(context, mode, relative=RELATIVE, seen=None):
+    """(label, root) of the volume choose() gives, open in MODE; RELATIVE: the file whose holder
+    decides (the settings). Volumes are looked at in order until one holds the file or cannot be
+    looked at, each opened once; every other is closed before the caller works in the chosen one,
+    and all of them whatever fails. SEEN, a dict, gets {label: carries PASSWORD_MARK} of each volume
+    looked at, seen while it was open. When the caller's work is done, a failure to close a volume
+    afterwards does not undo it (2026-11-14 review). Called under the operation lock."""
     everything = contextlib.ExitStack()
     try:
         looked = []
         for label in VOLUMES:
             opened = contextlib.ExitStack()
             everything.callback(opened.close)
-            there, found, write, root, marked = _look(context, label, mode, relative, opened)
+            there, found, write, root, mark = _look(context, label, mode, relative, opened)
             looked.append((label, there, found, write, root, opened))
-            if marked and marks is not None:
-                marks.append(label)
+            if seen is not None and there and found is not None:
+                seen[label] = mark
             if found is not False:  # the holder, or one that cannot be looked at: choose stops there
                 break
         label = choose([entry_[:4] for entry_ in looked], mode)
@@ -509,59 +561,74 @@ def settings_root(context, mode, relative=RELATIVE, marks=None):
     _close(everything)
 
 
+def _drop_other_marks(context, keep, seen):
+    """PASSWORD_MARK gone from every volume there but KEEP: SEEN says what settings_root saw while
+    each was open; one it did not look at (after the holder) is looked at read-only now. A volume
+    with a mark is opened for writing; one that cannot be looked at or written now raises: nothing
+    may be said cleared while a mark may stay (2026-11-14 reviews)."""
+    for label in VOLUMES:
+        if label == keep:
+            continue
+        try:
+            volume = context.volume(label)
+        except fs.FilesystemError:
+            continue
+        if not volume.get('mountable') and not volume.get('mounted'):
+            continue
+        found = seen.get(label)
+        if found is None:
+            with volume_root(context, label, 'ro') as root:
+                found = marked(root)
+        if found:
+            with volume_root(context, label, 'rw') as root:
+                drop_mark(root)
+
+
 def write_disk(record):
-    """RECORD on the volume settings_root chooses. With a password, PASSWORD_MARK goes there first,
-    so a stop between the two leaves the mark beside the older settings, never a password without
-    it; without one, the settings go first and then the mark from every volume, so a stop leaves
-    the older password in force (2026-11-14 review of the order). False when any of it failed."""
+    """RECORD on the volume settings_root chooses, in the order that keeps both promises whatever
+    stops it (2026-11-14 reviews):
+      with a password: the settings, then PASSWORD_MARK beside them; a stop between leaves the
+      password on disk, never a mark beside no settings (which would ask for userdata to go);
+      without one: first the mark of every other volume, then the settings, then this volume's
+      mark; a stop leaves the older password in force, or settings without one beside their own
+      mark only, which read as no password.
+    Written as filesystem.atomic_state writes (a unique temporary name, fsync of the file and its
+    folder). True only when all of it was done."""
     context = fs.DeviceContext()
     with lease(context.lock_path, context.mode):
         try:
-            marks = []
-            with settings_root(context, 'rw', marks=marks) as (label, root):
-                if record.get('hash'):
-                    set_mark(root)
-                path = root / RELATIVE
+            seen = {}
+            with settings_root(context, 'rw', seen=seen) as (label, root):
+                if not record.get('hash'):
+                    _drop_other_marks(context, label, seen)
                 # The volume chosen holds no regular settings file: whatever else stands in their
                 # way (a link or a file for their folder, a folder for the file) goes, or they could
                 # never be saved there (2026-11-14 review).
                 clear_entry(root, RELATIVE)
-                path.parent.mkdir(mode=0o700, exist_ok=True)
-                temporary = path.with_suffix('.new')
-                fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-                try:
-                    os.write(fd, json.dumps(record).encode())
-                    os.fsync(fd)
-                finally:
-                    os.close(fd)
-                temporary.replace(path)
-                if not record.get('hash'):
+                fs.atomic_state(root / RELATIVE, record)
+                if record.get('hash'):
+                    set_mark(root)
+                else:
                     drop_mark(root)
-            if not record.get('hash'):
-                # Marks left on other volumes (settings that moved) go too, or the next loss of the
-                # settings would ask for userdata to be erased though no password is set (2026-11-14
-                # review); one that cannot be removed now is a save not done.
-                for other in marks:
-                    if other != label:
-                        with volume_root(context, other, 'rw') as other_root:
-                            drop_mark(other_root)
             return True
         except (OSError, ValueError, fs.FilesystemError):
             return False
 
 
 def ensure_mark(record):
-    """PASSWORD_MARK beside settings with a password that a release before it wrote (2026-11-14
-    review: for those the new guarantee did not hold until some setting changed). Best effort, at
-    the start, once the settings were read from the disk."""
-    if not record.get('hash'):
+    """PASSWORD_MARK beside settings with a password that a release before it wrote, only where the
+    last read found it missing (2026-11-14 reviews: the guarantee did not hold for those; then every
+    start mounted cache for writing to add a mark that was there). The settings are read again under
+    the lease, so a password cleared meanwhile gets no mark. Best effort, at the start."""
+    holder = LAST_READ.get('holder')
+    if not record.get('hash') or holder is None or LAST_READ.get('marked'):
         return
     context = fs.DeviceContext()
     with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
         with lease(context.lock_path, context.mode):
-            marks = []
-            with settings_root(context, 'rw', marks=marks) as (label, root):
-                if label not in marks and holds(root, RELATIVE):
+            with settings_root(context, 'rw') as (label, root):
+                text = read_regular(root, RELATIVE, label) if label == holder else None
+                if text is not None and json.loads(text).get('hash'):
                     set_mark(root)
 
 
@@ -610,10 +677,10 @@ def store(record):
 def reset_damaged():
     """Erase damaged settings together with userdata. Exit 1 when the settings are not damaged:
     settings that cannot be read now are no proof. Every volume besides userdata that must change
-    (cache when it holds them, each volume that carries PASSWORD_MARK) is opened for writing first,
-    so one that cannot be written stops the reset before anything is erased (2026-11-14 review: a
-    mark that could not be removed afterwards asked for the reset again). Userdata is erased
-    before the settings, so a stop halfway leaves the data gone, never the password."""
+    (the one that holds them, each that carries PASSWORD_MARK) is opened for writing first, so one
+    that cannot be written stops the reset before anything is erased (2026-11-14 review: a mark that
+    could not be removed afterwards asked for the reset again). Userdata is erased before the
+    settings, so a stop halfway leaves the data gone, never the password."""
     try:
         read_disk()
         return 1

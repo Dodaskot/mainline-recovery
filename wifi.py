@@ -187,11 +187,12 @@ def _ram_saved(networks):
 
 
 def _settings_volumes(mode, action):
-    """Run ACTION(root) on the volume that keeps the saved list, under the lock the settings use,
-    where settings.settings_root chooses (the same for reads and writes). Returns ('ok', value);
-    ('busy', None) when the lock or the volume cannot be had now, to be tried again; ('failed',
-    None) when ACTION itself failed on the volume (2026-11-14 review: both were None, then False,
-    and the hand-off never tried a busy one again)."""
+    """Run ACTION(root) on the volume that keeps the settings, under the lock they use: the saved list
+    lives beside them, chosen by where the settings are, never by where a list is (2026-11-14 review:
+    a list that was no file on cache sent reads and writes to an older one on userdata). Returns
+    ('ok', value); ('locked', None) when the lease cannot be had now; ('busy', None) when the volume
+    cannot be used now; ('failed', None) when ACTION itself failed on the volume (2026-11-14 reviews:
+    all of these were one answer)."""
     _beside()
     import filesystem as fs
     import settings
@@ -203,7 +204,7 @@ def _settings_volumes(mode, action):
             with lease(context.lock_path, context.mode):
                 done = None
                 try:
-                    with settings.settings_root(context, mode, SAVED_RELATIVE) as (_, root):
+                    with settings.settings_root(context, mode) as (_, root):
                         try:
                             done = ('ok', action(root))
                         except (OSError, ValueError, fs.FilesystemError):
@@ -215,7 +216,7 @@ def _settings_volumes(mode, action):
                 return done
         except BlockingIOError:
             if time.monotonic() > deadline:
-                return 'busy', None
+                return 'locked', None
             time.sleep(0.1)
 
 
@@ -260,16 +261,8 @@ def saved_known():
     return networks if status == 'ok' else None
 
 
-def saved_read():
-    """The remembered networks, or none when they cannot be read now."""
-    return saved_known() or []
-
-
-def _update(change):
-    """CHANGE(list) -> the new list, applied to the list on disk and written back in one hold of
-    the settings lock, then copied to RAM (2026-11-14 review: read from RAM outside the lock and
-    written under another hold, two writers lost one's network). True when written; None when the
-    volume or lock cannot be had now (nothing changed; try again); False when the write failed."""
+def _change(change):
+    """CHANGE applied as _update does; the status of _settings_volumes."""
     def update(root):
         import settings
         current = _read_list(root)
@@ -286,7 +279,21 @@ def _update(change):
         _ram_saved(networks)
         return True
     status, _ = _settings_volumes('rw', update)
-    return True if status == 'ok' else (None if status == 'busy' else False)
+    return status
+
+
+def saved_read():
+    """The remembered networks, or none when they cannot be read now."""
+    return saved_known() or []
+
+
+def _update(change):
+    """CHANGE(list) -> the new list, applied to the list on disk and written back in one hold of
+    the settings lock, then copied to RAM (2026-11-14 review: read from RAM outside the lock and
+    written under another hold, two writers lost one's network). True when written; None when the
+    volume or lock cannot be had now (nothing changed; try again); False when the write failed."""
+    status = _change(change)
+    return True if status == 'ok' else (False if status == 'failed' else None)
 
 
 def remember(ssid, key):
@@ -306,18 +313,24 @@ def saved_key(ssid):
 
 def forget(ssid):
     """Removed in one locked read and write of the list on disk, copied to RAM (2026-11-14 reviews: a
-    stale RAM copy decided; a second wait and a second mount when busy). A volume that cannot be
-    had now is said at once."""
+    stale RAM copy decided). When the lease cannot be had, that is said at once (no second wait);
+    when only the volume cannot be written now, the disk read-only says whether the network is saved
+    at all: one it does not hold is forgotten already (2026-11-14 review: else it failed for good on
+    a cache never writable now), and RAM is set right."""
     kept = []
 
     def without(networks):
         kept[:] = [n for n in networks if n.get('ssid_hex') != ssid.hex()]
         return kept
-    saved = _update(without)
-    if saved is None:
+    status = _change(without)
+    if status == 'busy':
+        status, current = _settings_volumes('ro', _read_and_keep)
+        if status == 'ok' and all(n.get('ssid_hex') != ssid.hex() for n in current):
+            return {**state(), 'saved_count': len(current)}
+    if status in ('busy', 'locked'):
         fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     # A failed write is said: the network would come back at the next start (2026-11-14 review).
-    if saved is False:
+    if status == 'failed':
         fail('WIFI_SAVED_UNWRITTEN', 'The saved networks could not be written. Try again in a moment.')
     return {**state(), 'saved_count': len(kept)}
 

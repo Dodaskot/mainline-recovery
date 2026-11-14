@@ -363,16 +363,18 @@ class TestControlSocket(unittest.TestCase):
         @contextlib.contextmanager
         def volume_root(context, label, mode):
             yield self.disk
-        real = os.lstat
+        real = os.open
 
         def failing(path, *args, **kwargs):
             if str(path).endswith('wifi.json'):
                 raise OSError(5, 'Input/output error')
             return real(path, *args, **kwargs)
-        with mock.patch.object(settings, 'volume_root', volume_root), mock.patch.object(settings.os, 'lstat', failing), \
+        with mock.patch.object(settings, 'volume_root', volume_root), mock.patch.object(settings.os, 'open', failing), \
                 mock.patch('operation_lock.lease', lambda *a, **k: contextlib.nullcontext()), \
                 mock.patch.object(fs, 'DeviceContext', Context), mock.patch.object(w, '_settings_volumes', REAL_SETTINGS_VOLUMES):
-            self.assertIsNone(w.remember(b'Home', FakeSupplicant.KEY))
+            # The list is kept beside the settings, so the volume is had; the list cannot be read: a
+            # change that failed, never one written over it.
+            self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), False)
         self.assertEqual(json.loads((self.disk / 'a22x-recovery/wifi.json').read_text()), listed)
 
     def test_a_list_that_is_no_file_holds_no_network_and_is_replaced(self):
@@ -434,7 +436,7 @@ class TestControlSocket(unittest.TestCase):
         import filesystem as fs
 
         @contextlib.contextmanager
-        def closing_fails(context, mode, relative):
+        def closing_fails(context, mode, relative=None):
             yield 'cache', self.disk
             raise fs.FilesystemError('UNMOUNT_FAILED', 'busy')
         with mock.patch.object(settings, 'settings_root', closing_fails), \
@@ -443,13 +445,17 @@ class TestControlSocket(unittest.TestCase):
             self.assertEqual(REAL_SETTINGS_VOLUMES('rw', lambda root: 'written'), ('ok', 'written'))
             self.assertEqual(REAL_SETTINGS_VOLUMES('rw', lambda root: (_ for _ in ()).throw(OSError(5, 'eio'))), ('failed', None))
 
-    def test_a_busy_volume_is_said_at_once_when_forgetting(self):
-        # 2026-11-14 review: a busy volume was waited for twice, rw then ro.
-        asked = []
-        with mock.patch.object(w, '_settings_volumes', lambda mode, action: (asked.append(mode), ('busy', None))[1]):
-            with self.assertRaises(w.WifiError) as caught:
-                w.forget(b'Unknown')
-        self.assertEqual((caught.exception.code, asked), ('WIFI_SAVED_UNAVAILABLE', ['rw']))
+    def test_a_lease_held_elsewhere_is_said_at_once_when_forgetting(self):
+        # 2026-11-14 reviews: a lease held elsewhere was waited for twice, rw then ro; a volume that
+        # only cannot be written now is read to tell a network not saved, which needs no write.
+        for status, modes in (('locked', ['rw']), ('busy', ['rw', 'ro'])):
+            asked = []
+            with mock.patch.object(w, '_settings_volumes', lambda mode, action: (asked.append(mode), (status, None))[1]):
+                with self.assertRaises(w.WifiError) as caught:
+                    w.forget(b'Unknown')
+            self.assertEqual((caught.exception.code, asked), ('WIFI_SAVED_UNAVAILABLE', modes))
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('busy', None) if mode == 'rw' else ('ok', [])):
+            self.assertEqual(w.forget(b'Unknown')['saved_count'], 0)
 
     def test_a_damaged_saved_list_holds_no_network(self):
         # 2026-11-14 review: a list, or entries that are no objects, raised AttributeError.
