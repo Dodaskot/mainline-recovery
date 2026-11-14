@@ -508,11 +508,13 @@ class SavedInMisc(unittest.TestCase):
         self.misc = self.tmp / 'misc'
         self.misc.write_bytes(bytes(512 << 10))
         self.legacy = []
+        self.retired = []
         context = mock.Mock(lock_path=str(self.tmp / 'lock'), mode='fixture')
         for patcher in (mock.patch.dict(os.environ, {'A22X_MISC': str(self.misc)}),
                         mock.patch.object(w, 'SAVED_RAM', self.tmp / 'saved-ram.json'),
                         mock.patch.object(fs, 'DeviceContext', lambda: context),
-                        mock.patch.object(w, '_legacy_list', lambda: self.legacy_list())):
+                        mock.patch.object(w, '_legacy_list', lambda: self.legacy_list()),
+                        mock.patch.object(w, '_retire_legacy_list', lambda: self.retired.append(1))):
             patcher.start()
             self.addCleanup(patcher.stop)
 
@@ -542,9 +544,11 @@ class SavedInMisc(unittest.TestCase):
         self.assertIsNone(misc_store.read('wifi'))
         self.legacy = [{'ssid_hex': b'Old'.hex(), 'psk': 'c' * 64}]
         self.assertEqual(self.names(w.saved_known()), [b'Old'])
+        self.assertEqual(self.retired, [1])  # and the older file goes (2026-11-14 review)
         self.legacy = []  # read once: misc decides from then on
         (self.tmp / 'saved-ram.json').unlink()
         self.assertEqual(self.names(w.saved_known()), [b'Old'])
+        self.assertEqual(self.retired, [1])
 
     def test_a_misc_that_cannot_be_read_or_written_is_said(self):
         import misc_store

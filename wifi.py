@@ -243,6 +243,18 @@ def _legacy_list():
         raise _Busy() from error
 
 
+def _retire_legacy_list():
+    """The older release's file gone once its list is in misc, so networks forgotten since never come
+    back when misc reads as holding none (2026-11-14 review). Best effort."""
+    _beside()
+    import filesystem as fs
+    import settings
+    with contextlib.suppress(OSError, ValueError, fs.FilesystemError, subprocess.SubprocessError):
+        with settings.settings_root(fs.DeviceContext(), 'rw') as (_, root):
+            settings.clear_file(root, SAVED_RELATIVE)
+            (root / SAVED_RELATIVE).unlink(missing_ok=True)
+
+
 def _read_list(root):
     """The saved list. In misc (ROOT is MISC): none when the record is damaged (a damaged list holds no
     network, and the next write replaces it); while misc holds no list, the older release's file,
@@ -263,6 +275,7 @@ def _read_list(root):
             networks = _legacy_list()
             with contextlib.suppress(OSError, ValueError):
                 misc_store.write('wifi', _encoded(networks))
+                _retire_legacy_list()
             return networks
         try:
             return networks_of(json.loads(data.decode()))

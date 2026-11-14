@@ -88,7 +88,11 @@ done
 # first picture, and the interface starts in it. Read-only, without replaying the journal; a theme
 # from a file falls back to Graphite, which the kernel also shows when nothing arrives.
 boot_theme=graphite
-if [ -b /dev/disk/by-partlabel/cache ] && mkdir -p /run/a22x-theme &&
+# Since 2026-11-14 the settings are in misc (misc_store.py); the file on cache only until the first
+# start of such a release has copied it there.
+saved=$(/usr/bin/python3 -B /opt/a22x-recovery/misc_store.py field settings theme 2>/dev/null)
+case "$saved" in graphite|daylight|aurora) boot_theme=$saved ;; esac
+if [ -z "$saved" ] && [ -b /dev/disk/by-partlabel/cache ] && mkdir -p /run/a22x-theme &&
         mount -t ext4 -o ro,noload,nosuid,nodev,noexec /dev/disk/by-partlabel/cache /run/a22x-theme 2>/dev/null; then
     saved=$(sed -n 's/.*"theme": *"\([a-z]*\)".*/\1/p' /run/a22x-theme/a22x-recovery/settings.json 2>/dev/null | head -n 1)
     umount /run/a22x-theme

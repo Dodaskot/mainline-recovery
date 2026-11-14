@@ -22,7 +22,15 @@ that are no copy of this recovery's are never written over (Foreign).
 Each record: two slots of 32 KiB. A slot: its first sector holds the header (magic, name,
 generation, length, SHA-256 of header and payload), the payload starts at 512. The header is
 written first and made durable, then the payload: a slot cut short has the magic and a wrong
-hash, never a payload that looks like another's.
+hash, never a payload that looks like another's. Every write fills both slots with the same
+payload, the older one first and read back before the other (2026-11-14 review: with one slot
+per change, damage to the newer one brought back the state before it, a password with it or
+without). So whole records always have two equal copies: one damaged copy, or one that cannot
+be read, leaves the newest; a copy with the newest generation beside a different older one is
+a write that stopped between them.
+
+The size is the stock PIT's (A22X_EUR_OPEN.pit: misc 1024 blocks of 512 bytes, one PIT for every
+storage size of the model).
 """
 import contextlib
 import errno
@@ -97,7 +105,9 @@ def _read_slot(fd, offset):
 
 def classify(name, data):
     """('empty',) all zeros; ('valid', generation, payload); ('torn',) this record's magic and
-    name, not whole; ('foreign',) anything else."""
+    name, not whole; ('foreign',) anything else; ('unreadable',) when DATA is None."""
+    if data is None:
+        return ('unreadable',)
     if not any(data):
         return ('empty',)
     magic, label, generation, length, flags = HEADER.unpack_from(data)
@@ -118,22 +128,32 @@ def classify(name, data):
 
 
 def _slots(fd, name):
-    first = AREAS[name]
-    return [classify(name, _read_slot(fd, first + index * SLOT)) for index in (0, 1)]
+    """Both slots classified; one that cannot be read is 'unreadable', the other still counts
+    (2026-11-14 review: an EIO in one copy failed the read of the whole one beside it)."""
+    found = []
+    for index in (0, 1):
+        try:
+            found.append(classify(name, _read_slot(fd, AREAS[name] + index * SLOT)))
+        except OSError:
+            found.append(classify(name, None))
+    return found
 
 
 def decide(slots):
-    """The payload the two SLOTS hold (classify's answers): the newest whole copy; None when there
-    is none and no record was ever whole (both empty; one empty beside one cut short, which only a
-    first write that stopped leaves: every write after it leaves two whole copies); Damaged when
-    neither copy is whole and both are this record's or one is."""
+    """The payload the two SLOTS hold (classify's answers): the newest whole copy. Without one: None
+    when no record was ever whole (both empty; one empty beside one cut short, which only a first
+    write that stopped leaves: every write after it leaves two whole copies); OSError when a copy
+    cannot be read now; else Damaged: bytes that are no copy of this record where one was, both
+    headers lost included (2026-11-14 review: that read as no record, a password as none)."""
     whole = [slot for slot in slots if slot[0] == 'valid']
     if whole:
         return max(whole, key=lambda slot: slot[1])[2]
     kinds = sorted(slot[0] for slot in slots)
-    if kinds in (['empty', 'empty'], ['empty', 'torn'], ['empty', 'foreign'], ['foreign', 'foreign']):
+    if 'unreadable' in kinds:
+        raise OSError(errno.EIO, 'A copy of the record cannot be read now')
+    if kinds in (['empty', 'empty'], ['empty', 'torn']):
         return None
-    raise Damaged('Neither copy of the %s record is whole' % 'stored')
+    raise Damaged('Neither copy of the record is whole')
 
 
 def read(name):
@@ -163,10 +183,11 @@ def _write_slot(fd, name, index, generation, payload):
 
 
 def write(name, payload):
-    """PAYLOAD (bytes) as record NAME: over the older copy, so the newest stays whole meanwhile;
-    when the other copy is not whole either (the first write, or one damaged), over that one too,
-    so a whole record always has two whole copies. Called under the operation lock. OSError when
-    misc cannot be written; Foreign when another's bytes stand there."""
+    """PAYLOAD (bytes) as record NAME, in both slots: first over the one that is not the newest whole
+    copy, read back, then over that one, so a stop at any point leaves a whole copy of the record
+    before or after. Called under the operation lock. OSError when misc cannot be written; Foreign
+    when another's bytes stand where no copy of this record ever was (never written over: misc is
+    the bootloader's; once the record is there, anything else in its place is damage to it)."""
     _name(name)
     if len(payload) > PAYLOAD_MAX:
         raise ValueError('The %s record is too large for misc' % name)
@@ -179,26 +200,21 @@ def write(name, payload):
         whole = [index for index in (0, 1) if slots[index][0] == 'valid']
         newest = max(whole, key=lambda index: slots[index][1]) if whole else None
         generation = slots[newest][1] if newest is not None else 0
-        target = 0 if newest is None else 1 - newest
-        _write_slot(fd, name, target, generation + 1, payload)
-        if newest is None:
-            _write_slot(fd, name, 1 - target, generation + 2, payload)
+        first = 0 if newest is None else 1 - newest
+        _write_slot(fd, name, first, generation + 1, payload)
+        _write_slot(fd, name, 1 - first, generation + 2, payload)
     finally:
         os.close(fd)
 
 
 def clear(name):
-    """Record NAME gone, both copies zeroed (the reset of damaged settings): the older first."""
+    """Record NAME gone, both slots zeroed: the reset of damaged settings, which the owner asked for
+    after userdata was erased; whatever stands there goes, another's bytes too."""
     _name(name)
     fd = _open(True)
     try:
-        slots = _slots(fd, name)
-        if not any(slot[0] in ('valid', 'torn') for slot in slots) and any(slot[0] == 'foreign' for slot in slots):
-            raise Foreign(errno.EEXIST, 'Another program keeps data where the %s record would go' % name)
-        order = sorted((0, 1), key=lambda index: slots[index][1] if slots[index][0] == 'valid' else -1)
-        for index in order:
-            offset = AREAS[name] + index * SLOT
-            os.pwrite(fd, bytes(SLOT), offset)
+        for index in (0, 1):
+            os.pwrite(fd, bytes(SLOT), AREAS[name] + index * SLOT)
             os.fsync(fd)
         drop_cached(fd)
         for index in (0, 1):
@@ -208,7 +224,21 @@ def clear(name):
         os.close(fd)
 
 
+def field(name, key):
+    """One text field of a JSON record, for /init's boot splash (the theme): '' when there is none,
+    or none can be had."""
+    import json
+    try:
+        value = json.loads(read(name).decode()).get(key)
+    except (OSError, ValueError, AttributeError, TypeError):
+        return ''
+    return value if isinstance(value, str) else ''
+
+
 if __name__ == '__main__':
+    if len(sys.argv) == 4 and sys.argv[1] == 'field':
+        print(field(sys.argv[2], sys.argv[3]))
+        sys.exit(0)
     with contextlib.suppress(BrokenPipeError):
         for record in AREAS:
             try:

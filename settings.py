@@ -7,8 +7,8 @@ They are kept in the misc partition, twice, with a generation and a SHA-256 (mis
 older state. A copy in RAM avoids reading misc for every question, and holds a save misc cannot
 take at this moment (exit 3). Releases up to 1.0.1 kept them in a file on cache, or on userdata
 when cache had no filesystem this recovery could write: while misc holds no record yet, that file
-is read as they read it (read_volumes) and copied to misc, which decides from then on; the file is
-left where it is and never read again.
+is read as they read it (read_volumes) and copied to misc, which decides from then on; the file and
+its marks are then removed (_retire_volumes), so they never come back when misc holds no record.
 
 Exit 0 means yes or done, 1 means no, 2 an error, 3 kept in RAM until reboot,
 4 damaged settings. The password also guards SSH, UART and adb, see access_gate.py.
@@ -17,7 +17,7 @@ Settings that cannot be read, or are damaged, never mean "no password" (2026-11-
 recovery and the gate stay locked, and nothing is saved over them. Damaged ones can be erased only
 together with userdata (reset-damaged), as Android's reset does: whoever holds the phone does not
 get past the password and keep the data it guarded. Both copies in misc damaged are damaged
-settings; one damaged copy is a save that stopped, and the other decides. Erasing misc itself (in
+settings; one damaged copy leaves the other, which holds the same. Erasing misc itself (in
 Download Mode) gives the defaults: whoever can do that can flash another recovery too, which no
 password here covers.
 """
@@ -761,10 +761,52 @@ def _encode(record):
 
 def _copy_themes(context):
     """The themes to RAM from the volume themes.py keeps them on (settings_root's choice); best
-    effort: a volume that cannot be looked at now leaves the bundled themes only."""
+    effort: a volume that cannot be looked at now leaves the bundled themes only. True when that
+    volume still holds anything of the older store (its settings, its mark, its Wi-Fi list) to be
+    retired."""
     with contextlib.suppress(*FAILS):
         with settings_root(context, 'ro') as (_, root):
             copy_themes(root)
+            return holds(root, RELATIVE) or marked(root) or os.path.lexists(root / WIFI_RELATIVE)
+    return False
+
+
+WIFI_RELATIVE = Path('a22x-recovery/wifi.json')  # wifi.SAVED_RELATIVE: the list of releases up to 1.0.1
+
+
+def _wifi_in_misc():
+    try:
+        return misc_store.read('wifi') is not None
+    except (misc_store.Damaged, *FAILS):
+        return False
+
+
+def _retire_volumes(context):
+    """The older store emptied once its record is in misc: the settings file and PASSWORD_MARK gone
+    from every volume, so neither can come back when misc reads as holding none (2026-11-14 review:
+    after misc was erased, or its damaged copies reset, the older file brought back a password
+    cleared since, or the one the reset was for). Each volume on its own, best effort: what stays
+    is retired at a later start."""
+    for label in VOLUMES:
+        with contextlib.suppress(*FAILS):
+            volume = _volume(context, label)
+            if volume is None:
+                continue
+            with volume_root(context, label, 'ro') as root:
+                root = _its_root(root, volume)
+                wifi = os.path.lexists(root / WIFI_RELATIVE) and _wifi_in_misc()
+                if not (holds(root, RELATIVE) or marked(root) or os.path.lexists(root / RELATIVE) or wifi):
+                    continue
+            with volume_root(context, label, 'rw') as root:
+                root = _its_root(root, volume)
+                clear_entry(root, RELATIVE)
+                (root / RELATIVE).unlink(missing_ok=True)
+                drop_mark(root)
+                if wifi:
+                    # The older Wi-Fi list too, once misc holds its own copy of it (wifi.py copies it
+                    # first): networks forgotten since never come back from it.
+                    clear_file(root, WIFI_RELATIVE)
+                    (root / WIFI_RELATIVE).unlink(missing_ok=True)
 
 
 def read_disk(details=None):
@@ -787,11 +829,13 @@ def read_disk(details=None):
                 if isinstance(error, Damaged):
                     raise
                 raise Damaged('The settings in misc are damaged', 'misc') from error
-            _copy_themes(context)
+            if _copy_themes(context):
+                _retire_volumes(context)
             return record
         record = read_volumes(details)
         with contextlib.suppress(*FAILS):
             misc_store.write('settings', _encode(record))
+            _retire_volumes(context)
         return record
 
 
@@ -868,8 +912,13 @@ def reset_damaged():
     context = fs.DeviceContext()
     with lease(context.lock_path, context.mode):
         with contextlib.ExitStack() as stack:
+            names = {label, *marks} - {'userdata', 'misc'}
+            if label == 'misc':
+                # The older store goes too, or it would come back once misc holds no record
+                # (2026-11-14 review: the password the reset was for returned from cache).
+                names |= {name for name in VOLUMES if name != 'userdata' and _volume(context, name) is not None}
             others = {name: stack.enter_context(volume_root(context, name, 'rw'))
-                      for name in sorted({label, *marks} - {'userdata', 'misc'})}
+                      for name in sorted(names)}
             volume = context.volume('userdata')
             if volume['mounted']:
                 context.unmount('userdata', volume['volume_token'])

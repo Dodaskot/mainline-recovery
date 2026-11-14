@@ -12,8 +12,10 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   start, a journal not yet replayed, an older release that saved to userdata. Each could read a
   password as none or lock a phone without one. They are now kept as U-Boot keeps its redundant
   environment: two copies of each record on the raw partition, each with a generation and a
-  SHA-256, in the last 128 KiB of `misc`. A read takes the newest whole copy, a write replaces
-  the older one, and a save that stops halfway leaves the one before it. That area was checked
+  SHA-256, in the last 128 KiB of `misc`. A read takes the newest whole copy; a write replaces
+  both copies one after the other, so a save that stops halfway leaves a whole state before or
+  after it, and damage to one copy, or a copy that cannot be read, leaves the other (review of
+  review-33: with one copy per save, damage to it brought back the state before). That area was checked
   free first:
   - the Samsung kernel never touches `misc`;
   - the LK writes only its bootloader message (the first 2 KiB);
@@ -21,18 +23,23 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   - MediaTek's sysenv writes `para` at 128 to 160 KiB, and `misc` only when `para` is missing;
   - backups of `misc` from 2026-10-07 and the partition now hold zeros beyond 64 KiB.
 
-  Bytes in a record's place that are not this recovery's are never written over. The file of
-  an older release is read once, while `misc` holds no record, and copied. Themes stay on
-  cache. The journal replay added in the reviews before (by a mount, by `e2fsck`, by `debugfs`)
+  Bytes in a record's place that are not this recovery's are never written over, and read as
+  damaged settings, never as none. The file of an older release is read once, while `misc` holds
+  no record, copied, and then removed with its marks (also by the reset of damaged settings), so
+  it never comes back. The boot splash takes its theme from `misc`. Themes stay on cache. The journal replay added in the reviews before (by a mount, by `e2fsck`, by `debugfs`)
   is gone again: nothing reads the settings from a filesystem after that first copy. What stays
   of those reviews: `sync()` before a save of the older store is said done, a card removed at
   the start is "cannot be read now", a command that does not come back is a failed look, and
   the check of cache in `ramdisk/init` has a limit of 120 s.
-  Tests: 897 Python, 110 backend (every stop of a write, a cut header, damaged copies, another
-  program's bytes, and nothing outside the record's 64 KiB ever written). On the phone (1.0.14,
-  the new files run from RAM): the 16 settings and 5 saved networks copied from cache to `misc`,
-  saved and read back, both copies whole, the first 384 KiB of `misc` unchanged byte for byte;
-  the records were cleared afterwards, since the installed release still saves to cache.
+  Tests: 901 Python, 110 backend, 106 UI self-tests, 23 of 23 UI targets (every stop of a write,
+  a cut header, damage to either copy, a copy that cannot be read, another program's bytes,
+  nothing outside the record's 64 KiB ever written). On the phone: 1.0.15 and then 1.0.16
+  written to recovery, read back and started. At the first start the 16 settings and 5
+  saved networks were copied from cache to `misc`, the interface opened and Wi-Fi joined from
+  the list in `misc`; at the next the boot splash took its theme from `misc`, the older settings
+  file on cache was removed, and a save left both copies equal. The removal of the older Wi-Fi
+  list was run on the phone from RAM. In a RAM run before, the first 384 KiB of `misc` stayed
+  the same byte for byte.
 
 - **A save of the settings survives a reset, and a card removed at the start locks nothing**
   (the focused reviews of review-23 and review-24, all in `settings.py`):
