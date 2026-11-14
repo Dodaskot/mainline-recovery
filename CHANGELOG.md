@@ -19,9 +19,7 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
     for a password mark when a password is cleared (review of review-25). Only a volume that is
     not mounted: one that is mounted is never remounted by a look at the settings (tried, and
     taken back after the review of review-26: it would have replayed the journal of a damaged
-    userdata the user had mounted read-only to save files), and none set to panic on errors
-    (`tune2fs -e panic`, as Android formats cache: on the phone cache reads so, userdata does
-    not), where clearing a damaged orphan list would restart the phone. A mount command that does not come
+    userdata the user had mounted read-only to save files). A mount command that does not come
     back is a failed look, no longer a traceback with the exit code of a wrong password.
   One finding is left as it was, on purpose: a recovery that has never saved settings stays
   locked with "Try again" while a userdata it recognizes cannot be mounted. Passing such a
