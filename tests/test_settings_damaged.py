@@ -542,6 +542,21 @@ class Damaged(unittest.TestCase):
             settings._ready(Context(), 'cache')
             self.assertEqual(seen, [], state)
         volume.update(mounted=False)
+        # 2026-11-14 review (28): nor a filesystem set to panic on errors: the mount for writing
+        # clears its orphan list, and a damaged one would restart the phone at every start.
+        volume.update(errors_panic=True)
+        settings._ready(Context(), 'cache')
+        self.assertEqual(seen, [])
+        volume.update(errors_panic=False)
+        block = bytearray(4096)
+        block[1024 + 24:1024 + 28] = (2).to_bytes(4, 'little')
+        block[1024 + 32:1024 + 36] = (32768).to_bytes(4, 'little')
+        block[1024 + 56:1024 + 58] = b'\x53\xef'
+        block[1024 + 96:1024 + 100] = (0x4).to_bytes(4, 'little')
+        for errors, panic in ((1, False), (2, False), (3, True)):
+            block[1024 + 60:1024 + 62] = errors.to_bytes(2, 'little')
+            probed = settings.fs.probe_magic(bytes(block))
+            self.assertEqual((probed['fs_type'], probed['needs_recovery'], probed['errors_panic']), ('ext4', True, panic))
 
         class Hangs(Context):
             def mount(self, label, mode, confirmed, token):

@@ -453,6 +453,11 @@ def _ready(context, label):
     if (volume is None or volume.get('mounted') or not volume.get('needs_recovery')
             or volume.get('read_only_reason_code') in NEVER_WRITABLE):
         return volume
+    if volume.get('errors_panic'):
+        # A mount for writing also clears the orphan list, which a look never did; on a filesystem
+        # set to panic on errors a damaged one would restart the phone at every start (2026-11-14
+        # review). Looked at as it is.
+        return volume
     try:
         context.mount(label, 'rw', True, volume['volume_token'])
         context.unmount(label)

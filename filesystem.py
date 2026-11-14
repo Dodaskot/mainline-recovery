@@ -343,7 +343,9 @@ def probe_magic(data):
                        filesystem_label=sb[120:136].split(b'\0', 1)[0].decode('utf-8', 'replace'),
                        fscrypt_feature=bool(incompat & 0x10000),
                        # Its journal holds writes not yet in place (EXT4_FEATURE_INCOMPAT_RECOVER).
-                       needs_recovery=bool(incompat & 0x4))
+                       needs_recovery=bool(incompat & 0x4),
+                       # s_errors: the kernel panics when it meets an error on it (tune2fs -e panic).
+                       errors_panic=struct.unpack_from('<H', sb, 60)[0] == 3)
             return out
     for offset in (1024, 5120):
         if len(data) >= offset + 128 and data[offset:offset + 4] == b'\x10\x20\xf5\xf2':
