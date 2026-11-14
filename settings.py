@@ -767,11 +767,17 @@ def _copy_themes(context):
     with contextlib.suppress(*FAILS):
         with settings_root(context, 'ro') as (_, root):
             copy_themes(root)
-            return holds(root, RELATIVE) or marked(root) or os.path.lexists(root / WIFI_RELATIVE)
+            return _older_store_on(root)
     return False
 
 
 WIFI_RELATIVE = Path('a22x-recovery/wifi.json')  # wifi.SAVED_RELATIVE: the list of releases up to 1.0.1
+
+
+def _older_store_on(root):
+    """Whether ROOT still holds anything of the older store: its settings, its mark, its Wi-Fi list."""
+    return (holds(root, RELATIVE) or marked(root) or os.path.lexists(root / RELATIVE)
+            or os.path.lexists(root / WIFI_RELATIVE))
 
 
 def _wifi_in_misc():
@@ -785,8 +791,11 @@ def _retire_volumes(context):
     """The older store emptied once its record is in misc: the settings file and PASSWORD_MARK gone
     from every volume, so neither can come back when misc reads as holding none (2026-11-14 review:
     after misc was erased, or its damaged copies reset, the older file brought back a password
-    cleared since, or the one the reset was for). Each volume on its own, best effort: what stays
-    is retired at a later start."""
+    cleared since, or the one the reset was for). Only once misc holds the Wi-Fi list too: wifi.py
+    finds the older list beside the older settings file (2026-11-14 review: removed first, the list
+    was never copied). Each volume on its own, best effort: what stays is retired at a later start."""
+    if not _wifi_in_misc():
+        return
     for label in VOLUMES:
         with contextlib.suppress(*FAILS):
             volume = _volume(context, label)
@@ -794,19 +803,17 @@ def _retire_volumes(context):
                 continue
             with volume_root(context, label, 'ro') as root:
                 root = _its_root(root, volume)
-                wifi = os.path.lexists(root / WIFI_RELATIVE) and _wifi_in_misc()
-                if not (holds(root, RELATIVE) or marked(root) or os.path.lexists(root / RELATIVE) or wifi):
+                if not _older_store_on(root):
                     continue
             with volume_root(context, label, 'rw') as root:
                 root = _its_root(root, volume)
                 clear_entry(root, RELATIVE)
                 (root / RELATIVE).unlink(missing_ok=True)
                 drop_mark(root)
-                if wifi:
-                    # The older Wi-Fi list too, once misc holds its own copy of it (wifi.py copies it
-                    # first): networks forgotten since never come back from it.
-                    clear_file(root, WIFI_RELATIVE)
-                    (root / WIFI_RELATIVE).unlink(missing_ok=True)
+                # The older Wi-Fi list too, now that misc holds its own: networks forgotten since
+                # never come back from it.
+                clear_file(root, WIFI_RELATIVE)
+                (root / WIFI_RELATIVE).unlink(missing_ok=True)
 
 
 def read_disk(details=None):
@@ -817,7 +824,14 @@ def read_disk(details=None):
     context = fs.DeviceContext()
     with lease(context.lock_path, context.mode):
         try:
-            data = misc_store.read('settings')
+            data, twice = misc_store.state('settings')
+            if data is not None and not twice:
+                # A write stopped between the two copies: the second is written again before
+                # anything relies on two (2026-11-14 review: the older store was retired beside one
+                # copy, whose damage then read as no record).
+                with contextlib.suppress(*FAILS):
+                    misc_store.write('settings', data)
+                    twice = True
         except misc_store.Damaged as error:
             raise Damaged('The settings in misc are damaged', 'misc') from error
         except FAILS as error:
@@ -829,7 +843,7 @@ def read_disk(details=None):
                 if isinstance(error, Damaged):
                     raise
                 raise Damaged('The settings in misc are damaged', 'misc') from error
-            if _copy_themes(context):
+            if _copy_themes(context) and twice:
                 _retire_volumes(context)
             return record
         record = read_volumes(details)
@@ -915,8 +929,18 @@ def reset_damaged():
             names = {label, *marks} - {'userdata', 'misc'}
             if label == 'misc':
                 # The older store goes too, or it would come back once misc holds no record
-                # (2026-11-14 review: the password the reset was for returned from cache).
-                names |= {name for name in VOLUMES if name != 'userdata' and _volume(context, name) is not None}
+                # (2026-11-14 review: the password the reset was for returned from cache); only
+                # where it is, so a cache that holds none of it need not open for writing (2026-11-14
+                # review). A volume that cannot be looked at stops the reset before anything is erased.
+                for name in VOLUMES:
+                    if name == 'userdata':
+                        continue
+                    volume = _volume(context, name)
+                    if volume is None:
+                        continue
+                    with volume_root(context, name, 'ro') as root:
+                        if _older_store_on(_its_root(root, volume)):
+                            names.add(name)
             others = {name: stack.enter_context(volume_root(context, name, 'rw'))
                       for name in sorted(names)}
             volume = context.volume('userdata')

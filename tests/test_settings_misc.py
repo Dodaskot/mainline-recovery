@@ -76,6 +76,7 @@ class Misc(unittest.TestCase):
         (self.volumes[label] / settings.PASSWORD_MARK).touch()
 
     def test_an_older_release_s_file_is_copied_once_then_misc_decides(self):
+        misc_store.write('wifi', b'{"networks": []}')  # wifi.py copied its list already
         self.legacy = dict(SECRET)
         self.put_legacy('cache')
         (self.volumes['userdata'] / settings.PASSWORD_MARK).touch()
@@ -96,6 +97,7 @@ class Misc(unittest.TestCase):
         self.assertEqual(settings.read_disk(), {})
 
     def test_an_older_store_left_behind_is_emptied_at_a_later_start(self):
+        misc_store.write('wifi', b'{"networks": []}')
         settings.write_disk(dict(SECRET))
         self.put_legacy('cache', {'theme': 'old'})
         with mock.patch.object(settings, '_copy_themes', lambda context: True):
@@ -105,18 +107,40 @@ class Misc(unittest.TestCase):
         self.legacy = {}
         self.assertEqual(settings.read_disk(), {})
 
-    def test_the_older_wifi_list_goes_only_once_misc_holds_its_own(self):
+    def test_the_older_store_goes_only_once_misc_holds_the_wifi_list_too(self):
+        # 2026-11-14 review: wifi.py finds the older list beside the older settings file; removed
+        # first, the list was never copied.
         settings.write_disk(dict(SECRET))
+        self.put_legacy('cache')
         older = self.volumes['cache'] / settings.WIFI_RELATIVE
         older.write_text('{"networks": []}')
         with mock.patch.object(settings, '_copy_themes', lambda context: True):
             settings.read_disk()
-            self.assertTrue(older.exists())  # not copied to misc yet: kept
+            self.assertEqual(len(self.legacy_files()), 2)  # the Wi-Fi list not in misc yet: all kept
+            self.assertTrue(older.exists())
             misc_store.write('wifi', b'{"networks": []}')
             settings.read_disk()
         self.assertFalse(older.exists())
+        self.assertEqual(self.legacy_files(), [])
         import wifi
         self.assertEqual(settings.WIFI_RELATIVE, wifi.SAVED_RELATIVE)
+
+    def test_a_write_stopped_between_the_copies_is_finished_by_the_next_read(self):
+        misc_store.write('wifi', b'{"networks": []}')
+        settings.write_disk(dict(SECRET))
+        data = bytearray(self.misc.read_bytes())
+        data[misc_store.AREAS['settings'] + misc_store.SLOT:misc_store.AREAS['settings'] + 2 * misc_store.SLOT] = bytes(misc_store.SLOT)
+        self.misc.write_bytes(bytes(data))
+        self.put_legacy('cache', {'theme': 'old'})
+        self.assertEqual(misc_store.state('settings'), (json.dumps(SECRET, sort_keys=True).encode() + b'\n', False))
+        with mock.patch.object(misc_store, 'write', side_effect=OSError(5, 'eio')), \
+                mock.patch.object(settings, '_copy_themes', lambda context: True):
+            self.assertEqual(settings.read_disk(), SECRET)
+        self.assertEqual(len(self.legacy_files()), 2)  # one copy only: the older store is kept
+        with mock.patch.object(settings, '_copy_themes', lambda context: True):
+            self.assertEqual(settings.read_disk(), SECRET)
+        self.assertTrue(misc_store.state('settings')[1])
+        self.assertEqual(self.legacy_files(), [])
 
     def test_what_the_older_store_cannot_tell_is_never_copied(self):
         for error in (settings.Unreadable('userdata will not mount'), settings.Damaged('damaged', 'cache')):
@@ -163,6 +187,35 @@ class Misc(unittest.TestCase):
         self.assertEqual(settings.reset_damaged(), 0)
         self.assertEqual(self.legacy_files(), [])
         self.assertIsNone(misc_store.read('settings'))
+
+    def test_the_reset_needs_no_writable_cache_when_the_older_store_is_not_there(self):
+        # 2026-11-14 review: the reset failed before anything was erased when cache would not open
+        # for writing, though nothing of the older store was on it.
+        settings.write_disk(dict(SECRET))
+        data = bytearray(self.misc.read_bytes())
+        for index in (0, 1):
+            data[misc_store.AREAS['settings'] + index * misc_store.SLOT + misc_store.SECTOR] ^= 0xff
+        self.misc.write_bytes(bytes(data))
+        real = settings.volume_root
+
+        @contextlib.contextmanager
+        def read_only(context, label, mode):
+            if mode == 'rw':
+                raise OSError(30, 'Read-only file system')
+            with real(context, label, mode) as root:
+                yield root
+        with mock.patch.object(settings, 'volume_root', read_only):
+            self.assertEqual(settings.reset_damaged(), 0)
+        self.assertEqual(self.context.formatted, ['userdata'])
+        self.assertIsNone(misc_store.read('settings'))
+        self.put_legacy('cache')
+        settings.write_disk(dict(SECRET))
+        self.misc.write_bytes(bytes(data))
+        self.context.formatted.clear()
+        with mock.patch.object(settings, 'volume_root', read_only):
+            with self.assertRaises(OSError):  # the older store is there and cannot go: nothing erased
+                settings.reset_damaged()
+        self.assertEqual(self.context.formatted, [])
 
     def test_a_reset_with_nothing_damaged_erases_nothing(self):
         settings.write_disk(dict(SECRET))

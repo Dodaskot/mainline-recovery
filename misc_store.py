@@ -139,12 +139,19 @@ def _slots(fd, name):
     return found
 
 
-def decide(slots):
+def _owned(fd):
+    """Whether any slot of any record holds a copy of this recovery's, whole or cut short: the area is
+    then this recovery's, and other bytes in it are damage to it (2026-11-14 reviews: read as no
+    record, both headers lost read a password as none; read as damage on a phone that never had a
+    record, a stray byte asked to erase userdata)."""
+    return any(slot[0] in ('valid', 'torn') for name in AREAS for slot in _slots(fd, name))
+
+
+def decide(slots, owned=True):
     """The payload the two SLOTS hold (classify's answers): the newest whole copy. Without one: None
     when no record was ever whole (both empty; one empty beside one cut short, which only a first
-    write that stopped leaves: every write after it leaves two whole copies); OSError when a copy
-    cannot be read now; else Damaged: bytes that are no copy of this record where one was, both
-    headers lost included (2026-11-14 review: that read as no record, a password as none)."""
+    write that stopped leaves; or bytes of another while nothing in the area is this recovery's,
+    OWNED False); OSError when a copy cannot be read now; else Damaged."""
     whole = [slot for slot in slots if slot[0] == 'valid']
     if whole:
         return max(whole, key=lambda slot: slot[1])[2]
@@ -153,18 +160,29 @@ def decide(slots):
         raise OSError(errno.EIO, 'A copy of the record cannot be read now')
     if kinds in (['empty', 'empty'], ['empty', 'torn']):
         return None
+    if not owned and 'torn' not in kinds:
+        return None
     raise Damaged('Neither copy of the record is whole')
+
+
+def state(name):
+    """(payload, twice): read's payload, and whether both slots hold it whole (a write that stopped
+    between them leaves one; read_disk writes it again before it relies on two copies)."""
+    _name(name)
+    fd = _open(False)
+    try:
+        slots = _slots(fd, name)
+        payload = decide(slots, _owned(fd))
+        twice = all(slot[0] == 'valid' for slot in slots) and slots[0][2] == slots[1][2]
+        return payload, twice
+    finally:
+        os.close(fd)
 
 
 def read(name):
     """The payload of record NAME, bytes; None when none was ever kept. OSError when misc cannot be
     read now; Damaged when both copies are damaged."""
-    _name(name)
-    fd = _open(False)
-    try:
-        return decide(_slots(fd, name))
-    finally:
-        os.close(fd)
+    return state(name)[0]
 
 
 def _write_slot(fd, name, index, generation, payload):
@@ -186,16 +204,16 @@ def write(name, payload):
     """PAYLOAD (bytes) as record NAME, in both slots: first over the one that is not the newest whole
     copy, read back, then over that one, so a stop at any point leaves a whole copy of the record
     before or after. Called under the operation lock. OSError when misc cannot be written; Foreign
-    when another's bytes stand where no copy of this record ever was (never written over: misc is
-    the bootloader's; once the record is there, anything else in its place is damage to it)."""
+    when another's bytes stand there while nothing in the area is this recovery's (never written
+    over: misc is the bootloader's; once a record of this recovery's is there, anything else in
+    the area is damage to it)."""
     _name(name)
     if len(payload) > PAYLOAD_MAX:
         raise ValueError('The %s record is too large for misc' % name)
     fd = _open(True)
     try:
         slots = _slots(fd, name)
-        ours = any(slot[0] in ('valid', 'torn') for slot in slots)
-        if not ours and any(slot[0] == 'foreign' for slot in slots):
+        if any(slot[0] == 'foreign' for slot in slots) and not _owned(fd):
             raise Foreign(errno.EEXIST, 'Another program keeps data where the %s record would go' % name)
         whole = [index for index in (0, 1) if slots[index][0] == 'valid']
         newest = max(whole, key=lambda index: slots[index][1]) if whole else None

@@ -107,6 +107,7 @@ class Store(unittest.TestCase):
         self.assertGreater(cases, 250)
 
     def test_damage_to_either_copy_leaves_the_newest_and_to_both_is_damaged(self):
+        ms.write('wifi', b'{}')  # as on the phone: wifi.py writes its record at the first start
         first = ms.AREAS['settings']
         for spot in (ms.SECTOR, 3, 40):  # the payload, the magic, the hash
             for index in (0, 1):
@@ -124,7 +125,15 @@ class Store(unittest.TestCase):
                         ms.read('settings')
         ms.clear('settings')
         self.assertIsNone(ms.read('settings'))
-        self.assert_outside_kept('settings')
+        # The bound: both headers of the only record in the area lost cannot be told from another's
+        # bytes on a phone that never had one; with the Wi-Fi record there, they can.
+        ms.clear('wifi')
+        ms.write('settings', b'password')
+        data = bytearray(self.misc.read_bytes())
+        for index in (0, 1):
+            data[first + index * ms.SLOT + 3] ^= 0xff
+        self.misc.write_bytes(bytes(data))
+        self.assertIsNone(ms.read('settings'))
 
     def test_a_copy_that_cannot_be_read_leaves_the_other(self):
         ms.write('settings', b'whole')
@@ -143,24 +152,51 @@ class Store(unittest.TestCase):
                         ms.read('settings')
                     self.assertNotIsInstance(caught.exception, ms.Foreign)
 
-    def test_bytes_of_another_program_are_damage_never_none_and_never_written_over(self):
+    def test_bytes_of_another_program_are_never_written_over_and_damage_only_in_an_area_of_ours(self):
         data = bytearray(self.misc.read_bytes())
         data[ms.AREAS['wifi'] + 100] = 7
         self.misc.write_bytes(bytes(data))
-        with self.assertRaises(ms.Damaged):
-            ms.read('wifi')
+        # Nothing of this recovery's in the area: another's bytes, no record (2026-11-14 review: read
+        # as damage, a stray byte asked to erase userdata on a phone that never had a password).
+        self.assertIsNone(ms.read('wifi'))
         with self.assertRaises(ms.Foreign):
             ms.write('wifi', b'x')
         self.assertEqual(self.misc.read_bytes(), bytes(data))
-        ms.write('settings', b'mine')  # the other record is not concerned
-        self.assertEqual(ms.read('settings'), b'mine')
-        ms.clear('wifi')  # the reset the owner asks for clears whatever stands there
-        self.assertIsNone(ms.read('wifi'))
+        # Once a record of ours is in the area, anything else in it is damage, never "no record"
+        # (2026-11-14 review: both headers lost read a password as none), and the next write repairs it.
+        ms.write('settings', b'mine')
+        with self.assertRaises(ms.Damaged):
+            ms.read('wifi')
         ms.write('wifi', b'x')
-        self.assertEqual(ms.read('wifi'), b'x')
+        self.assertEqual((ms.read('wifi'), ms.read('settings')), (b'x', b'mine'))
+        first = ms.AREAS['settings']
+        data = bytearray(self.misc.read_bytes())
+        for index in (0, 1):
+            data[first + index * ms.SLOT:first + index * ms.SLOT + 8] = b'OTHERPRG'
+        self.misc.write_bytes(bytes(data))
+        with self.assertRaises(ms.Damaged):
+            ms.read('settings')
+        ms.clear('settings')  # the reset the owner asks for clears whatever stands there
+        self.assertIsNone(ms.read('settings'))
         self.assertEqual(ms.field('settings', 'theme'), '')
         ms.write('settings', b'{"theme": "aurora"}')
         self.assertEqual(ms.field('settings', 'theme'), 'aurora')
+
+    def test_a_write_stopped_between_the_copies_is_told(self):
+        ms.write('settings', b'old')
+        self.assertEqual(ms.state('settings'), (b'old', True))
+        real_pwrite, calls = os.pwrite, [0]
+
+        def pwrite(fd, data, offset):
+            calls[0] += 1
+            if calls[0] == 3:  # the header of the second copy
+                raise Crash()
+            return real_pwrite(fd, data, offset)
+        with mock.patch('os.pwrite', pwrite), self.assertRaises(Crash):
+            ms.write('settings', b'new')
+        self.assertEqual(ms.state('settings'), (b'new', False))
+        ms.write('settings', b'new')
+        self.assertEqual(ms.state('settings'), (b'new', True))
 
     def test_limits_and_a_misc_that_cannot_hold_or_be_read(self):
         with self.assertRaises(ValueError):

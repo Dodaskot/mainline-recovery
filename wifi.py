@@ -266,7 +266,10 @@ def _read_list(root):
     if root is MISC:
         import misc_store
         try:
-            data = misc_store.read('wifi')
+            data, twice = misc_store.state('wifi')
+            if data is not None and not twice:
+                with contextlib.suppress(OSError, ValueError):
+                    misc_store.write('wifi', data)  # a write stopped between the copies
         except misc_store.Damaged:
             return []
         except (OSError, ValueError) as error:
