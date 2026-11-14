@@ -86,6 +86,14 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   shown. One limit holds for a Linux data archive, and a home is offered only when it fits beside
   the settings. Every writer drops the page cache through one helper.
 
+- **Fixes from the sixth review** (13 findings): settings and the saved Wi-Fi list that cannot be
+  looked at (a failed stat: EIO, EACCES) are never taken for none, so the phone never opens
+  without its password and a save never replaces them (Path.is_file() answers False to any error);
+  the start reads the settings by the same rule as every write; a new change is saved at once even
+  after a save had to wait; a Wi-Fi list already written is not written again because closing the
+  volume failed, and forgetting a network not saved needs no volume; homes and settings that each
+  fit are offered, and the backup button says when the chosen parts together are too many.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

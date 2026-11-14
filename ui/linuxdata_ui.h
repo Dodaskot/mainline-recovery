@@ -19,6 +19,12 @@ static bool ld_part_usable(const App*a,unsigned int n){
 static unsigned int ld_selection(const App*a){
     unsigned int mask=0;for(unsigned int n=0;n<LD_PARTS;n++)if((a->ld_parts>>n&1u)&&ld_part_usable(a,n))mask|=1u<<n;return mask;
 }
+/* Whether the parts chosen fit in one archive together: homes and settings each fit alone, and the
+   backup holds both under one limit (2026-11-14 review: a home that fit alone was hidden). */
+static bool ld_fits(const App*a){
+    unsigned int chosen=ld_selection(a);
+    return !((chosen&1u)&&(chosen&4u))||!a->ld_max_entries||a->ld_home_entries+a->ld_settings_entries<=a->ld_max_entries;
+}
 static unsigned int ld_mask(const Json*j,int list){
     unsigned int mask=0;if(list<0||j->tokens[list].type!=J_ARRAY)return 0;
     for(int i=list+1;i<json_next(j,list);i=json_next(j,i)){char name[24];if(json_string(j,i,name,sizeof(name))<=0)continue;
@@ -41,7 +47,7 @@ static bool start_ld_job(App*a,int kind){
     if(a->backup_password[0]&&a->backup_password_file[0]){args[n++]="--password-file";args[n++]=a->backup_password_file;}
     if(kind==J_LD_INSPECT)args[n++]="inspect";
     else if(kind==J_LD_BACKUP){
-        if(a->ld_dest_index<0||a->ld_dest_index>=(int)a->ld_dest_count||!ld_selection(a))return false;
+        if(a->ld_dest_index<0||a->ld_dest_index>=(int)a->ld_dest_count||!ld_selection(a)||!ld_fits(a))return false;
         ld_parts_argument(ld_selection(a),parts,sizeof(parts));
         args[n++]="backup";args[n++]="--volume";args[n++]=a->ld_dest[a->ld_dest_index].id;args[n++]="--parts";args[n++]=parts;args[n++]="--confirm";
         if(a->backup_encrypt&&a->backup_password[0])args[n++]="--encrypt";
@@ -72,6 +78,8 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
                 a->ld_settings=settings>=0&&j->text[j->tokens[settings].start]=='-'?UINT64_MAX:json_uint(j,settings,0);
                 a->ld_account_count=(unsigned int)json_uint(j,json_get(j,parts,"accounts"),0);
                 int packages=json_get(j,parts,"packages");a->ld_packages=packages>=0&&j->tokens[packages].type==J_PRIMITIVE&&j->text[j->tokens[packages].start]!='-'?(int)json_uint(j,packages,0):-1;}
+            int entries=json_get(j,0,"entries");a->ld_max_entries=json_uint(j,json_get(j,0,"max_entries"),0);
+            a->ld_home_entries=entries>=0?json_uint(j,json_get(j,entries,"home"),0):0;a->ld_settings_entries=entries>=0?json_uint(j,json_get(j,entries,"settings"),0):0;
         }
         a->ld_dest_count=0;int list=json_get(j,0,"destinations");
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->ld_dest_count<LD_DESTS;i=json_next(j,i)){
@@ -155,7 +163,8 @@ static void render_linux_data(App*a){
     if(a->ld_dest_count){LdDest*d=&a->ld_dest[a->ld_dest_index];human_bytes(d->free,bytes,sizeof(bytes));snprintf(label,sizeof(label),T("To: %.100s  /  %s free"),d->label,bytes);}
     else copy(label,sizeof(label),tr("Insert an SD card or attach a USB drive"));
     raw_text(true);button(a,(Rect){28,722,664,72},label,A_LD_DEST,ui_free(a)&&a->ld_dest_count>1,false,0);raw_text(false);
-    button(a,(Rect){28,806,664,92},"Hold 2 seconds: back up",A_LD_BACKUP,ui_free(a)&&a->ld_linux&&ld_selection(a)&&a->ld_dest_count>0,true,2000);
+    bool fits=ld_fits(a);
+    button(a,(Rect){28,806,664,92},fits?"Hold 2 seconds: back up":"Too many files together: choose fewer parts",A_LD_BACKUP,ui_free(a)&&a->ld_linux&&ld_selection(a)&&fits&&a->ld_dest_count>0,true,2000);
     text(a,34,918,0,ORANGE,"BACKUPS ON CARDS AND STICKS");
     if(!a->ld_archive_count)text(a,34,962,0,MUTED,"None found");
     /* 2026-11-13 review: only the first three were drawn; the rest are on further pages. */

@@ -4,7 +4,7 @@
 #define LANGUAGE_COUNT 6
 static const char*const language_codes[LANGUAGE_COUNT]={"en","uk","de","es","fr","pl"};
 static const char*const language_names[LANGUAGE_COUNT]={"English","Українська","Deutsch","Español","Français","Polski"};
-#define MESSAGE_COUNT 2217
+#define MESSAGE_COUNT 2218
 static const char*const message_ids[MESSAGE_COUNT]={
 "  /  skip-identical",
 " / preview truncated",
@@ -2000,6 +2000,7 @@ static const char*const message_ids[MESSAGE_COUNT]={
 "To: %.170s",
 "Too many attempts. Try again in %u s",
 "Too many files are selected at once",
+"Too many files together: choose fewer parts",
 "Touch panel",
 "Treble GSI: made to start on older vendors too",
 "Tried on an SM-A226B: it restarted into the bootloader instead of starting. You can still try it: this recovery stays, and stock Android can be flashed again.",
@@ -4220,6 +4221,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Куди: %.170s",
 "Забагато спроб. Спробуйте за %u с",
 "Вибрано забагато файлів одразу",
+"Разом забагато файлів: виберіть менше частин",
 "Сенсорна панель",
 "Treble GSI: зроблений так, щоб запускатися й на старіших vendor",
 "Перевірено на SM-A226B: замість запуску телефон перезапускався в завантажувач. Спробувати все одно можна: це recovery лишається, а стоковий Android можна прошити знову.",
@@ -6439,6 +6441,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Nach: %.170s",
 "Zu viele Versuche. Erneut in %u s",
 "Zu viele Dateien auf einmal ausgewählt",
+"Zusammen zu viele Dateien: weniger Teile wählen",
 "Touchpanel",
 "Treble-GSI: so gebaut, dass es auch mit älteren Vendor-Partitionen startet",
 "Auf einem SM-A226B ausprobiert: Statt zu starten, startete es in den Bootloader neu. Ein Versuch bleibt möglich: Dieses Recovery bleibt, und das Stock-Android lässt sich wieder flashen.",
@@ -8658,6 +8661,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "A: %.170s",
 "Demasiados intentos. Reintenta en %u s",
 "Hay demasiados archivos seleccionados a la vez",
+"Demasiados archivos juntos: elija menos partes",
 "Panel táctil",
 "GSI Treble: hecho para iniciarse también con vendor más antiguos",
 "Probado en un SM-A226B: en lugar de arrancar, se reinició en el cargador. Aun así puedes probarlo: este recovery se queda y el Android de fábrica puede flashearse de nuevo.",
@@ -10877,6 +10881,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Vers : %.170s",
 "Trop d'essais. Réessayez dans %u s",
 "Trop de fichiers sélectionnés à la fois",
+"Trop de fichiers ensemble : choisissez moins de parties",
 "Écran tactile",
 "GSI Treble : conçu pour démarrer aussi avec des vendor plus anciens",
 "Essayé sur un SM-A226B : au lieu de démarrer, il a redémarré dans le chargeur. Vous pouvez tout de même l’essayer : ce recovery reste, et l’Android d’origine peut être reflashé.",
@@ -13096,6 +13101,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Do: %.170s",
 "Zbyt wiele prób. Spróbuj za %u s",
 "Zaznaczono zbyt wiele plików naraz",
+"Razem za dużo plików: wybierz mniej części",
 "Panel dotykowy",
 "Treble GSI: zrobiony tak, by startował też na starszych vendor",
 "Sprawdzono na SM-A226B: zamiast się uruchomić, restartował do bootloadera. Mimo to można spróbować: to recovery zostaje, a fabrycznego Androida można wgrać ponownie.",

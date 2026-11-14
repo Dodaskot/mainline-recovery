@@ -190,14 +190,18 @@ def _settings_volumes(mode, action):
     while True:
         try:
             with operation_lock(context.lock_path, context.mode):
+                done = None
                 try:
                     with settings.settings_root(context, mode, SAVED_RELATIVE) as (_, root):
                         try:
-                            return 'ok', action(root)
+                            done = ('ok', action(root))
                         except (OSError, ValueError, fs.FilesystemError):
-                            return 'failed', None
+                            done = ('failed', None)
                 except (OSError, ValueError, fs.FilesystemError):
-                    return 'busy', None
+                    # Closing the volume after the action is no reason to say it was not done
+                    # (2026-11-14 review: a write already made was said busy and done again).
+                    return done or ('busy', None)
+                return done
         except BlockingIOError:
             if time.monotonic() > deadline:
                 return 'busy', None
@@ -205,8 +209,12 @@ def _settings_volumes(mode, action):
 
 
 def _read_list(root):
+    """The list in ROOT: none when the file is not there; a file that cannot be looked at raises,
+    never read as none (2026-11-14 review: Path.is_file() said no file on any error, and the next
+    remember wrote one network over all the others)."""
+    import settings
     path = root / SAVED_RELATIVE
-    if not path.is_file():
+    if not settings.present(path):
         return []
     try:
         return _networks(json.loads(path.read_text()))
@@ -255,11 +263,6 @@ def _update(change):
     return True if status == 'ok' else (None if status == 'busy' else False)
 
 
-def saved_write(networks):
-    """NETWORKS as the whole saved list: see _update."""
-    return _update(lambda current: networks)
-
-
 def remember(ssid, key):
     """True when saved; None when the saved list cannot be had now and nothing was changed
     (2026-11-14 review: with the settings volume busy, the list read as empty, and the new network
@@ -276,6 +279,10 @@ def saved_key(ssid):
 
 
 def forget(ssid):
+    known = saved_known()
+    if known is not None and all(n.get('ssid_hex') != ssid.hex() for n in known):
+        # Not saved: nothing to write, and no reason to need the volume (2026-11-14 review).
+        return {**state(), 'saved_count': len(known)}
     kept = []
 
     def without(current):

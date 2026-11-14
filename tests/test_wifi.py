@@ -15,6 +15,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import wifi as w
+REAL_SETTINGS_VOLUMES = w._settings_volumes  # before any test replaces it
 
 
 class TestText(unittest.TestCase):
@@ -194,8 +195,15 @@ class TestControlSocket(unittest.TestCase):
         self.addCleanup(self.fake.sock.close)
         self.disk = Path(self.tmp.name, 'disk')
         self.disk.mkdir()
+
+        def volumes(mode, action):
+            # As wifi._settings_volumes: a failure of the action on the volume is 'failed'.
+            try:
+                return 'ok', action(self.disk)
+            except (OSError, ValueError):
+                return 'failed', None
         for name, value in (('RUN', run_dir), ('SAVED_RAM', Path(self.tmp.name, 'saved-ram.json')),
-                            ('_settings_volumes', lambda mode, action: ('ok', action(self.disk))),
+                            ('_settings_volumes', volumes),
                             ('interface_up', lambda: True), ('supplicant_running', lambda: True),
                             ('driver_up', lambda: None), ('start_supplicant', lambda: None), ('stop_dhcp', lambda: None),
                             ('dhcp', lambda: '10.42.0.23'), ('address', lambda: '10.42.0.23'),
@@ -332,6 +340,45 @@ class TestControlSocket(unittest.TestCase):
             self.assertIsNone(w.remember(b'Next', FakeSupplicant.KEY))
         with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('failed', None)):
             self.assertIs(w.remember(b'Next', FakeSupplicant.KEY), False)
+
+    def test_a_list_that_cannot_be_looked_at_is_never_replaced(self):
+        # 2026-11-14 review: a stat that failed read as no list, and remember wrote one network over five.
+        (self.disk / 'a22x-recovery').mkdir()
+        listed = {'networks': [{'ssid_hex': ('Net%d' % n).encode().hex(), 'psk': 'a' * 64} for n in range(5)]}
+        (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps(listed))
+        Path(self.tmp.name, 'saved-ram.json').unlink(missing_ok=True)
+        import settings
+        real = os.stat
+
+        def failing(path, *args, **kwargs):
+            if str(path).endswith('wifi.json'):
+                raise OSError(5, 'Input/output error')
+            return real(path, *args, **kwargs)
+        with mock.patch.object(settings.os, 'stat', failing):
+            self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), False)
+        self.assertEqual(json.loads((self.disk / 'a22x-recovery/wifi.json').read_text()), listed)
+
+    def test_a_volume_that_fails_to_close_after_the_action_keeps_its_result(self):
+        # 2026-11-14 review: an unmount that failed after the write was said busy, and the write was
+        # done again by the hand-off.
+        import contextlib
+        import settings
+        import filesystem as fs
+
+        @contextlib.contextmanager
+        def closing_fails(context, mode, relative):
+            yield 'cache', self.disk
+            raise fs.FilesystemError('UNMOUNT_FAILED', 'busy')
+        with mock.patch.object(settings, 'settings_root', closing_fails), \
+                mock.patch('operation_lock.operation_lock', lambda *a, **k: contextlib.nullcontext()), \
+                mock.patch.object(fs, 'DeviceContext', lambda: mock.Mock(lock_path='/nonexistent', mode='fixture')):
+            self.assertEqual(REAL_SETTINGS_VOLUMES('rw', lambda root: 'written'), ('ok', 'written'))
+            self.assertEqual(REAL_SETTINGS_VOLUMES('rw', lambda root: (_ for _ in ()).throw(OSError(5, 'eio'))), ('failed', None))
+
+    def test_forgetting_a_network_not_saved_needs_no_volume(self):
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('busy', None) if mode == 'rw' else ('ok', [])):
+            Path(self.tmp.name, 'saved-ram.json').unlink(missing_ok=True)
+            self.assertEqual(w.forget(b'Unknown')['saved_count'], 0)
 
     def test_a_damaged_saved_list_holds_no_network(self):
         # 2026-11-14 review: a list, or entries that are no objects, raised AttributeError.

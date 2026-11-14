@@ -2039,6 +2039,7 @@ To: %.170s
 Too many attempts. Try again in %u s
 Too many files are selected at once
 too many files to count
+Too many files together: choose fewer parts
 Touch panel
 TRANSACTION
 Treble GSI: made to start on older vendors too

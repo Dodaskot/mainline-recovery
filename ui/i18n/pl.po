@@ -6126,6 +6126,9 @@ msgstr "Zaznaczono zbyt wiele plików naraz"
 msgid "too many files to count"
 msgstr "zbyt wiele plików, by policzyć"
 
+msgid "Too many files together: choose fewer parts"
+msgstr "Razem za dużo plików: wybierz mniej części"
+
 msgid "Touch panel"
 msgstr "Panel dotykowy"
 

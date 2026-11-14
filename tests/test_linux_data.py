@@ -310,28 +310,23 @@ class LinuxData(unittest.TestCase):
             seen = ld.inspect(self.ctx)
         self.assertEqual((seen['linux'], seen['reason'], seen['parts']['home'], seen['accounts']), (True, 'SELECTION_TOO_LARGE', -1, ['alex']))
 
-    def test_a_home_is_offered_only_when_it_fits_beside_the_settings(self):
-        # 2026-11-14 reviews: inspect and the backup must agree on one limit, and the backup holds
-        # both parts in one archive under one limit (a limit for each part doubled what one archive
-        # holds in memory). A home that fits only without the settings is said too large.
+    def test_each_part_says_what_it_adds_to_one_archive(self):
+        # 2026-11-14 reviews: one limit for the archive (not one for each part), and a home that fits
+        # alone is offered; inspect says what each part adds, and the backup checks the same sum.
         from unittest import mock
         import file_archive as fa
-        with ld.linux_root(self.ctx) as (pin, _, _):
-            accounts = ld.accounts_of(pin.fd)
-            files, folders, _ = ld.collect(pin, ('home', 'settings'), accounts)
-            for fd in folders:
-                os.close(fd)
-        together = len(files) + len(folders)
-        with mock.patch.object(fa, 'MAX_ENTRIES', together):
+        seen = ld.inspect(self.ctx)
+        home, settings = seen['entries']['home'], seen['entries']['settings']
+        self.assertEqual(seen['max_entries'], fa.MAX_ENTRIES)
+        with mock.patch.object(fa, 'MAX_ENTRIES', home + settings - 1):
             seen = ld.inspect(self.ctx)
-            self.assertFalse(seen['reason'], seen)
-            done = ld.backup(self.ctx, ['home', 'settings'], 'sdcard-p1', None, True, self.progress)
-            self.assertEqual(done['entries'], len(files))
-        with mock.patch.object(fa, 'MAX_ENTRIES', together - 1):
-            seen = ld.inspect(self.ctx)
-            self.assertEqual((seen['reason'], seen['parts']['home']), ('SELECTION_TOO_LARGE', -1))
-            self.assertGreater(seen['parts']['settings'], 0)
-            ld.backup(self.ctx, ['settings'], 'sdcard-p1', None, True, self.progress)
+            self.assertFalse(seen['reason'], seen)  # each fits alone: both offered
+            with self.assertRaises(fs.FilesystemError) as caught:
+                ld.backup(self.ctx, ['home', 'settings'], 'sdcard-p1', None, True, self.progress)
+            self.assertEqual(caught.exception.code, 'SELECTION_TOO_LARGE')
+            ld.backup(self.ctx, ['home'], 'sdcard-p1', None, True, self.progress)
+        with mock.patch.object(fa, 'MAX_ENTRIES', home + settings):
+            ld.backup(self.ctx, ['home', 'settings'], 'sdcard-p1', None, True, self.progress)
 
     def test_a_failed_upgrade_is_read_as_such(self):
         # 2026-11-14 review: "packages upgrade failed" was read as the line of counts, and
@@ -340,6 +335,8 @@ class LinuxData(unittest.TestCase):
         self.assertEqual((found['packages_installed'], found['packages_missing'], found['packages_skipped'], found['note']),
                          (1, 0, 2, ld.UPGRADE_FAILED))
         self.assertEqual(ld.script_result(['packages upgrade failed', 'done'])['packages_installed'], 0)
+        # Digits that are not ASCII are no counts (2026-11-14 review: '²'.isdigit() and int('²') raises).
+        self.assertEqual(ld.script_result(['packages \u00b2 0', 'packages-skipped \u0661', 'done'])['packages_installed'], 0)
 
     def test_arch_is_upgraded_once_and_never_partly(self):
         # 2026-11-14 review: pacman -Syu for every package meant one upgrade that could not go

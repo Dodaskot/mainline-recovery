@@ -412,7 +412,7 @@ typedef struct {
     /* A password as dots: when the last character was typed, and how many there were then. */
     uint64_t secret_typed_at;unsigned int secret_count;bool secret_show;
     bool backup_encrypt,pw_wrong;char backup_password[260],backup_password_file[PATH_LEN];int pw_retry_kind;enum Screen pw_return;
-    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160],ld_reason[64];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
+    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160],ld_reason[64];uint64_t ld_home,ld_settings,ld_home_entries,ld_settings_entries,ld_max_entries;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
     bool fs_select,fs_select_all;unsigned int fs_sel_count;char fs_sel[FS_SEL_MAX][256];
     int fs_prompt_kind,fs_destination_index;
     unsigned int fs_confirm_page;
@@ -4273,7 +4273,10 @@ static void settings_load(App*a){
     a->lock_enabled=json_bool(&j,json_get(&j,0,"password"),0)==1;a->lock_digits=json_bool(&j,json_get(&j,0,"password_digits"),0)==1;a->locked=a->lock_enabled&&a->lock_mode>0;
 }
 /* Quick changes are written once, shortly after the last tap, from a detached child. */
-static void settings_changed(App*a){a->settings_dirty=true;a->settings_changed_at=a->now;a->dirty=true;}
+/* A new change is saved after the usual short delay, whatever the wait for a save kept in RAM has
+   grown to (2026-11-14 review: turning on password access waited up to 5 min to reach the RAM copy
+   that access_gate reads). */
+static void settings_changed(App*a){a->settings_dirty=true;a->settings_changed_at=a->now;a->settings_retry_at=0;a->settings_retries=0;a->dirty=true;}
 static void settings_save(App*a,bool wait);
 /* Exit 3 means the settings stayed in RAM, because a terminal or an SSH session holds the storage
  * lease. They would be gone after a reboot, so the save is repeated until it reaches the disk. */
@@ -6411,6 +6414,14 @@ static int test_linux_data(void){
     a->ld_parts=3u;static const char gone[]="{\"ok\":true,\"linux\":false,\"reason\":\"IO_ERROR\",\"destinations\":[],\"archives\":[]}";
     assert(json_parse(&j,gone,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);assert(a->ld_parts==3u&&!ld_selection(a));
     assert(json_parse(&j,counted,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);assert(ld_selection(a)==3u);
+    /* Homes and settings that each fit, but not together: the backup is off while both are chosen
+       (2026-11-14 review). */
+    static const char apart[]="{\"ok\":true,\"linux\":true,\"reason\":\"\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
+        "\"parts\":{\"home\":1024,\"settings\":4096,\"accounts\":1,\"packages\":3},\"entries\":{\"home\":900,\"settings\":200},\"max_entries\":1000,"
+        "\"destinations\":[{\"volume\":\"sdcard-p1\",\"label\":\"card\",\"free_bytes\":99999999}],\"archives\":[]}";
+    a->ld_parts=15u;assert(json_parse(&j,apart,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);
+    assert(!ld_fits(a)&&!test_button(a,A_LD_BACKUP)->enabled);
+    assert(test_press(a,A_LD_PART+2,50)&&ld_fits(a));render(a);assert(test_button(a,A_LD_BACKUP)->enabled);
     static const char changed[]="{\"ok\":true,\"linux\":true,\"reason\":\"FILE_CHANGED\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
         "\"parts\":{\"home\":-1,\"settings\":-1,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
     assert(json_parse(&j,changed,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);

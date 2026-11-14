@@ -6126,6 +6126,9 @@ msgstr "Вибрано забагато файлів одразу"
 msgid "too many files to count"
 msgstr "забагато файлів, щоб полічити"
 
+msgid "Too many files together: choose fewer parts"
+msgstr "Разом забагато файлів: виберіть менше частин"
+
 msgid "Touch panel"
 msgstr "Сенсорна панель"
 

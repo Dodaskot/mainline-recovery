@@ -227,6 +227,26 @@ class Damaged(unittest.TestCase):
                             target = holder or next((label for label in ('cache', 'userdata') if kinds[label] not in ('absent', 'never')), None)
                             self.assertTrue(target is None or kinds[target] != 'now', (target, kinds))
 
+    def test_settings_that_cannot_be_looked_at_are_never_none(self):
+        # 2026-11-14 review: Path.is_file() answers False to any error, so a settings file whose stat
+        # failed (EIO, EACCES) read as none: the phone opened without its password, and the next save
+        # replaced the file with a record without it.
+        self.write('cache', json.dumps(GOOD))
+        before = (self.root / 'cache' / settings.RELATIVE).read_text()
+        real = os.stat
+
+        def failing(path, *args, **kwargs):
+            if str(path).endswith(str(settings.RELATIVE)) and '/cache/' in str(path):
+                raise PermissionError(13, 'Permission denied')
+            return real(path, *args, **kwargs)
+        with mock.patch.object(settings.os, 'stat', failing):
+            with self.assertRaises(settings.Unreadable):
+                settings.read_disk()
+            self.assertFalse(settings.write_disk({'theme': 'y'}))
+        self.assertEqual((self.root / 'cache' / settings.RELATIVE).read_text(), before)
+        self.assertFalse((self.root / 'userdata' / settings.RELATIVE).exists())
+        self.assertFalse(settings.present(self.root / 'cache' / 'none.json'))
+
     def test_the_rows_the_reviews_named(self):
         expect = {('later', 'now'): None,          # cache busy a moment: kept in RAM, never moved to userdata
                   ('outside', 'now'): None,        # cache mounted by another owner: the same

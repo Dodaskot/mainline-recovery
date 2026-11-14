@@ -292,12 +292,12 @@ def linux_root(context, write=False):
                 context.mount('userdata', 'ro', True, now['volume_token'])
 
 
-def collect(pin, parts, accounts, limit=None):
+def collect(pin, parts, accounts):
     """(entries for file_archive.write_archive, fds to close, bytes of each part). The folders it
     opened are closed again when it fails (2026-11-13 review)."""
     entries = []
     try:
-        return collect_into(pin, parts, accounts, entries, limit)
+        return collect_into(pin, parts, accounts, entries)
     except BaseException:
         for e in entries:
             if e[1] is None:
@@ -306,19 +306,20 @@ def collect(pin, parts, accounts, limit=None):
         raise
 
 
-def collect_into(pin, parts, accounts, entries, limit=None):
+def collect_into(pin, parts, accounts, entries):
     sizes = {}
     device = pin.stat.st_dev
     # What can be fetched again is left out: every account's cache, passed over while walking
     # (2026-11-14 review: a big ~/.cache made a home too large to copy before it was left out).
     caches = tuple(a['home'].strip('/') + '/.cache/' for a in accounts) + ('root-home/.cache/',)
 
-    # One limit for the whole archive (MAX_ENTRIES, or LIMIT when inspect leaves room for the settings):
-    # what one archive holds in memory stays bounded (2026-11-14 review of a limit for each part).
+    # One limit for the whole archive, files and folders together, checked once more at the end as
+    # inspect adds it up: what one archive holds in memory stays bounded (2026-11-14 review of a
+    # limit for each part).
     def add(parent_fd, name, arcname):
         before = len(entries)
         try:
-            fa.walk(parent_fd, name, device, arcname, entries, skip=caches, limit=limit)
+            fa.walk(parent_fd, name, device, arcname, entries, skip=caches)
         except FileNotFoundError:
             return 0
         return sum(e[2].st_size for e in entries[before:] if e[1] is not None and stat.S_ISREG(e[2].st_mode))
@@ -342,6 +343,7 @@ def collect_into(pin, parts, accounts, entries, limit=None):
                 if name.startswith('ssh_host_') and 'key' in name:
                     total += add(ssh, name, 'settings/' + SSH_KEYS + '/' + name)
         sizes['settings'] = total
+    require(len(entries) <= fa.MAX_ENTRIES, 'SELECTION_TOO_LARGE', 'Too many files are selected at once')
     files = [e for e in entries if e[1] is not None]
     return files, [e[0] for e in entries if e[1] is None], sizes
 
@@ -447,22 +449,21 @@ def inspect(context):
             # say there was no Linux system. The system is shown; its sizes are unknown and REASON
             # says why the homes cannot be copied in one archive.
             # Each part counted on its own (2026-11-14 review: a home too large to count made the
-            # settings unknown too, though a backup of them alone works); the settings first, and
-            # the homes with room left for them, as the backup holds both in one archive under one
-            # limit (2026-11-14 review of a limit for each part): a home that fits only without the
-            # settings is said too large, never offered for a backup that would fail.
-            sizes, room = {}, None
-            for part in ('settings', 'home'):
+            # settings unknown too, though a backup of them alone works), with what it adds to an
+            # archive: the backup holds the parts chosen in one archive under one limit, and the
+            # interface offers no choice whose parts together pass it (2026-11-14 reviews: a limit
+            # for each part; then a home hidden that fits alone).
+            sizes, entries = {}, {}
+            for part in ('home', 'settings'):
                 try:
-                    files, folders, counted = collect(pin, (part,), accounts, room if part == 'home' else None)
+                    files, folders, counted = collect(pin, (part,), accounts)
                     for fd in folders:
                         os.close(fd)
-                    sizes[part] = counted[part]
-                    if part == 'settings':
-                        room = fa.MAX_ENTRIES - len(files) - len(folders)
+                    sizes[part], entries[part] = counted[part], len(files) + len(folders)
                 except fs.FilesystemError as error:
                     sizes[part] = -1
                     result['reason'] = result.get('reason') or error.code
+            result.update(entries=entries, max_entries=fa.MAX_ENTRIES)
             result.update(linux=True, os={'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', ''),
                                           'family': family},
                           accounts=[a['name'] for a in accounts],
@@ -722,8 +723,9 @@ def script_result(said, note=''):
     """What restore.sh SAID (its "a22x: " lines), as the result reads it."""
     # Only the line of two counts (2026-11-14 review: "packages upgrade failed" is three words too, and
     # int('upgrade') ended the helper with a traceback after everything else had been restored).
+    count = re.compile(r'[0-9]{1,9}')  # ASCII digits only: '²'.isdigit() is True and int('²') raises (2026-11-14 review)
     packages = next((s.split()[1:] for s in said if s.startswith('packages ') and len(s.split()) == 3
-                     and all(part.isdigit() for part in s.split()[1:])), None)
+                     and all(count.fullmatch(part) for part in s.split()[1:])), None)
     if 'packages upgrade failed' in said:
         # 2026-11-14 review: the script said why and the result lost it.
         note = UPGRADE_FAILED
@@ -733,7 +735,7 @@ def script_result(said, note=''):
             'packages_installed': int(packages[0]) if packages else 0, 'packages_missing': int(packages[1]) if packages else 0,
             'missing': [s[8:] for s in said if s.startswith('missing ')][:40],
             'packages_skipped': next((int(s.split()[1]) for s in said if s.startswith('packages-skipped ')
-                                      and len(s.split()) == 2 and s.split()[1].isdigit()), 0),
+                                      and len(s.split()) == 2 and count.fullmatch(s.split()[1])), 0),
             'packages_unsupported': 'packages unsupported' in said, 'note': note}
 
 

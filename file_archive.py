@@ -78,7 +78,7 @@ class Dir:
         self.base, self.parts, self.ident, self.arcname = base, parts, ident, arcname
 
 
-def walk(directory, name, device, arcname, out, parent=None, skip=(), limit=None):
+def walk(directory, name, device, arcname, out, parent=None, skip=()):
     """(Dir, name, lstat, archive name) for NAME and, for a folder, everything under it on the same
     filesystem. A folder is opened by descriptor while it is listed; a link inside it is never followed.
     What lies under an archive name in SKIP (prefixes ending in '/') is passed over without being
@@ -91,7 +91,7 @@ def walk(directory, name, device, arcname, out, parent=None, skip=(), limit=None
     if stat.S_ISSOCK(info.st_mode):
         return
     out.append((parent, name, info, arcname))
-    require(len(out) <= (MAX_ENTRIES if limit is None else limit), 'SELECTION_TOO_LARGE', 'Too many files are selected at once')
+    require(len(out) <= MAX_ENTRIES, 'SELECTION_TOO_LARGE', 'Too many files are selected at once')
     if stat.S_ISDIR(info.st_mode) and info.st_dev == device:
         inner = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
         try:
@@ -100,7 +100,7 @@ def walk(directory, name, device, arcname, out, parent=None, skip=(), limit=None
                     'A folder changed while it was read', file=arcname)
             here = Dir(parent.base, parent.parts + (name,), (info.st_dev, info.st_ino), arcname)
             for child in sorted(os.listdir(inner)):
-                walk(inner, child, device, arcname + '/' + child, out, here, skip, limit)
+                walk(inner, child, device, arcname + '/' + child, out, here, skip)
         finally:
             os.close(inner)
 
@@ -416,7 +416,7 @@ def write_archive(out, files, total, progress, extra=(), left_out=None):
         if proc.poll() is None:
             proc.kill()
         proc.wait()
-        if error.errno not in (errno.ENOSPC, errno.EDQUOT, errno.EFBIG, errno.EPIPE):
+        if error.errno not in WRITE_CAUSES + (errno.EPIPE,):
             raise  # a file that could not be read, said as such
         said = ''
         if error.errno == errno.EPIPE:
