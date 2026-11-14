@@ -4,7 +4,7 @@ What changed in each version of A22x Mainline Recovery, newest first. Every item
 was checked on the phone unless it says otherwise. Before 0.6.124: [docs/CHANGELOG.md](docs/CHANGELOG.md);
 day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md).
 
-## Not released yet (1.0.1)
+## 1.0.1 (2026-11-14)
 
 - **The settings, the password and the saved Wi-Fi networks are kept in `misc`**, not in a file
   on cache or userdata (`misc_store.py`). Twelve rounds of review found, one after another, ways

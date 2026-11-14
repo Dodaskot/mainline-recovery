@@ -1,14 +1,73 @@
 # Test results
 
-Recovery **1.0.0**, recovery kernel `7.2.0-a22x-recovery+ #137`, BOOT v147 (kernel `#138`), 2026-11-13,
-on a 64 GB SM-A226B.
+Recovery **1.0.1**, recovery kernel `7.2.0-a22x-recovery+ #139` (branch `a22x-recovery` of
+[linux-a22x](https://github.com/Dodaskot/linux-a22x), `cf097a32`), BOOT v147 (kernel `#138`),
+2026-11-14, on a 64 GB SM-A226B. Earlier releases follow below.
 
 Two kinds of evidence are kept apart here. The first is automatic: tests that run on a computer
 against fixtures, with no phone attached. The second is what was done on the phone itself
-(SM-A226B), by touch, the way an owner would do it. Something that passed only on the computer
-is never listed as working on the phone.
+(SM-A226B). Something that passed only on the computer is never listed as working on the phone.
 
-## Automatic tests (computer, fixtures), 1.0.0
+## Automatic tests (computer, fixtures), 1.0.1
+
+| Suite | Result | Size |
+|---|---|---|
+| Helpers (Python): `tests/` | pass | 909 tests (4 skipped: tools missing on the computer) |
+| Backup backend: `backend/tests/` | pass | 110 tests |
+| Interface self-tests: `make test` | pass | 106 self-tests |
+| 23 interface suites (`ui/Makefile`: `integration` … `linux-integration`) | pass | run on the settings-in-`misc` change; the interface has not changed since |
+| Installer app (`apk/build.sh`) | pass | 68 checks; signature v2 and v3 verified |
+
+New in 1.0.1:
+
+- `tests/test_misc_store.py`: the settings store in `misc`. Every write is stopped at every step
+  (a crash after each write and each sync, and writes cut after 0, 1, 511, 512 and 1543 bytes)
+  after histories of 0 to 3 saves: a read gives the record before or the one being written,
+  never none and never damaged. Damage to either copy, a copy that cannot be read, another
+  program's bytes in the area, and nothing outside a record's 64 KiB ever written.
+- `tests/test_settings_misc.py`: settings in `misc`, the one-time copy from the older file on
+  cache or userdata, its removal, the reset of damaged settings, the command line.
+- `tests/test_settings_properties.py`: the older store (read once, for the copy) walked over
+  every state of both volumes, with a write stopped at every step.
+- Code review: the password and settings code went through 26 rounds of review (review-12 to
+  review-37); every finding was fixed, or written down as a bound in
+  [SETTINGS_API.md](../SETTINGS_API.md) and the changelog.
+
+## On the phone, 1.0.1 (2026-11-14)
+
+| What | Build | Result |
+|---|---|---|
+| Who writes the last 128 KiB of `misc`: Samsung kernel source, strings of the stock LK, stock Android (`init`, `uncrypt`, `libbootloader_message`, `mtectrl`, MediaTek `libsysenv`), backups of `misc` from 2026-10-07 and the partition now | stock A226B firmware | nobody: Android uses the first 64 KiB, the LK its first 2 KiB, sysenv writes `para`; beyond 64 KiB only zeros |
+| The settings store run from RAM before a build: 16 settings and 5 saved networks copied from cache to `misc`, saved, read back, then cleared | 1.0.14 | both copies whole; the first 384 KiB of `misc` unchanged byte for byte |
+| First start of a build with the store in `misc` (written through the recovery's own Flash, read back) | 1.0.15 dev | settings (297 bytes) and Wi-Fi list (723 bytes) copied at the start; the interface opened; Wi-Fi joined from the list in `misc`; a save left the newest copy whole |
+| Next start | 1.0.16 dev | the boot splash took its theme from `misc`; the older settings file on cache removed; a save left both copies equal |
+| The older store looked at on both volumes, flag written | 1.0.16 + RAM | first read 1.47 s, later reads 0.73 s |
+| The public image (no key, no capsule, no phone's identity inside) written to RECOVERY, read back, started | **1.0.1** | settings read from `misc`; interface; Wi-Fi joined; adb with a key approved before; Updates shows 1.0.1; the screenshots of the README taken with the screenshot keys |
+
+### Not proven on the phone yet
+
+- A power cut in the middle of a write to `misc`: proven only by the tests above.
+- Setting and clearing a password with the store in `misc` on the phone (the test phone has no
+  password set): proven by tests only.
+- The behaviour on a media error in `misc`, and the 120 s limit of the cache check at the start:
+  tests only.
+
+### Reported by others
+
+- **LineageOS 20** for A226B by **Loftenth**: tested (installed and started from this recovery).
+- **BakaSU** by **Kazaf 132**: started successfully.
+
+### Not available
+
+- **Decrypting Android's userdata** is not available yet: see
+  [ANDROID_CRYPTO_STATUS.md](ANDROID_CRYPTO_STATUS.md).
+
+## Earlier: 1.0.0
+
+Recovery **1.0.0**, recovery kernel `7.2.0-a22x-recovery+ #137`, BOOT v147 (kernel `#138`), 2026-11-13,
+on a 64 GB SM-A226B.
+
+### Automatic tests (computer, fixtures), 1.0.0
 
 One full run of every suite on the sources of 1.0.0: **all 25 passed**.
 
@@ -20,7 +79,7 @@ One full run of every suite on the sources of 1.0.0: **all 25 passed**.
 | 22 interface suites (`ui/Makefile`: `integration` … `catalog-chain-test`) | pass | as for 0.6.206, plus the Linux data and password pages |
 | `ui: make linux-integration` | pass | 4 workflows; with the x86-64 partclone of the qualification toolchain on the `PATH` |
 
-## On the phone, 0.6.207 to 1.0.0 (2026-11-12 and 2026-11-13)
+### On the phone, 0.6.207 to 1.0.0 (2026-11-12 and 2026-11-13)
 
 Done by touch on the phone unless said otherwise.
 
@@ -52,7 +111,7 @@ Done by touch on the phone unless said otherwise.
 | Several files at once in Files; a hold acts as soon as it is full | 222 | works |
 | Check and repair of F2FS and FAT | 231 | on scratch filesystems on the phone |
 
-### Not proven on the phone yet
+#### Not proven on the phone yet
 
 - A **128 GB** SM-A226B: the sizes follow Samsung's PIT and are tested on the computer only.
 - Check and repair on a real F2FS or FAT volume (done on scratch filesystems on the phone only).

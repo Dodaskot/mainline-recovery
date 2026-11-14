@@ -13,7 +13,7 @@ English: [README.md](README.md) · Що змінилося в кожній ве�
 |---|---|
 | Завантажити | [Випуски](https://github.com/Dodaskot/mainline-recovery/releases): образ recovery і застосунок-інсталятор |
 | Телефон | лише SM-A226B, на 64 ГБ і 128 ГБ (перевірено на телефоні з 64 ГБ). Образи й прошивки перевіряються на те, що зроблені саме для нього |
-| Ядро recovery | `7.2.0-a22x-recovery+`, [linux-a22x](https://github.com/Dodaskot/linux-a22x), гілка `a22x-recovery` |
+| Ядро recovery | `7.2.0-a22x-recovery+`, [linux-a22x](https://github.com/Dodaskot/linux-a22x), гілка `a22x-recovery`: ядро телефона (гілка `a22x`), урізане для recovery |
 | Linux BOOT | ядро mainline з [a22x-mainline](https://gitlab.com/pessdres/a22x-mainline); recovery сам завантажує його, коли системі потрібно |
 
 ## Знімки екрана
@@ -22,6 +22,13 @@ English: [README.md](README.md) · Що змінилося в кожній ве�
 Графіт, День і Аврора:
 
 ![Три теми](docs/screenshots/themes.jpg)
+
+Знято на телефоні з 1.0.1 (клавіші знімка, Живлення + Гучність вниз; англійською):
+
+![Головна, Встановлення, Android, системи Linux](docs/screenshots/release-1.0.1-1.jpg)
+![Копія, Файли, Налаштування, Оновлення](docs/screenshots/release-1.0.1-2.jpg)
+
+Більше, з демонстраційних даних:
 
 ![Головна, встановлення Linux і Android](docs/screenshots/pages-uk-1.jpg)
 ![Android, копія, файли, термінал, прошивання](docs/screenshots/pages-uk-2.jpg)
@@ -61,7 +68,7 @@ English: [README.md](README.md) · Що змінилося в кожній ве�
 - **ZIP з інсталятором** (`update-binary`, edify), один або кілька поспіль, кожен в
   ізольованому середовищі, що бачить лише ті розділи, які ROM для Android може
   змінювати; `adb sideload` працює, як у TWRP. Перевірено на телефоні: LineageOS 20
-  для A226B, ядра AnyKernel3, Magisk. Блочний ROM, чий власний інсталятор упав, recovery
+  для A226B (від Loftenth), ядра AnyKernel3, Magisk; BakaSU (від Kazaf 132) теж запускається. Блочний ROM, чий власний інсталятор упав, recovery
   записує сам, а super розмічається під ROM, чиї розділи не вміщаються.
 - Після ZIP, що змінив BOOT Android, recovery пропонує скинути дані Android: на цьому
   Samsung Android зі зміненим BOOT не запускається на старих даних.
@@ -157,7 +164,7 @@ English: [README.md](README.md) · Що змінилося в кожній ве�
    у RECOVERY у режимі Download, наприклад через Heimdall:
 
    ```fish
-   heimdall flash --recovery recovery-a22x-1.0.0.img
+   heimdall flash --recovery recovery-a22x-1.0.1.img
    ```
 
    або встановіть його застосунком з Android з root.
@@ -183,7 +190,8 @@ English: [README.md](README.md) · Що змінилося в кожній ве�
 
 ## Обмеження
 
-- Дані Android не розшифровуються, тож файлової копії `/data` немає.
+- Розшифрування даних Android поки недоступне, тож файлової копії `/data` немає
+  ([стан](docs/ANDROID_CRYPTO_STATUS.md)).
 - Перезапуск іноді потрапляє в попередній режим; recovery це помічає й сам
   перезапускається ще раз.
 - З під'єднаним комп'ютером телефон не лишається в глибокому сні.
@@ -197,7 +205,7 @@ English: [README.md](README.md) · Що змінилося в кожній ве�
 
 ## Збирання
 
-`VERSION=1.0.0 tools/build-image.sh NN` збирає `build-v06-NN/recovery-a22x-mainline-k108-v0.6.img` з
+`VERSION=1.0.1 tools/build-image.sh NN` збирає `build-v06-NN/recovery-a22x-mainline-k108-v0.6.img` з
 цих джерел, ядра recovery й середовищ виконання поверх кваліфікованого базового
 образу та перевіряє, що кожен файл в образі збігається з цим деревом. Прошивки
 пристрою й запечатаний профіль платформи знімаються з власного телефона через

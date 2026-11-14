@@ -13,7 +13,7 @@ Ukrainian: [README.uk.md](README.uk.md) · What changed in each version:
 |---|---|
 | Download | [Releases](https://github.com/Dodaskot/mainline-recovery/releases): the recovery image and the installer app |
 | Phone | SM-A226B only, 64 GB and 128 GB (tested on a 64 GB phone). Images and firmware are checked to be made for it |
-| Recovery kernel | `7.2.0-a22x-recovery+`, [linux-a22x](https://github.com/Dodaskot/linux-a22x) branch `a22x-recovery` |
+| Recovery kernel | `7.2.0-a22x-recovery+`, [linux-a22x](https://github.com/Dodaskot/linux-a22x) branch `a22x-recovery`: the phone's kernel (branch `a22x`) trimmed for the recovery |
 | Linux BOOT | the mainline kernel of [a22x-mainline](https://gitlab.com/pessdres/a22x-mainline), downloaded by the recovery when a system needs it |
 
 ## Screenshots
@@ -22,6 +22,13 @@ Rendered by the interface itself from its preview data. The three built-in
 themes, Graphite, Daylight and Aurora:
 
 ![The three themes](docs/screenshots/themes.jpg)
+
+Taken on the phone with 1.0.1 (the screenshot keys, Power + Volume down):
+
+![Home, Install, Android, Linux systems](docs/screenshots/release-1.0.1-1.jpg)
+![Backup, Files, Settings, Updates](docs/screenshots/release-1.0.1-2.jpg)
+
+More, from the preview data:
 
 ![Home, installing Linux and Android](docs/screenshots/pages-en-1.jpg)
 ![Android, backup, files, terminal, flashing](docs/screenshots/pages-en-2.jpg)
@@ -61,7 +68,8 @@ More, page by page: [docs/screenshots/en](docs/screenshots/en).
 - **Flashable ZIPs** with their own installer (`update-binary`, edify), one or
   several in a row, each in an isolated room that sees only the partitions an
   Android ROM may change; `adb sideload` works as in TWRP. Tested on the phone:
-  LineageOS 20 for the A226B, AnyKernel3 kernels, Magisk. A block-based ROM whose
+  LineageOS 20 for the A226B (by Loftenth), AnyKernel3 kernels, Magisk; BakaSU (by
+  Kazaf 132) also started. A block-based ROM whose
   own installer fails is written by the recovery itself, and super is laid out for
   a ROM whose partitions do not fit.
 - After a ZIP changed Android's BOOT, the recovery offers to reset Android's data:
@@ -158,7 +166,7 @@ updates itself from the newest release. `apk/build.sh` builds it without the And
    to RECOVERY in Download Mode, for example with Heimdall:
 
    ```fish
-   heimdall flash --recovery recovery-a22x-1.0.0.img
+   heimdall flash --recovery recovery-a22x-1.0.1.img
    ```
 
    or install it from a rooted Android with the app.
@@ -183,7 +191,8 @@ partition → recovery.
 
 ## Limitations
 
-- Android's data cannot be decrypted, so there is no file-level backup of `/data`.
+- Decrypting Android's data is not available yet, so there is no file-level backup of
+  `/data` ([status](docs/ANDROID_CRYPTO_STATUS.md)).
 - A restart sometimes lands in the previous mode; the recovery notices this and
   restarts once more by itself.
 - With a computer attached the phone does not stay in deep sleep.
@@ -197,7 +206,7 @@ partition → recovery.
 
 ## Building
 
-`VERSION=1.0.0 tools/build-image.sh NN` builds `build-v06-NN/recovery-a22x-mainline-k108-v0.6.img`
+`VERSION=1.0.1 tools/build-image.sh NN` builds `build-v06-NN/recovery-a22x-mainline-k108-v0.6.img`
 from these sources, the recovery kernel and the runtimes, on top of the qualified
 base image, and checks that every file in the image equals this tree. Device
 firmware and the sealed platform profile are captured from your own phone with
