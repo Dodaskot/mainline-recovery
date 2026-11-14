@@ -255,13 +255,20 @@ def write_file(folder, name, data):
     temporary = folder / ('.%s.%d.%s.new' % (name, os.getpid(), secrets.token_hex(4)))
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
     try:
-        view = memoryview(data)
-        while view:
-            view = view[os.write(fd, view):]
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    temporary.replace(folder / name)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(fd, view):]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        temporary.replace(folder / name)
+    except BaseException:
+        # A write that failed leaves nothing (2026-11-14 review: each failed import left its own
+        # temporary file on a full cache).
+        with contextlib.suppress(OSError):
+            temporary.unlink()
+        raise
 
 
 def on_disk(context, change):
@@ -274,8 +281,7 @@ def on_disk(context, change):
     # a volume Files had opened read-only refused every theme, though settings reopen it).
     try:
         with operation_lock(context.lock_path, context.mode):
-            label = settings.settings_volume(context)
-            with settings.volume_root(context, label, 'rw') as root:
+            with settings.settings_root(context, 'rw') as (_, root):
                 change(root / settings.THEMES)
                 return True
     except (OSError, ValueError, fs.FilesystemError):

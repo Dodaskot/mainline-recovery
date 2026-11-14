@@ -108,8 +108,8 @@ static void screenshot_poll(App*a){
 }
 /* Whatever needs storage next waits for a screenshot that is still being placed, a second at most
    (2026-11-14 review: it was 4 s of a frozen screen, the comment said a second). The helper mounts a
-   volume only under the operation lock and goes to RAM when it is taken, so a job that starts
-   after this second is not run over by it. */
+   volume only under the operation lock and goes to RAM when it is taken; a job started while it
+   still holds the lock waits for it there (A22X_LOCK_WAIT_UNTIL, launch_job), not on this screen. */
 static void screenshot_wait(App*a){
     for(int n=0;a->shot_pid&&n<100;n++){a->now=milliseconds();screenshot_poll(a);if(a->shot_pid){struct timespec pause={0,10000000};nanosleep(&pause,NULL);}}
 }

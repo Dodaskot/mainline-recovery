@@ -90,14 +90,14 @@ try:
          '--expected-sha256', changed['sha256'], '--confirm')
     unmount('userdata')
     mount('userdata', 'ro')
-    for check in (path, renamed):
-        readback = call('read', 'userdata', '--path', check)
+    for name in (path, renamed):  # not "check": that is the function (2026-11-14 review)
+        readback = call('read', 'userdata', '--path', name)
         check(readback['content'] == after_text.read_text() and readback['sha256'] == changed['sha256'])
     check(call('read', 'userdata', '--path', '/usr/lib/os-release')['sha256'] == original_os)
     unmount('userdata')
     mount('userdata', 'rw')
-    for check in (path, renamed):
-        call('delete', 'userdata', '--path', check, '--expected-sha256', changed['sha256'], '--confirm')
+    for name in (path, renamed):
+        call('delete', 'userdata', '--path', name, '--expected-sha256', changed['sha256'], '--confirm')
     call('delete', 'userdata', '--path', test_root, '--confirm')
     root_entries = call('list', 'userdata', '--path', '/', '--limit', '256')['entries']
     check(not any(x['name'] in (test_root[1:], test_root[1:] + '-denied') for x in root_entries))

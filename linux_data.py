@@ -340,7 +340,7 @@ def collect_into(pin, parts, accounts, entries):
                 if name.startswith('ssh_host_') and 'key' in name:
                     total += add(ssh, name, 'settings/' + SSH_KEYS + '/' + name)
         sizes['settings'] = total
-    files = [e for e in entries if e[1] is not None and not (e[3] + '/').startswith(caches)]
+    files = [e for e in entries if e[1] is not None]
     return files, [e[0] for e in entries if e[1] is None], sizes
 
 
@@ -516,10 +516,11 @@ def backup(context, parts, dest_volume, dest_token, confirmed, progress):
                     with contextlib.suppress(FileNotFoundError):
                         os.unlink(part, dir_fd=folder)
                     out = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600, dir_fd=folder)
-                    crypt = contextlib.ExitStack()
+                    crypt, left_out = contextlib.ExitStack(), []
                     try:
                         dest = crypt.enter_context(ac.sink(out, pa.PASSWORD if pa.ENCRYPT else None))
-                        fa.write_archive(dest, files, total, lambda done, all_, label: progress('Packing', done, all_, label), extra)
+                        fa.write_archive(dest, files, total, lambda done, all_, label: progress('Packing', done, all_, label), extra,
+                                         left_out=left_out)
                         fa.footer(dest, manifest)
                         crypt.close()
                         os.fsync(out)
@@ -540,7 +541,10 @@ def backup(context, parts, dest_volume, dest_token, confirmed, progress):
                     os.close(fd)
     return {'archive': {'volume': dest_volume, 'path': '/' + STORE + '/' + name, 'bytes': size}, 'parts': parts, 'bytes': total,
             'entries': len(files), 'encrypted': name.endswith(ac.SUFFIX), 'accounts': len(accounts) if 'accounts' in parts else 0,
-            'packages': len(names) if names is not None else 0}
+            'packages': len(names) if names is not None else 0, 'skipped': len(left_out)}
+
+
+UPGRADE_FAILED = 'Packages were not installed: the system could not be upgraded first (pacman -Syu). Upgrade it, then restore Packages alone.'
 
 
 def root_link(member):
@@ -699,6 +703,9 @@ def restore_from(context, volume, token, path, parts, progress):
     require(status == 0 and 'done' in said, 'RESTORE_FAILED', 'The restore inside the system did not finish',
             exit=status, log=[line[:200] for line in lines[-12:]])
     packages = next((s.split()[1:] for s in said if s.startswith('packages ') and len(s.split()) == 3), None)
+    if 'packages upgrade failed' in said:
+        # 2026-11-14 review: the script said why and the result lost it.
+        note = UPGRADE_FAILED
     return {'parts': parts, 'into': {'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', '')},
             'accounts_created': [s.split()[1] for s in said if s.startswith('account ') and s.endswith(' created')],
             'accounts_kept': [s.split()[1] for s in said if s.startswith('account ') and s.endswith(' kept')],

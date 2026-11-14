@@ -2415,6 +2415,9 @@ msgstr "Połącz z siecią"
 msgid "Joined the network, but it gave no address."
 msgstr "Połączono z siecią, ale nie przydzieliła adresu."
 
+msgid "Joined, but this network could not be saved"
+msgstr "Połączono, ale nie udało się zapisać tej sieci"
+
 msgid "Journal step %u of %u"
 msgstr "Krok dziennika %u z %u"
 
@@ -3317,6 +3320,9 @@ msgstr "Pakiety wymagają Wi-Fi w recovery: połącz się, a potem przywróć sa
 
 msgid "Packages there: %u; not in this system: %u"
 msgstr "Pakiety na miejscu: %u; brak w tym systemie: %u"
+
+msgid "Packages were not installed: the system could not be upgraded first (pacman -Syu). Upgrade it, then restore Packages alone."
+msgstr "Nie zainstalowano pakietów: nie udało się najpierw zaktualizować systemu (pacman -Syu). Zaktualizuj go, a potem przywróć same «Pakiety»."
 
 msgid "Packages, the account and the desktop are set up as you choose on the next pages."
 msgstr "Pakiety, konto i pulpit zostaną skonfigurowane tak, jak wybierzesz na kolejnych stronach."

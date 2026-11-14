@@ -203,11 +203,11 @@ static inline void tm_modes(TerminalModel*t,bool set){
 static inline void tm_csi(TerminalModel*t,unsigned char final){
     if(t->ignore_csi)return;
     TmPage*p=tm_page(t);unsigned n=tm_param(t,0,1),zero=t->params[0];
-    /* Up and down stop at the scroll margins while the cursor is inside them, as xterm does, in
-       origin mode or not (2026-11-14 review: ESC[B at the region's foot left it, and the next LF no
-       longer scrolled the region). */
-    bool inside=p->row>=p->top&&p->row<=p->bottom;
-    unsigned up=p->origin||inside?p->top:0,down=p->origin||inside?p->bottom:t->rows-1;
+    /* As xterm's CursorUp and CursorDown: up stops at the top margin from any row at or below it,
+       down at the bottom margin from any row at or above it; past a margin the screen's edge
+       (2026-11-14 reviews: ESC[B at the region's foot left it, and the next LF no longer scrolled
+       the region; from below the region ESC[A went past the top margin). */
+    unsigned up=p->row>=p->top?p->top:0,down=p->row<=p->bottom?p->bottom:t->rows-1;
     if(t->private_csi&&final!='h'&&final!='l'&&final!='n')return;
     switch(final){
     case 'A':p->row=p->row>up+tm_min(n,t->rows)?p->row-n:up;break;

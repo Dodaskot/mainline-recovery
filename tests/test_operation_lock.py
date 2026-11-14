@@ -25,6 +25,32 @@ class OperationLockTest(unittest.TestCase):
             with self.assertRaises(BlockingIOError):
                 fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
+    def test_a_job_waits_for_a_screenshot_only_when_told_and_only_until_then(self):
+        # 2026-11-14 review: a job started while a screenshot still held the lease failed OPERATION_BUSY.
+        import threading
+        import time
+        import operation_lock as ol
+        holder = os.open(self.path, os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, holder)
+        fcntl.flock(holder, fcntl.LOCK_EX)
+        with mock.patch.dict(os.environ, {ol.WAIT_ENV: ''}):
+            with self.assertRaises(BlockingIOError):
+                with operation_lock(self.path, 'fixture'):
+                    pass
+        with mock.patch.dict(os.environ, {ol.WAIT_ENV: '%.3f' % (time.monotonic() + 0.2)}):
+            started = time.monotonic()
+            with self.assertRaises(BlockingIOError):
+                with operation_lock(self.path, 'fixture'):
+                    pass
+            self.assertGreaterEqual(time.monotonic() - started, 0.15)
+        threading.Timer(0.2, lambda: fcntl.flock(holder, fcntl.LOCK_UN)).start()
+        with mock.patch.dict(os.environ, {ol.WAIT_ENV: '%.3f' % (time.monotonic() + 5)}):
+            with operation_lock(self.path, 'fixture'):
+                pass
+        for strange in ('nan', 'inf', 'x'):
+            with mock.patch.dict(os.environ, {ol.WAIT_ENV: strange}):
+                self.assertLessEqual(ol._wait_until(), time.monotonic() + ol.MAX_WAIT)
+
     def test_child_reuses_lease_without_unlocking_parent_and_ui_is_blocked(self):
         with operation_lock(self.path, 'fixture') as fd:
             code = 'from operation_lock import operation_lock; import sys;\nwith operation_lock(sys.argv[1], "device"): print("CHILD_OK")'

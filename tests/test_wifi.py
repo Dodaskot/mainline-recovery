@@ -269,7 +269,7 @@ class TestControlSocket(unittest.TestCase):
         (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [
             {'ssid_hex': b'Other'.hex(), 'psk': 'a' * 64, 'added': 1}]}))
         with mock.patch.object(w, '_settings_volumes', lambda mode, action: None):
-            self.assertFalse(w.remember(b'Home', FakeSupplicant.KEY))
+            self.assertIsNone(w.remember(b'Home', FakeSupplicant.KEY))
             with self.assertRaises(w.WifiError) as caught:
                 w.forget(b'Other')
             self.assertEqual(caught.exception.code, 'WIFI_SAVED_UNAVAILABLE')
@@ -278,6 +278,21 @@ class TestControlSocket(unittest.TestCase):
         names = [bytes.fromhex(n['ssid_hex']) for n in json.loads((self.disk / 'a22x-recovery/wifi.json').read_text())['networks']]
         self.assertEqual(names, [b'Home', b'Other'])
         self.assertEqual([p.name for p in (self.disk / 'a22x-recovery').iterdir()], ['wifi.json'])
+
+    def test_a_save_that_fails_is_said(self):
+        # 2026-11-14 review: connect() and forget() reported success while nothing was saved.
+        (self.disk / 'a22x-recovery').mkdir()
+        (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [
+            {'ssid_hex': b'Other'.hex(), 'psk': 'a' * 64, 'added': 1}]}))
+        self.assertTrue(w.connect(b'Home', 'correct horse', True)['remembered'])
+        with mock.patch.object(w, 'saved_write', return_value=False):
+            with self.assertRaises(w.WifiError) as caught:
+                w.forget(b'Other')
+            self.assertEqual(caught.exception.code, 'WIFI_SAVED_UNWRITTEN')
+        with mock.patch.object(w, 'saved_known', return_value=None):
+            joined = w.connect(b'Home', 'correct horse', True)
+        self.assertTrue(joined['connected'])
+        self.assertFalse(joined['remembered'])
 
     def test_a_damaged_saved_list_holds_no_network(self):
         # 2026-11-14 review: a list, or entries that are no objects, raised AttributeError.

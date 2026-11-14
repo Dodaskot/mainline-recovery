@@ -136,8 +136,7 @@ class Opener:
         # filesystem is compared (2026-11-14 review: a folder that had not changed was refused).
         # The name in the message is the one in the archive.
         now = os.fstat(self.fds[-1])
-        same = now.st_dev == where.ident[0] and (now.st_ino == where.ident[1] or not stable_inodes(now.st_dev))
-        require(same, 'FILE_CHANGED', 'A folder changed while it was archived', file=where.arcname)
+        require(same_object(now, *where.ident), 'FILE_CHANGED', 'A folder changed while it was archived', file=where.arcname)
         return self.fds[-1]
 
     def close(self):
@@ -148,6 +147,13 @@ class Opener:
 
 
 UNSTABLE_INODES = ('vfat', 'msdos', 'exfat', 'fat')
+
+
+def same_object(now, device, inode):
+    """Whether NOW is the file or folder walked as DEVICE and INODE: its filesystem, and its inode
+    where inode numbers stay. One rule for folders and files (2026-11-14 review: files on FAT were
+    still compared by an inode number the filesystem gives anew)."""
+    return now.st_dev == device and (now.st_ino == inode or not stable_inodes(now.st_dev))
 
 
 def stable_inodes(device, mountinfo='/proc/self/mountinfo'):
@@ -172,13 +178,24 @@ def close_sink(crypt, error):
     return None
 
 
+def write_error(number, said=''):
+    """The error for a write that failed with errno NUMBER, or, when only a pipe broke, with what
+    zstd SAID about its own write (2026-11-14 review: every cause, EIO and a FAT32 file at 4 GiB
+    too, was said as a full volume)."""
+    if number in (errno.ENOSPC, errno.EDQUOT) or (number == errno.EPIPE and (
+            os.strerror(errno.ENOSPC) in said or os.strerror(errno.EDQUOT) in said)):
+        return fs.FilesystemError('INSUFFICIENT_SPACE', 'There is not enough space for the archive')
+    if number == errno.EFBIG or (number == errno.EPIPE and os.strerror(errno.EFBIG) in said):
+        return fs.FilesystemError('FILE_TOO_LARGE', 'This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4')
+    reason = said if number == errno.EPIPE and said else os.strerror(number)
+    return fs.FilesystemError('ARCHIVE_WRITE_FAILED', 'The archive could not be written', said=reason[-200:])
+
+
 def raise_cause(late, error):
-    """A full volume or a file too large for it, found by the encryption, said as such (2026-11-14
-    review: both came out as a plain write error)."""
-    if isinstance(late, OSError) and late.errno in (errno.ENOSPC, errno.EDQUOT):
-        raise fs.FilesystemError('INSUFFICIENT_SPACE', 'There is not enough space for the archive') from error
-    if isinstance(late, OSError) and late.errno == errno.EFBIG:
-        raise fs.FilesystemError('FILE_TOO_LARGE', 'This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4') from error
+    """What the encryption's own write met (a full volume, a file too large for it, an I/O error),
+    said as such, in place of the broken pipe that the archive met because of it."""
+    if isinstance(late, OSError) and late.errno is not None:
+        raise write_error(late.errno) from error
 
 
 def within(path, folder):
@@ -267,6 +284,7 @@ def pack(context, volume, token, path, everything, names, dest_volume, dest_toke
                 walk(directory, name, source.stat.st_dev, name, entries)
             files = [e for e in entries if e[1] is not None]
             opened = [e[0] for e in entries if e[1] is None]
+            left_out = []
             require(files, 'NOTHING_SELECTED', 'Nothing is selected')
             total = sum(e[2].st_size for e in files if stat.S_ISREG(e[2].st_mode))
             source_label = source.volume.get('label') or volume
@@ -293,7 +311,7 @@ def pack(context, volume, token, path, everything, names, dest_volume, dest_toke
                         try:
                             crypt = contextlib.ExitStack()
                             dest = crypt.enter_context(ac.sink(out, pa.PASSWORD if pa.ENCRYPT else None))
-                            done = write_archive(dest, files, total, progress)
+                            done = write_archive(dest, files, total, progress, left_out=left_out)
                             manifest = json.dumps({'schema': SCHEMA, 'source': {'volume': volume, 'label': source_label,
                                                    'folder': folder}, 'created': int(time.time()), 'entries': len(files),
                                                    'bytes': done, 'top': sorted({e[3].split('/')[0] for e in files})[:64]},
@@ -320,7 +338,7 @@ def pack(context, volume, token, path, everything, names, dest_volume, dest_toke
                 with contextlib.suppress(OSError):
                     os.close(fd)
     return {'archive': {'volume': dest_volume, 'path': (dest_folder.rstrip('/') + '/' + dest_name) if dest_folder else '/' + dest_name,
-                        'bytes': size}, 'entries': len(files), 'bytes': done}
+                        'bytes': size}, 'entries': len(files), 'bytes': done, 'skipped': len(left_out)}
 
 
 class Pipe:
@@ -334,10 +352,12 @@ class Pipe:
         return len(data)
 
 
-def write_archive(out, files, total, progress, extra=()):
-    """FILES as walk() lists them, after EXTRA: (archive name, bytes, mode) made in memory."""
+def write_archive(out, files, total, progress, extra=(), left_out=None):
+    """FILES as walk() lists them, after EXTRA: (archive name, bytes, mode) made in memory. The
+    names of sockets and device nodes, which are not archived, go into LEFT_OUT."""
+    # zstd's messages in English: write_error reads the cause of a failed write in them.
     proc = subprocess.Popen([pa.zstd_path(), '-q', '-%d' % pa.LEVEL, '-T0', '-c'], stdin=subprocess.PIPE, stdout=out,
-                            stderr=subprocess.PIPE, bufsize=0)
+                            stderr=subprocess.PIPE, bufsize=0, env={**os.environ, 'LC_ALL': 'C'})
     done = 0
     folders = Opener()
     try:
@@ -350,6 +370,9 @@ def write_archive(out, files, total, progress, extra=()):
                 directory = folders.fd(where)
                 item = tar_info(directory, name, info, arcname)
                 if item is None:
+                    # Counted and said (2026-11-14 review: whiteouts of container layers went silently).
+                    if left_out is not None:
+                        left_out.append(arcname)
                     continue
                 if item.type != tarfile.REGTYPE:
                     tar.addfile(item)
@@ -357,7 +380,7 @@ def write_archive(out, files, total, progress, extra=()):
                 fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
                 try:
                     now = os.fstat(fd)
-                    require(now.st_ino == info.st_ino and now.st_size == info.st_size, 'FILE_CHANGED',
+                    require(same_object(now, info.st_dev, info.st_ino) and now.st_size == info.st_size, 'FILE_CHANGED',
                             'A file changed while it was archived', file=arcname)
                     with os.fdopen(os.dup(fd), 'rb', buffering=0) as stream:
                         counted = Counted(stream, lambda n: progress(done + n, total, arcname))
@@ -374,9 +397,13 @@ def write_archive(out, files, total, progress, extra=()):
         if proc.poll() is None:
             proc.kill()
         proc.wait()
-        if error.errno == errno.ENOSPC or error.errno == errno.EPIPE:
-            fail('INSUFFICIENT_SPACE', 'There is not enough space for the archive')
-        raise
+        if error.errno not in (errno.ENOSPC, errno.EDQUOT, errno.EFBIG, errno.EPIPE):
+            raise  # a file that could not be read, said as such
+        said = ''
+        if error.errno == errno.EPIPE:
+            with contextlib.suppress(OSError, ValueError):
+                said = proc.stderr.read().decode(errors='replace').strip()
+        raise write_error(error.errno, said) from error
     except BaseException:
         if proc.poll() is None:
             proc.kill()

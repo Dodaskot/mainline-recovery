@@ -43,6 +43,18 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   - **Build**: a public build is checked for the phone's identity by PUBLIC=1; build records are
     scrubbed only for real folders and never in sealed ones; no duplicate entries in the ramdisk.
 
+- **Fixes from the review of those fixes** (27 findings, all fixed): a ZIP changed after its review,
+  or an installer room that could not be made, is reported and never written by the recovery itself;
+  a second stop signal no longer leaves USB networking down, and stopping waits as long as before;
+  128 GB phones' snapshots are accepted on a computer too; files on FAT and exFAT are no longer
+  "changed" while archived; a full card, FAT32's 4 GiB and an I/O error are each said as such; device
+  nodes left out of an archive are counted on screen; Arch is upgraded only when a package has to be
+  installed, and a failed upgrade is said; the saved Wi-Fi list is read and written on one volume, a
+  network that could not be saved is said, and the start waits 20 s at most for it; a damaged saved
+  BOOT is never taken for the good one; cursor up and down stop at the scroll margins as in xterm; a
+  job started during a screenshot waits for it instead of failing; a pre-release is older than its
+  version; settings and themes open their volume once.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

@@ -267,7 +267,7 @@ typedef struct {
     char fixture[PATH_LEN],python[PATH_LEN],backend[PATH_LEN],workdir[PATH_LEN],storage_helper[PATH_LEN],filesystem_helper[PATH_LEN],management_helper[PATH_LEN],display_helper[PATH_LEN],usb_helper[PATH_LEN],terminal_helper[PATH_LEN],distro_helper[PATH_LEN],install_helper[PATH_LEN];
     char repositories[8][PATH_LEN],repository_root[8][PATH_LEN],repository_volume[8][32],repository_fs[8][16]; int repository_count,repository_base,repository_pending,store;bool repository_read_only[8];
     char fb_path[PATH_LEN],input_path[PATH_LEN];
-    char kernel[128],battery[32],status[128],message[1536];
+    char kernel[128],battery[32],status[192],message[1536];
     char model[160],identity[256],storage_message[256],storage_mountpoint[PATH_LEN];
     bool restore_qualified,storage_known,storage_mounted;
     bool linux_backup_available,linux_restore_available,linux_wipe_available,backup_compact;
@@ -2762,6 +2762,11 @@ static bool launch_job(App*a,int kind,char*const*args){
         close(out[0]);close(out[1]);close(err[0]);close(err[1]);setenv("PYTHONUNBUFFERED","1",1);
         /* Display helpers also run unprompted at startup and must never hold a storage lease. */
         if(kind==J_DISPLAY_STATUS||kind==J_DISPLAY_SET){(void)close_range(3,~0u,0);unsetenv("A22X_RECOVERY_LOCK_FD");}
+        /* A screenshot still being placed (an unmounted card: mount, write, unmount) holds the lease
+           past the second the interface waits; the job waits for it in operation_lock, until the
+           screenshot's own deadline, instead of failing OPERATION_BUSY (2026-11-14 review). */
+        if(a->shot_pid){char until[32];snprintf(until,sizeof(until),"%.3f",(double)a->shot_deadline/1000.0);setenv("A22X_LOCK_WAIT_UNTIL",until,1);}
+        else unsetenv("A22X_LOCK_WAIT_UNTIL");
         execv(a->python,args);
         const char failure[]="{\"ok\":false,\"error\":{\"code\":\"BACKEND_EXEC_FAILED\",\"message\":\"Could not start the configured Python backend\"}}\n";
         ssize_t ignored=write(STDOUT_FILENO,failure,sizeof(failure)-1);(void)ignored;_exit(127);
@@ -3310,8 +3315,8 @@ static int complete_files_job(App*a,const Json*j,int kind){
         char where[PATH_LEN]={0};
         if(kind==J_ARCHIVE_PACK){int archive=json_get(j,0,"archive");if(archive>=0)jstring(j,archive,"path",where,sizeof(where));}else jstring(j,0,"folder",where,sizeof(where));
         snprintf(a->fs_status,sizeof(a->fs_status),kind==J_ARCHIVE_PACK?T("Archive saved: %s"):T("Extracted into %s"),where);
-        /* Device nodes in an archive are left out, and the helper says how many (2026-11-14). */
-        unsigned int skipped=kind==J_ARCHIVE_UNPACK?(unsigned int)json_uint(j,json_get(j,0,"skipped"),0):0u;
+        /* Device nodes are left out of an archive, packed or unpacked, and the helper says how many (2026-11-14). */
+        unsigned int skipped=(unsigned int)json_uint(j,json_get(j,0,"skipped"),0);
         if(skipped){char note[96];snprintf(note,sizeof(note),T("; %u device files left out"),skipped);append(a->fs_status,sizeof(a->fs_status),note);}
         reset_browser(a);screen(a,FILE_BROWSER);return J_FS_LIST;
     }else if(kind==J_FS_DELETE_MANY){
@@ -6380,6 +6385,12 @@ static int test_linux_data(void){
         "\"parts\":{\"home\":-1,\"settings\":-1,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
     assert(json_parse(&j,large,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);
     assert(a->ld_linux&&a->ld_home==UINT64_MAX&&a->ld_settings==UINT64_MAX&&!strcmp(a->ld_reason,"SELECTION_TOO_LARGE"));render(a);
+    /* Homes and settings not counted are out of the selection and cannot be chosen (2026-11-14 review). */
+    assert(!(a->ld_parts&5u)&&!test_button(a,A_LD_PART+0)->enabled&&!test_button(a,A_LD_PART+2)->enabled&&test_button(a,A_LD_PART+1)->enabled);
+    static const char changed[]="{\"ok\":true,\"linux\":true,\"reason\":\"FILE_CHANGED\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
+        "\"parts\":{\"home\":-1,\"settings\":-1,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
+    assert(json_parse(&j,changed,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);
+    assert(a->ld_home==UINT64_MAX&&!strcmp(a->ld_reason,"FILE_CHANGED"));render(a);
     static const char unread[]="{\"ok\":true,\"linux\":false,\"reason\":\"IO_ERROR\",\"destinations\":[],\"archives\":[]}";
     assert(json_parse(&j,unread,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);assert(!a->ld_linux&&!strcmp(a->ld_reason,"IO_ERROR"));render(a);
     unlink(a->backup_password_file);rmdir(a->workdir);

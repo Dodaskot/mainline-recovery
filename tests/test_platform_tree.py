@@ -17,5 +17,15 @@ class PlatformTree(unittest.TestCase):
             self.assertTrue((ENTRY.resolve().parent / name).is_file(), name)
 
 
+class LiveTools(unittest.TestCase):
+    def test_the_live_filesystem_check_never_hides_its_check_function(self):
+        # 2026-11-14 review: a loop variable named check made every later check() call a string.
+        import ast
+        source = (ROOT / 'tools/live_filesystem_check.py').read_text()
+        stored = [node.lineno for node in ast.walk(ast.parse(source))
+                  if isinstance(node, ast.Name) and node.id == 'check' and isinstance(node.ctx, ast.Store)]
+        self.assertEqual(stored, [])
+
+
 if __name__ == '__main__':
     unittest.main()

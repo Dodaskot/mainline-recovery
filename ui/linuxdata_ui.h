@@ -65,6 +65,9 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
                 int packages=json_get(j,parts,"packages");a->ld_packages=packages>=0&&j->tokens[packages].type==J_PRIMITIVE&&j->text[j->tokens[packages].start]!='-'?(int)json_uint(j,packages,0):-1;}
         }
         if(a->ld_packages<0)a->ld_parts&=~8u;
+        /* Homes and settings not counted cannot be backed up (2026-11-14 review: the button stayed
+           on for a selection that would fail): left out of the selection, their rows off. */
+        if(a->ld_home==UINT64_MAX)a->ld_parts&=~5u;
         a->ld_dest_count=0;int list=json_get(j,0,"destinations");
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->ld_dest_count<LD_DESTS;i=json_next(j,i)){
             LdDest*d=&a->ld_dest[a->ld_dest_count++];jstring(j,i,"volume",d->id,sizeof(d->id));jstring(j,i,"label",d->label,sizeof(d->label));d->free=json_uint(j,json_get(j,i,"free_bytes"),0);}
@@ -88,6 +91,10 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
         if(archive>=0){jstring(j,archive,"path",where,sizeof(where));human_bytes(json_uint(j,json_get(j,archive,"bytes"),0),bytes,sizeof(bytes));}else bytes[0]=0;
         bool protected_copy=json_bool(j,json_get(j,0,"encrypted"),0)==1;
         copy(a->status,sizeof(a->status),protected_copy?"Linux data saved, protected with the password":"Linux data saved");
+        unsigned int skipped=(unsigned int)json_uint(j,json_get(j,0,"skipped"),0);   /* device nodes (2026-11-14 review) */
+        if(skipped){   /* the status is translated as a whole when drawn: translated here, then the note */
+            char base[sizeof(a->status)],note[96];copy(base,sizeof(base),tr(a->status));
+            snprintf(note,sizeof(note),T("; %u device files left out"),skipped);snprintf(a->status,sizeof(a->status),"%s%s",base,note);}
         snprintf(a->message,sizeof(a->message),T("The archive is %s, %s.\n\nIt restores into any Linux installed here from this page, and on another device with the restore.sh inside it."),where,bytes);
         screen(a,RESULT);return;
     }
@@ -107,6 +114,9 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
     }
     if(note[0])append(a->message,sizeof(a->message),tr(note));
     screen(a,RESULT);
+}
+static bool ld_part_usable(const App*a,unsigned int n){
+    return a->ld_linux&&(n!=3||a->ld_packages>=0)&&!((n==0||n==2)&&a->ld_home==UINT64_MAX);
 }
 static void ld_row(App*a,int y,const char*title,const char*detail,bool on,bool enabled,int action){
     Rect r={28,y,664,76};rounded(a,r,20,on&&enabled?PANEL2:PANEL);
@@ -130,11 +140,12 @@ static void render_linux_data(App*a){
         text(a,128,252,1,TEXT,"The system on userdata could not be read");raw_text(true);ellipsis(a,128,298,540,0,RED,why);raw_text(false);
     }
     char detail[LD_PARTS][64],bytes[48];
-    if(a->ld_home==UINT64_MAX)copy(detail[0],sizeof(detail[0]),tr("too many files to count"));else{human_bytes(a->ld_home,bytes,sizeof(bytes));snprintf(detail[0],sizeof(detail[0]),"%s",bytes);}
+    /* The count is said to be too large only when that is the reason; any other reason is shown (2026-11-14 review). */
+    if(a->ld_home==UINT64_MAX)copy(detail[0],sizeof(detail[0]),!strcmp(a->ld_reason,"SELECTION_TOO_LARGE")?tr("too many files to count"):(a->ld_reason[0]?a->ld_reason:"—"));else{human_bytes(a->ld_home,bytes,sizeof(bytes));snprintf(detail[0],sizeof(detail[0]),"%s",bytes);}
     snprintf(detail[1],sizeof(detail[1]),"%u",a->ld_account_count);
     if(a->ld_settings==UINT64_MAX)copy(detail[2],sizeof(detail[2]),"—");else{human_bytes(a->ld_settings,bytes,sizeof(bytes));snprintf(detail[2],sizeof(detail[2]),"%s",bytes);}
     if(a->ld_packages>=0)snprintf(detail[3],sizeof(detail[3]),"%d",a->ld_packages);else copy(detail[3],sizeof(detail[3]),"—");
-    for(unsigned int n=0;n<LD_PARTS;n++)ld_row(a,362+(int)n*86,ld_part_titles[n],a->ld_linux?detail[n]:"",(a->ld_parts>>n)&1u,a->ld_linux&&(n!=3||a->ld_packages>=0),A_LD_PART+(int)n);
+    for(unsigned int n=0;n<LD_PARTS;n++)ld_row(a,362+(int)n*86,ld_part_titles[n],a->ld_linux?detail[n]:"",(a->ld_parts>>n)&1u,ld_part_usable(a,n),A_LD_PART+(int)n);
     char label[200];
     if(a->ld_dest_count){LdDest*d=&a->ld_dest[a->ld_dest_index];human_bytes(d->free,bytes,sizeof(bytes));snprintf(label,sizeof(label),T("To: %.100s  /  %s free"),d->label,bytes);}
     else copy(label,sizeof(label),tr("Insert an SD card or attach a USB drive"));
@@ -181,7 +192,7 @@ static bool ld_action(App*a,int id){
     if(a->screen==LINUX_DATA){
         if(id==A_BACK){reopen(a,came_from(a,BACKUP));return true;}
         if(id==A_LD_REFRESH){if(ui_free(a)){a->ld_known=false;start_ld_job(a,J_LD_INSPECT);a->dirty=true;}return true;}
-        if(id>=A_LD_PART&&id<A_LD_PART+(int)LD_PARTS){if(ui_free(a)){a->ld_parts^=1u<<(id-A_LD_PART);a->dirty=true;}return true;}
+        if(id>=A_LD_PART&&id<A_LD_PART+(int)LD_PARTS){if(ui_free(a)&&ld_part_usable(a,(unsigned int)(id-A_LD_PART))){a->ld_parts^=1u<<(id-A_LD_PART);a->dirty=true;}return true;}
         if(id==A_LD_DEST){if(ui_free(a)&&a->ld_dest_count){a->ld_dest_index=(a->ld_dest_index+1)%(int)a->ld_dest_count;a->dirty=true;}return true;}
         if(id==A_LD_BACKUP){if(ui_free(a)&&!start_ld_job(a,J_LD_BACKUP))files_problem(a,"LINUX_DATA_UNAVAILABLE","Wait for the current operation to finish.",LINUX_DATA);return true;}
         if(id==A_LD_PREV||id==A_LD_NEXT){

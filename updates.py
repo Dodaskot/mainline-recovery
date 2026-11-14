@@ -39,27 +39,36 @@ UPDATES = 'a22x-recovery/updates'
 BUILD = Path('/etc/a22x-recovery/build.json')
 
 
+PRE_RELEASE = re.compile(r'-(?:alpha|beta|rc|pre|preview|dev)\.?([0-9]*)(?=-|$)', re.IGNORECASE)
+
+
 def version_key(text):
-    """0.6.199, v0.6.199 and a build's 0.6.199-public alike, as numbers; a revision (-r2) counts
-    after them. () when it is no version. 2026-11-14 review: the numbers are four, so 1.0 and 1.0.0
-    are one version and 1.0.0-r1 is not 1.0.0.1; any other suffix (-public, -g1a2b-dirty) is a
-    build of the same version, not no version at all."""
+    """0.6.199, v0.6.199 and a build's 0.6.199-public alike, as numbers; a pre-release (-rc1, -beta)
+    counts before them, a revision (-r2) after them. () when it is no version. 2026-11-14 reviews:
+    the numbers are four, so 1.0 and 1.0.0 are one version and 1.0.0-r1 is not 1.0.0.1; any other
+    suffix (-public, -g1a2b-dirty) is a build of the same version, not no version at all; and a
+    phone on 1.0.0-rc1 is offered 1.0.0."""
     match = re.fullmatch(r'v?([0-9]+(?:\.[0-9]+){1,3})((?:-[A-Za-z0-9][A-Za-z0-9.+_]*)*)', str(text or '').strip())
     if not match:
         return ()
     numbers = [int(part) for part in match.group(1).split('.')]
+    pre = PRE_RELEASE.search(match.group(2))
+    stage = (0, int(pre.group(1) or 0)) if pre else (1, 0)
     revision = re.search(r'-r([0-9]+)(?:-|$)', match.group(2))
-    return tuple(numbers + [0] * (4 - len(numbers))) + (int(revision.group(1)) if revision else 0,)
+    return tuple(numbers + [0] * (4 - len(numbers))) + stage + (int(revision.group(1)) if revision else 0,)
 
 
 def version_name(text):
     """The version for a file name, by version_key: 1.0.0, or 1.0.0.0.10 for 1.0.0-r10, so that the
-    revision is never read as part of the patch number (2026-11-14 review: 1.0.0-r10 was 1.0.010)."""
-    key = list(version_key(text))
+    revision is never read as part of the patch number (2026-11-14 review: 1.0.0-r10 was 1.0.010).
+    A pre-release has its version's name: saved_boot.prune_updates keeps names of numbers only, and
+    the copy's description says which release it is."""
+    key = version_key(text)
     require(key, 'UPDATE_UNUSABLE', 'The release does not name a version')
-    while len(key) > 3 and key[-1] == 0:
-        key.pop()
-    return '.'.join(str(part) for part in key)
+    parts = list(key[:4]) + [key[6]]
+    while len(parts) > 3 and parts[-1] == 0:
+        parts.pop()
+    return '.'.join(str(part) for part in parts)
 
 
 def error_code(error, default='UPDATE_UNAVAILABLE'):

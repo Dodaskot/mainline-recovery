@@ -129,10 +129,18 @@ def check_password(password):
         fail('WIFI_PASSWORD_INVALID', 'A Wi-Fi password uses printable ASCII characters.')
 
 
+def _beside():
+    """The recovery's own modules, importable; its folder is put on the path once (2026-11-14
+    review: once more for every write of the saved list)."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+
+
 def _atomic(path, value):
     """VALUE as PATH, whole or not at all: filesystem.atomic_state (a unique temporary name, fsync of
     the file and its folder). 2026-11-14 review: a fixed name.new, no fsync of the folder."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    _beside()
     import filesystem as fs
     fs.atomic_state(path, value)
 
@@ -157,9 +165,12 @@ def _ram_saved(networks):
 
 
 def _settings_volumes(mode, action):
-    """Run ACTION(root) on the first settings volume that opens (cache, then userdata), under the
-    lock the settings use; returns None when no volume could be opened."""
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    """Run ACTION(root) on the volume that keeps the saved list, under the lock the settings use:
+    the one that holds it, else the first that opens, as settings.settings_root chooses, the same
+    for reads and writes (2026-11-14 review: reads and writes each took the first volume that
+    opened, so a list written to userdata was not the one read from cache at the next start).
+    Returns None when that volume cannot be used now."""
+    _beside()
     import filesystem as fs
     import settings
     from operation_lock import operation_lock
@@ -168,13 +179,11 @@ def _settings_volumes(mode, action):
     while True:
         try:
             with operation_lock(context.lock_path, context.mode):
-                for label in settings.VOLUMES:
-                    try:
-                        with settings.volume_root(context, label, mode) as root:
-                            return action(root)
-                    except (OSError, ValueError, fs.FilesystemError):
-                        continue
-            return None
+                try:
+                    with settings.settings_root(context, mode, SAVED_RELATIVE) as (_, root):
+                        return action(root)
+                except (OSError, ValueError, fs.FilesystemError):
+                    return None
         except BlockingIOError:
             if time.monotonic() > deadline:
                 return None
@@ -220,11 +229,12 @@ def saved_write(networks):
 
 
 def remember(ssid, key):
-    """2026-11-14 review: with the settings volume busy, the list read as empty, and the new network
-    alone replaced every other one. When they cannot be read, nothing is changed."""
+    """True when saved; None when the saved list cannot be read now and nothing was changed
+    (2026-11-14 review: with the settings volume busy, the list read as empty, and the new network
+    alone replaced every other one); False when it could not be written."""
     known = saved_known()
     if known is None:
-        return False
+        return None
     networks = [n for n in known if n.get('ssid_hex') != ssid.hex()]
     networks.insert(0, {'ssid_hex': ssid.hex(), 'psk': key, 'added': int(time.time())})
     return saved_write(networks[:SAVED_MAX])
@@ -242,8 +252,9 @@ def forget(ssid):
     if networks is None:
         fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     kept = [n for n in networks if n.get('ssid_hex') != ssid.hex()]
-    if len(kept) != len(networks):
-        saved_write(kept)
+    # A failed write is said: the network would come back at the next start (2026-11-14 review).
+    if len(kept) != len(networks) and not saved_write(kept):
+        fail('WIFI_SAVED_UNWRITTEN', 'The saved networks could not be written. Try again in a moment.')
     return {**state(), 'saved_count': len(kept)}
 
 
@@ -501,9 +512,11 @@ def connect(ssid, password, hidden, use_saved=False, keep=True):
     # 2026-11-10: the exact time from the internet, without making the join wait for it.
     import clock
     clock.sync_in_background()
+    result = state(ssid)
     if keep:
-        remember(ssid, key)
-    return state(ssid)
+        # Joined either way; whether it was saved is said (2026-11-14 review: it was not, silently).
+        result['remembered'] = remember(ssid, key) is True
+    return result
 
 
 def auto():

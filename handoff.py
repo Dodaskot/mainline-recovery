@@ -97,7 +97,9 @@ def advance_clock(record, now=None, setter=None):
     return value
 
 
-RETRIES, RETRY_SECONDS = 10, 3
+# The hand-off runs before the interface: the busy list is waited for a short while in all, not for
+# each network (2026-11-14 review: minutes with no screen).
+WAIT_SECONDS, RETRY_SECONDS = 20, 2
 
 
 def apply_record(record, remember=None, load=None, store=None):
@@ -108,15 +110,18 @@ def apply_record(record, remember=None, load=None, store=None):
     load, store = load or settings.load, store or settings.store
     networks, language, zone = checked(record)
     unsaved = []
+    deadline = time.monotonic() + WAIT_SECONDS
     for ssid, password in reversed(networks):
-        # remember() changes nothing while the saved list cannot be read (the settings volume busy at
-        # the start, 2026-11-14 review of wifi.py); the hand-off file is taken already, so it is tried
-        # again for a while, and what still could not be saved is named.
-        for attempt in range(RETRIES):
-            if remember(ssid, wifi.psk(ssid, password) if password else '') is not False:
+        # remember() changes nothing while the saved list cannot be read (None: the settings volume
+        # busy at the start, 2026-11-14 review of wifi.py); the hand-off file is taken already, so
+        # that is tried again until the deadline. A list that could not be written (False) is not
+        # tried again. What could not be saved is named.
+        while True:
+            saved = remember(ssid, wifi.psk(ssid, password) if password else '')
+            if saved is not None or time.monotonic() + RETRY_SECONDS > deadline:
                 break
             time.sleep(RETRY_SECONDS)
-        else:
+        if not saved:
             unsaved.append(ssid.decode('utf-8', 'replace'))
     changed = {'wifi_not_saved': unsaved} if unsaved else {}
     if language or zone:

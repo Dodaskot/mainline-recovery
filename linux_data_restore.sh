@@ -177,13 +177,10 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
             add() { pacman -S --noconfirm --needed "$@"; }
             has() { pacman -Qq "$1" >/dev/null 2>&1; }
             # The system is brought up to date once, before any package: Arch does not support a
-            # partial upgrade (2026-11-13 review). Not for each package (2026-11-14 review: one
-            # upgrade that cannot go through then kept every package out). When it cannot go through,
-            # nothing is installed onto an older system; the reason is said.
-            if ! pacman -Syu --noconfirm >/dev/null 2>&1; then
-                say "packages need a system upgrade first: pacman -Syu failed"
-                names=
-            fi ;;
+            # partial upgrade (2026-11-13 review). Only when a package is to be installed, never as a
+            # side effect of a list already there (2026-11-14 review). When it cannot go through,
+            # nothing is installed onto an older system, and the result says why.
+            prepare() { pacman -Syu --noconfirm >/dev/null 2>&1 || { say "packages upgrade failed"; return 1; }; } ;;
         debian)
             DEBIAN_FRONTEND=noninteractive
             export DEBIAN_FRONTEND
@@ -192,25 +189,28 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
             # an Arch list took network-manager and phosh-core away).
             add() { apt-get install -y -q --no-install-recommends --no-remove "$@"; }
             has() { dpkg -s "$1" 2>/dev/null | grep -q '^Status: install ok installed'; }
-            apt-get update -q >/dev/null 2>&1 ;;
+            prepare() { apt-get update -q >/dev/null 2>&1; return 0; } ;;
         fedora)
             have() { dnf -q info "$1" >/dev/null 2>&1; }
             add() { dnf -y install "$@"; }
-            has() { rpm -q "$1" >/dev/null 2>&1; } ;;
+            has() { rpm -q "$1" >/dev/null 2>&1; }
+            prepare() { return 0; } ;;
         suse)
             have() { zypper -n info "$1" 2>/dev/null | grep -q '^Name'; }
             add() { zypper -n install --no-force-resolution "$@"; }
-            has() { rpm -q "$1" >/dev/null 2>&1; } ;;
+            has() { rpm -q "$1" >/dev/null 2>&1; }
+            prepare() { return 0; } ;;
         alpine)
             have() { apk info -e "$1" >/dev/null 2>&1 || apk search -x "$1" 2>/dev/null | grep -q .; }
             add() { apk add "$@"; }
             has() { apk info -e "$1" >/dev/null 2>&1; }
-            apk update >/dev/null 2>&1 ;;
+            prepare() { apk update >/dev/null 2>&1; return 0; } ;;
         *)
             say "packages unsupported"
             names= ;;
     esac
     ok=
+    want=
     installed=0
     missing=0
     for n in $names; do
@@ -218,8 +218,14 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
         case $n in
             linux|linux-*|*-keyring|base|base-files|grub*|mkinitcpio*|dracut*|systemd|systemd-*|uboot-*|zram-generator|dhcpcd|netctl) continue ;;
         esac
-        if has "$n"; then installed=$((installed + 1))
-        elif have "$n"; then ok="$ok $n"
+        if has "$n"; then installed=$((installed + 1)); else want="$want $n"; fi
+    done
+    # The package lists are made ready (Arch: upgraded) only when something is missing.
+    if [ -n "$want" ] && ! prepare; then
+        want=
+    fi
+    for n in $want; do
+        if have "$n"; then ok="$ok $n"
         else missing=$((missing + 1)); say "missing $n"; fi
     done
     if [ -n "$ok" ]; then

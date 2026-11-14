@@ -16,13 +16,18 @@ class UserdataSizes(unittest.TestCase):
     def test_the_rule_matches_the_64_gb_phone(self):
         self.assertEqual(storage.userdata_sizes(GB64), (53393489920, (GB64 - 33 - 17850368) * 512))
 
-    def test_on_a_computer_only_sizes_seen_on_a_phone(self):
-        # 2026-11-14 review: off the phone any multiple of 512 in a 70 GB range was admitted.
+    def test_on_a_computer_any_size_an_admitted_emmc_can_have(self):
+        # Off the phone its eMMC is unknown: any size the phone rule admits on some admitted eMMC,
+        # a 128 GB phone's too (2026-11-14 review: only the 64 GB phone's were, so every 128 GB
+        # phone's snapshot was refused on a computer).
         with mock.patch.object(qualification, 'PHONE', Path('/nonexistent/device.json')):
-            for size in storage.userdata_sizes(GB64):
+            for size in storage.userdata_sizes(GB64) + storage.userdata_sizes(GB128):
                 self.assertTrue(qualification.size_admitted('userdata', size))
-            self.assertFalse(qualification.size_admitted('userdata', storage.userdata_sizes(GB64)[0] + 512))
-            self.assertFalse(qualification.size_admitted('userdata', storage.userdata_sizes(GB128)[0]))
+            self.assertTrue(qualification.size_admitted('userdata', qualification.GEOMETRY['userdata'][1]))
+            self.assertFalse(qualification.size_admitted('userdata', storage.userdata_sizes(GB64)[0] + 1))
+            # A 32 GB userdata or one larger than a 128 GB eMMC fits no admitted eMMC.
+            self.assertFalse(qualification.size_admitted('userdata', 32 << 30))
+            self.assertFalse(qualification.size_admitted('userdata', (storage.MAX_DISK - storage.USERDATA_START) * 512))
             self.assertFalse(qualification.size_admitted('boot', 4096))
             self.assertTrue(qualification.size_admitted('boot', qualification.GEOMETRY['boot'][1]))
 

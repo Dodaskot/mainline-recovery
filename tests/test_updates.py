@@ -74,6 +74,13 @@ class Updates(unittest.TestCase):
         self.assertGreater(updates.version_key('1.0.1'), updates.version_key('1.0.0-r10'))
         self.assertEqual(updates.version_key('v1.0.0-public-r2'), updates.version_key('1.0.0-r2'))
         self.assertEqual(updates.version_key('1.0.0 extra'), ())
+        # A pre-release comes before its version (2026-11-14 review: 1.0.0-rc1 was 1.0.0, never offered 1.0.0).
+        self.assertLess(updates.version_key('1.0.0-rc1'), updates.version_key('1.0.0'))
+        self.assertLess(updates.version_key('v1.0.0-beta'), updates.version_key('1.0.0-rc1'))
+        self.assertLess(updates.version_key('1.0.0-rc1'), updates.version_key('1.0.0-rc2'))
+        self.assertGreater(updates.version_key('1.0.0-rc1'), updates.version_key('0.6.235'))
+        self.assertLess(updates.version_key('1.0.0-RC2-public'), updates.version_key('1.0.0-public'))
+        self.assertEqual(updates.version_name('1.0.1-rc1'), '1.0.1')
         self.assertEqual((updates.version_name('v1.0.0'), updates.version_name('1.0.0-r10'), updates.version_name('0.6.206-public')),
                          ('1.0.0', '1.0.0.0.10', '0.6.206'))
         with self.assertRaises(updates.fs.FilesystemError):

@@ -116,8 +116,8 @@ class Damaged(unittest.TestCase):
         self.readable = {'cache': True, 'userdata': False}
         self.calls.clear()
         self.assertTrue(settings.write_disk({'theme': 'y'}))
-        self.assertIn(('open', 'cache', 'rw'), self.calls)
-        self.assertNotIn(('open', 'userdata', 'rw'), self.calls)
+        # Opened once, for writing (2026-11-14 review: once read-only to choose it, then again).
+        self.assertEqual([call for call in self.calls if call[0] == 'open'], [('open', 'cache', 'rw')])
 
     def test_a_theme_that_cannot_be_copied_does_not_lock_the_phone(self):
         # 2026-11-14 review: an EIO on one theme made read_disk say the settings could not be read.

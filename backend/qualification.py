@@ -39,14 +39,15 @@ PHONE = Path("/etc/a22x-recovery/device.json")
 def size_admitted(label, size):
     """Whether a partition may have SIZE: BOOT its own. userdata on the phone: partition 54 of this
     phone's eMMC, 64 GB or 128 GB (storage.userdata_fits). Elsewhere (a computer qualifying a
-    snapshot, fixtures) only the sizes known from a phone: the 64 GB phone's stock and grown ones, or
-    GEOMETRY's (2026-11-14 review: any multiple of 512 in a 70 GB range was taken)."""
+    snapshot) the same rule for any admitted eMMC (storage.userdata_possible), as that eMMC is not
+    known there; the phone decides by its own before anything is written. GEOMETRY's own size stays
+    admitted: fixtures give it theirs."""
     if label != "userdata":
         return size == GEOMETRY[label][1]
     import storage
     if PHONE.is_file() and DISK.is_file():
         return storage.userdata_fits(size, int(DISK.read_text()))
-    return size == GEOMETRY["userdata"][1] or size in storage.userdata_sizes(122142720)
+    return size == GEOMETRY["userdata"][1] or storage.userdata_possible(size)
 
 
 def _trusted_regular(path, *, executable=False):

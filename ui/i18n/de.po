@@ -2415,6 +2415,9 @@ msgstr "Mit Netzwerk verbinden"
 msgid "Joined the network, but it gave no address."
 msgstr "Mit dem Netzwerk verbunden, aber es hat keine Adresse vergeben."
 
+msgid "Joined, but this network could not be saved"
+msgstr "Verbunden, aber dieses Netzwerk konnte nicht gespeichert werden"
+
 msgid "Journal step %u of %u"
 msgstr "Journalschritt %u von %u"
 
@@ -3317,6 +3320,9 @@ msgstr "Pakete brauchen WLAN im Recovery: verbinden, dann nur »Pakete« wiederh
 
 msgid "Packages there: %u; not in this system: %u"
 msgstr "Pakete vorhanden: %u; nicht in diesem System: %u"
+
+msgid "Packages were not installed: the system could not be upgraded first (pacman -Syu). Upgrade it, then restore Packages alone."
+msgstr "Pakete wurden nicht installiert: Das System konnte nicht zuerst aktualisiert werden (pacman -Syu). Aktualisieren Sie es und stellen Sie dann nur »Pakete« wieder her."
 
 msgid "Packages, the account and the desktop are set up as you choose on the next pages."
 msgstr "Pakete, Konto und Desktop werden so eingerichtet, wie Sie es auf den nächsten Seiten wählen."

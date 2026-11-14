@@ -2,9 +2,11 @@
 import contextlib
 import errno
 import fcntl
+import math
 import os
 from pathlib import Path
 import stat
+import time
 
 ENV_FD = 'A22X_RECOVERY_LOCK_FD'
 DEVICE_LOCK = '/run/lock/a22x-mainline-recovery.lock'
@@ -12,6 +14,18 @@ DEVICE_LOCK = '/run/lock/a22x-mainline-recovery.lock'
 # descriptor would be refused even inside the same process, so a step that needs the lease asks
 # held() first and then runs inside the caller's lease (filesystem.py close_logical, 2026-11-12).
 _HELD = []
+# Set by the interface for a job it starts while its screenshot still holds the lease: until when
+# (CLOCK_MONOTONIC seconds) the job waits for it, MAX_WAIT at most (2026-11-14 review: a job started a
+# second after a screenshot to an unmounted card failed OPERATION_BUSY).
+WAIT_ENV, MAX_WAIT = 'A22X_LOCK_WAIT_UNTIL', 30.0
+
+
+def _wait_until():
+    try:
+        until = float(os.environ.get(WAIT_ENV, ''))
+    except ValueError:
+        return 0.0
+    return min(until, time.monotonic() + MAX_WAIT) if math.isfinite(until) else 0.0
 
 
 def held(path=DEVICE_LOCK):
@@ -51,7 +65,15 @@ def operation_lock(path, mode='device'):
         else:
             fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
         _regular(fd, path)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        until = _wait_until() if inherited is None else 0.0
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= until:
+                    raise
+                time.sleep(0.05)
         _regular(fd, path)
         _HELD.append(str(path))
         try:

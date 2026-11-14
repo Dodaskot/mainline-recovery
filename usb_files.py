@@ -42,7 +42,9 @@ STOP_SECONDS = 8.0
 # How long a stop request waits for its answer: the supervisor stops the responder (up to 5 s),
 # flushes the exported filesystem (syncfs has no bound) and restores the gadget before it answers
 # (2026-11-14 review: 9 s, then a stop that was still going on was reported as failed).
-STOP_ANSWER_SECONDS = 120.0
+# The stop waits as long as before (2026-11-14 review: a 120 s wait sat on a progress screen, also for the
+# stop after the cable is removed); a longer release is reported as going on (USB_STOP_PENDING), not as an error.
+STOP_ANSWER_SECONDS = STOP_SECONDS + 1
 libc = ctypes.CDLL(None, use_errno=True)
 
 
@@ -436,11 +438,15 @@ def serve(context, args):
     # 2026-11-14 review: the handlers came only once the export was active; a SIGTERM during setup,
     # after the gadget was unbound, ended the process without its cleanup, and USB networking with
     # SSH over the cable stayed gone. Before active a stop unwinds the setup; after it, it ends the loop.
+    # 2026-11-14 review of that fix: a second signal while the export is torn down only notes the
+    # stop; the restore of the gadget and the record must finish, or USB networking stays gone.
+    tearing = False
+
     def signal_stop(*unused):
         nonlocal running
-        if record['state'] != 'active':
-            raise StopRequested(errno.EINTR, 'USB sharing was stopped while it started')
         running = False
+        if record['state'] == 'starting' and not tearing:
+            raise StopRequested(errno.EINTR, 'USB sharing was stopped while it started')
     # All mutations below run with both singleton and storage lease. Borrowing
     # an SSH session lease here would permit its parent to bypass export locking.
     require(ENV_FD not in os.environ, 'INHERITED_SESSION', 'Start USB sharing outside an administrator SSH lease')
@@ -454,7 +460,9 @@ def serve(context, args):
         previous = context.record()
         require(not previous or previous.get('clean', False), 'SERVICE_STALE',
                 'An unclean previous USB session requires recovery restart')
-        for number in (signal.SIGTERM, signal.SIGINT):
+        handlers = {number: signal.getsignal(number) for number in (signal.SIGTERM, signal.SIGINT)}
+        stack.callback(lambda: [signal.signal(number, handler) for number, handler in handlers.items()])
+        for number in handlers:
             signal.signal(number, signal_stop)
         try:
             context.save(record)
@@ -533,6 +541,7 @@ def serve(context, args):
             error = exc
             stop_connection = None
         finally:
+            tearing = True
             # Stop USB traffic before terminating the responder; keep the lease
             # until it is reaped, the exported filesystem is flushed and NCM is restored.
             try:

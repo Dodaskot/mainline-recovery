@@ -379,6 +379,34 @@ class StopAndSignalTests(unittest.TestCase):
         with operation_lock(self.context.fs.lock_path, 'fixture'):
             pass
 
+    def test_a_second_signal_during_the_cleanup_does_not_cut_it_short(self):
+        # 2026-11-14 review: a second SIGTERM while the export was torn down raised inside the cleanup,
+        # the gadget was never restored and the record stayed unclean.
+        from unittest import mock
+        selected = usb.status(self.context)['candidates'][0]
+        args = argparse.Namespace(volume=selected['id'], expected_volume_token=selected['volume_token'],
+                                  expected_mount_token=selected['mount_token'], read_only=True, session_token='d' * 64)
+        real_start, real_stop = usb.process_start, usb.child_stop
+
+        def started_then_signal(pid):
+            value = real_start(pid)
+            if pid != os.getpid():
+                os.kill(os.getpid(), signal.SIGTERM)
+            return value
+
+        def stop_with_another_signal(child):
+            os.kill(os.getpid(), signal.SIGTERM)
+            return real_stop(child)
+        old = [signal.getsignal(n) for n in (signal.SIGTERM, signal.SIGINT)]
+        self.addCleanup(lambda: [signal.signal(n, h) for n, h in zip((signal.SIGTERM, signal.SIGINT), old)])
+        with mock.patch.object(usb, 'process_start', started_then_signal), \
+                mock.patch.object(usb, 'child_stop', stop_with_another_signal):
+            os.environ.pop(usb.ENV_FD, None)
+            self.assertEqual(usb.serve(self.context, args), 2)
+        record = self.context.record()
+        self.assertEqual((record['state'], record['clean']), ('failed', True))
+        self.assertEqual([signal.getsignal(n) for n in (signal.SIGTERM, signal.SIGINT)], old)
+
 
 if __name__ == '__main__':
     unittest.main()

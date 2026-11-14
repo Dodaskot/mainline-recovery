@@ -330,18 +330,20 @@ class LinuxData(unittest.TestCase):
                                       '-Si) exit 0 ;; -S) shift; for p; do case $p in -*) ;; *) echo "$p" >> "%s.installed" ;; esac; done ;; esac\n'
                                       % (log, log, log))
         (stubs / 'pacman').chmod(0o755)
-        for upgrade, installs in (('1', False), ('0', True)):
+        # A list already there needs no upgrade at all (2026-11-14 review: it upgraded the system as a
+        # side effect); a failed upgrade is said, and nothing is installed onto the older system.
+        for upgrade, installs, upgrades, said in (('1', False, 1, 'a22x: packages upgrade failed'),
+                                                  ('0', True, 1, 'a22x: packages 2 0'), ('1', False, 0, 'a22x: packages 2 0')):
             log.unlink(missing_ok=True)
+            if upgrades:
+                Path(str(log) + '.installed').unlink(missing_ok=True)
             env = dict(os.environ, A22X_ROOT=str(system), A22X_FAKE_ROOT='1', UPGRADE=upgrade, PATH=str(stubs) + ':' + os.environ['PATH'])
             out = subprocess.run(['/bin/sh', str(ROOT / 'linux_data_restore.sh'), '--staged', str(staged), '--home-done',
                                   '--parts', 'packages'], env=env, capture_output=True, text=True)
-            calls = log.read_text().splitlines()
-            self.assertEqual(sum(1 for c in calls if c.startswith('pacman -Syu')), 1, calls)
+            calls = log.read_text().splitlines() if log.exists() else []
+            self.assertEqual(sum(1 for c in calls if c.startswith('pacman -Syu')), upgrades, calls)
             self.assertEqual(any(c.startswith('pacman -S ') for c in calls), installs, calls)
-            if not installs:
-                self.assertIn('a22x: packages need a system upgrade first: pacman -Syu failed', out.stdout)
-            else:
-                self.assertIn('a22x: packages 2 0', out.stdout)
+            self.assertIn(said, out.stdout)
 
 
 if __name__ == '__main__':

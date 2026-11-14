@@ -130,6 +130,22 @@ class KeepRecovery(unittest.TestCase):
         self.assertTrue((folder / 'android-y.img').exists())
         self.assertIn('android-y.img', kept)
 
+    def test_a_lone_damaged_copy_is_not_taken_for_the_boot(self):
+        # 2026-11-14 review: a damaged stock- copy whose description still gave the content key was
+        # returned as the copy already there, and the good BOOT was never saved.
+        folder = self.root / 'cache' / saved_boot.SAVED_BOOT
+        folder.mkdir(parents=True)
+        damaged = bytearray(self.stock)
+        damaged[100] ^= 0xff
+        name = 'stock-A226BXXSBDZC3-x.img'
+        (folder / name).write_bytes(bytes(damaged))
+        (folder / (name + '.json')).write_text(json.dumps({'saved': 1, 'bytes': len(damaged),
+                                                          'content': saved_boot.content_key(self.stock)}))
+        (self.root / 'targets/boot').write_bytes(self.stock)
+        kept = saved_boot.keep_current_boot(install.FixtureContext(self.root), lambda *a: None)
+        self.assertNotEqual(kept['kept'], '/' + saved_boot.SAVED_BOOT + '/' + name)
+        self.assertEqual((self.root / 'cache' / kept['kept'].lstrip('/')).read_bytes(), self.stock)
+
     def test_a_cut_download_leaves_nothing_behind(self):
         # 2026-11-14 review: .part- files were removed in saved-boot only.
         for name in (saved_boot.UPDATES, saved_boot.VBMETA_FOLDER):

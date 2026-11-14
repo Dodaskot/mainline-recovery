@@ -183,6 +183,24 @@ class NativeFallback(unittest.TestCase):
         # What changed, the mark that keeps this recovery and the installer's exit are all there.
         self.assertEqual((details['changed'], details['installer_exit'], details['keeps_recovery']), (['boot'], 3, True))
 
+    def test_a_room_that_could_not_be_made_is_never_written_over(self):
+        # 2026-11-14 review: a ZIP changed after the review (or any failure to make the room) exited
+        # 126 like an installer that stopped, and the recovery wrote the changed ROM itself.
+        from unittest import mock
+        changed = fs.FilesystemError('ZIP_CHANGED', 'The ZIP changed after it was reviewed')
+        with mock.patch.object(zi, 'check_installer', side_effect=changed):
+            (code, failed, _), called = self.run_with('ui_print "never runs"', 0,
+                                                      AssertionError('the recovery must not write a changed ZIP'))
+        self.assertFalse(called.called)
+        self.assertEqual((code, failed['error']['code']), (2, 'ZIP_CHANGED'))
+        details = failed['error']['details']
+        self.assertEqual((details['installer_exit'], details['written_by_recovery'], details['changed']), (None, False, []))
+
+    def test_the_recovery_writes_nothing_itself_without_the_room(self):
+        with self.assertRaises(fs.FilesystemError) as caught:
+            zi.native_install(None, None, -1, {'system': 4096}, {}, lambda *a: None)
+        self.assertEqual(caught.exception.code, 'ZIP_ROOM_FAILED')
+
     def test_the_review_says_the_installer_runs_first(self):
         path = self.archive('blocks.zip', extra={'system.transfer.list': '4\n1\n0\n0\nnew 2,0,1\n', 'system.new.dat': bytes(4096)})
         code, about, _ = self.helper('inspect', path)

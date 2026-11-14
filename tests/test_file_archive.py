@@ -225,6 +225,65 @@ class FileArchive(unittest.TestCase):
         self.assertFalse(fa.stable_inodes(os.makedev(8, 1), str(mountinfo)))
         self.assertTrue(fa.stable_inodes(os.makedev(8, 2), str(mountinfo)))
 
+    def test_a_file_on_fat_may_come_back_with_another_inode_too(self):
+        # 2026-11-14 review: the FAT rule held for folders only; a file that had not changed was refused.
+        import io
+        from unittest import mock
+        entries = []
+        fa.walk(os.open(self.home, os.O_RDONLY | os.O_DIRECTORY), 'script.sh', os.stat(self.home).st_dev, 'script.sh', entries)
+        self.addCleanup(lambda: [os.close(e[0]) for e in entries if e[1] is None])
+        where, name, info, arcname = next(e for e in entries if e[1] is not None)
+        moved = os.stat_result((info.st_mode, info.st_ino + 1) + tuple(info)[2:])
+        files = [(where, name, moved, arcname)]
+        out = io.BytesIO()
+        read, write = os.pipe()
+        with self.assertRaises(fs.FilesystemError) as caught:
+            fa.write_archive(write, files, info.st_size, self.progress)
+        self.assertEqual(caught.exception.code, 'FILE_CHANGED')
+        with mock.patch.object(fa, 'stable_inodes', return_value=False):
+            fa.write_archive(write, files, info.st_size, self.progress)
+        os.close(write)
+        with os.fdopen(read, 'rb') as stream:
+            out.write(stream.read())
+        self.assertGreater(len(out.getvalue()), 0)
+
+    def test_device_nodes_left_out_are_counted(self):
+        # 2026-11-14 review: device nodes (a container layer's whiteouts, char 0:0) left the archive
+        # without a word. A device node cannot be made here, so the walked entry is given its mode.
+        import stat as st
+        entries = []
+        fa.walk(os.open(self.home, os.O_RDONLY | os.O_DIRECTORY), 'script.sh', os.stat(self.home).st_dev, 'script.sh', entries)
+        self.addCleanup(lambda: [os.close(e[0]) for e in entries if e[1] is None])
+        where, name, info, _ = next(e for e in entries if e[1] is not None)
+        node = os.stat_result((st.S_IFCHR | 0o600,) + tuple(info)[1:])
+        left_out = []
+        read, write = os.pipe()
+        self.addCleanup(os.close, read)
+        try:
+            fa.write_archive(write, [(where, name, info, 'script.sh'), (where, name, node, 'layer/.wh.gone')], info.st_size,
+                             self.progress, left_out=left_out)
+        finally:
+            os.close(write)
+        self.assertEqual(left_out, ['layer/.wh.gone'])
+        self.assertEqual(self.pack(False, ['script.sh'])['skipped'], 0)
+
+    def test_a_failed_write_says_its_own_cause(self):
+        # 2026-11-14 review: every cause behind a broken pipe was said as a full volume.
+        import errno
+        too_large = os.strerror(errno.EFBIG)
+        self.assertEqual(fa.write_error(errno.EPIPE, 'zstd: error 70 : Write error : cannot write block : ' + too_large).code,
+                         'FILE_TOO_LARGE')
+        self.assertEqual(fa.write_error(errno.EPIPE, 'Write error : ' + os.strerror(errno.ENOSPC)).code, 'INSUFFICIENT_SPACE')
+        broken = fa.write_error(errno.EPIPE, 'Write error : ' + os.strerror(errno.EIO))
+        self.assertEqual((broken.code, broken.details['said']), ('ARCHIVE_WRITE_FAILED', 'Write error : ' + os.strerror(errno.EIO)))
+        self.assertEqual(fa.write_error(errno.EPIPE).code, 'ARCHIVE_WRITE_FAILED')
+        for number, code in ((errno.EIO, 'ARCHIVE_WRITE_FAILED'), (errno.EROFS, 'ARCHIVE_WRITE_FAILED'),
+                             (errno.ENOSPC, 'INSUFFICIENT_SPACE'), (errno.EFBIG, 'FILE_TOO_LARGE')):
+            with self.assertRaises(fs.FilesystemError) as caught:
+                fa.raise_cause(OSError(number, os.strerror(number)), RuntimeError('pipe'))
+            self.assertEqual(caught.exception.code, code)
+        fa.raise_cause(None, RuntimeError('pipe'))
+
     def test_many_folders_need_few_descriptors(self):
         # 2026-11-13 review: every folder walked stayed open; 1100 folders under a limit of 1024 failed.
         import resource

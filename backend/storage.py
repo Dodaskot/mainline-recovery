@@ -28,9 +28,12 @@ STOCK_TAIL = 8192       # where the 64 GB phone's stock userdata ends
 MAX_TAIL = 16384        # another eMMC may round the stock end otherwise: not only 8192 is admitted
 
 
+MIN_DISK, MAX_DISK = 120_000_000, 252_000_000
+
+
 def disk_admitted(sectors):
     """An eMMC of a 64 GB or 128 GB SM-A226B, in 512-byte sectors."""
-    return 120_000_000 <= sectors <= 252_000_000
+    return MIN_DISK <= sectors <= MAX_DISK
 
 
 def userdata_fits(size, disk_sectors):
@@ -39,6 +42,16 @@ def userdata_fits(size, disk_sectors):
     if not disk_admitted(disk_sectors) or size <= 0 or size % 512:
         return False
     return GROWN_TAIL <= disk_sectors - USERDATA_START - size // 512 <= MAX_TAIL
+
+
+def userdata_possible(size):
+    """Whether userdata_fits(SIZE) on some admitted eMMC: the rule off the phone, where its eMMC is
+    unknown (2026-11-14 review: there only the 64 GB phone's two sizes were taken, and every 128 GB
+    phone's snapshot was refused). The phone checks its own eMMC before anything is written."""
+    if size <= 0 or size % 512:
+        return False
+    end = USERDATA_START + size // 512
+    return end + GROWN_TAIL <= MAX_DISK and end + MAX_TAIL >= MIN_DISK
 
 
 def userdata_sizes(disk_sectors):

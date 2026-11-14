@@ -186,7 +186,7 @@ def tidy_folder(folder):
     firmware, kept before a flash, once with the keep-recovery mark). Copies with the same content
     are removed but one: the one taken out of the firmware (stock-), else the oldest. Copies that
     differ are all kept. Returns {name: content key} of what stays."""
-    entries = []
+    entries, checked = [], set()
     listed = set(os.listdir(folder))
     for name in sorted(listed):
         if not name.endswith('.img') or name + '.json' not in listed:
@@ -205,23 +205,15 @@ def tidy_folder(folder):
             if key is not None and os.stat(name, dir_fd=folder, follow_symlinks=False).st_size != meta.get('bytes'):
                 key = None
             if key is None:
-                fd = fs.open_regular(name, dir_fd=folder)
-                try:
-                    size = os.fstat(fd).st_size
-                    data, at = bytearray(), 0
-                    while at < size:
-                        part = os.pread(fd, min(4 << 20, size - at), at)
-                        if not part:
-                            break
-                        data.extend(part)
-                        at += len(part)
-                finally:
-                    os.close(fd)
-                key = content_key(bytes(data))
+                key = image_key(folder, name)
+                if key is None:
+                    continue
+                # Read from its bytes just now: not read again as a twin (2026-11-14 review).
+                checked.add(name)
         except (OSError, ValueError, AttributeError, fs.FilesystemError):
             continue
         entries.append((key, not name.startswith('stock-'), saved, name))
-    kept, checked = {}, set()
+    kept = {}
     for key, _, _, name in sorted(entries):
         if key in kept.values():
             # A copy goes only when the one that stays really holds that content: its description
@@ -543,11 +535,13 @@ def save_on_cache(context, name, image, meta, progress, keep_mounted=False, fold
                         return '/' + folder_name + '/' + name
                     os.unlink(name, dir_fd=folder)
                 if folder_name == SAVED_BOOT:
-                    # The same BOOT is not kept twice: the copy there is the way back already.
+                    # The same BOOT is not kept twice: the copy there is the way back already, when
+                    # it really holds this BOOT (2026-11-14 review: a lone copy, damaged but with
+                    # its description whole, was returned and the good one never saved).
                     kept = tidy_folder(folder)
                     mine = content_key(image)
                     twin = next((other for other, key in kept.items() if key == mine), None)
-                    if twin:
+                    if twin and image_key(folder, twin) == mine:
                         return '/' + folder_name + '/' + twin
                     room = os.fstatvfs(pin.fd)
                 if room.f_bavail * room.f_frsize <= end + (8 << 20):

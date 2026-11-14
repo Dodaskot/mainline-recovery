@@ -437,6 +437,7 @@ def native_install(context, room, fd, sizes, found, progress):
     the ROM's boot.img when it is a BOOT of this phone. Returns (lines for the result, exit code)."""
     import android_rom
     import bootimage
+    require(room is not None, 'ZIP_ROOM_FAILED', 'The room for the installer could not be prepared')
     shown = []
     parts = sorted(sizes)
     try:
@@ -786,13 +787,52 @@ def drop_capabilities():
             raise OSError(ctypes.get_errno(), 'capability %d' % capability)
 
 
+def report_start(fd, error=None):
+    """On the started channel: E just before the installer is started (the channel closes with exec),
+    F and the error when the room could not be made (2026-11-14 review: that failure, ZIP_CHANGED too,
+    exited 126 like an installer that stopped without changing anything, and the recovery then wrote
+    the ROM itself)."""
+    if fd is None:
+        return
+    with contextlib.suppress(OSError):
+        if error is None:
+            os.write(fd, b'E')
+        else:
+            os.write(fd, b'F' + json.dumps({'code': getattr(error, 'code', None) or 'ZIP_ROOM_FAILED',
+                                             'message': str(error)[:300]}).encode())
+
+
+def read_start(fd):
+    """(started, error) from the started channel, read after the run ended."""
+    data = b''
+    os.set_blocking(fd, False)
+    while True:
+        try:
+            chunk = os.read(fd, 4096)
+        except BlockingIOError:
+            break
+        if not chunk:
+            break
+        data += chunk
+    if data == b'E':
+        return True, None
+    error = {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}
+    at = data.find(b'F')
+    if at >= 0:
+        with contextlib.suppress(ValueError):
+            value = json.loads(data[at + 1:])
+            if isinstance(value, dict) and isinstance(value.get('code'), str) and isinstance(value.get('message'), str):
+                error = value
+    return False, error
+
+
 def check_installer(path, expected):
     """The update-binary taken out for the run is the one reviewed (2026-11-14 review: only the
     ZIP's device, inode and size were compared, so its bytes could be changed in place)."""
     require(hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, 'ZIP_CHANGED', 'The ZIP changed after it was reviewed')
 
 
-def room_child(room, zip_fd, out_fd, kind, expected):
+def room_child(room, zip_fd, out_fd, kind, expected, started=None):
     """The process the installer runs in: new spaces, the room, then update-binary as TWRP calls it."""
     os.setsid()
     os.unshare(os.CLONE_NEWNS | os.CLONE_NEWPID | os.CLONE_NEWIPC | os.CLONE_NEWUTS)
@@ -804,6 +844,8 @@ def room_child(room, zip_fd, out_fd, kind, expected):
     if pid:
         # This process shares the room's mounts and stays outside its root: it stands in for ueventd.
         os.close(slave)
+        if started is not None:
+            os.close(started)
         os.set_blocking(master, False)
         st = os.stat(room.found['super']['path'])
         mapper = Mapper(room.root / 'dev/block', room.mapped_before, '%d:%d' % (os.major(st.st_rdev), os.minor(st.st_rdev)))
@@ -864,13 +906,15 @@ def room_child(room, zip_fd, out_fd, kind, expected):
         env = {'PATH': '/sbin:/system/bin:/bin', 'HOME': '/tmp', 'TMPDIR': '/tmp', 'ANDROID_ROOT': '/system', 'ANDROID_DATA': '/data',
                'EXTERNAL_STORAGE': '/sdcard', 'SHELL': '/sbin/sh', 'ASH_STANDALONE': '1'}
         command = ['/sbin/sh', '/tmp/update-binary'] if kind == 'script' else ['/tmp/update-binary']
+        report_start(started)
         os.execve(command[0], command + ['3', '9', '/tmp/install.zip'], env)
-    except BaseException as error:  # noqa: BLE001 - reported to the parent through the exit status and stderr
+    except BaseException as error:  # noqa: BLE001 - reported to the parent through the started channel and stderr
         sys.stderr.write('room: %s\n' % error)
+        report_start(started, error)
         os._exit(126)
 
 
-def fixture_child(context, found, zip_fd, out_fd, kind, expected):
+def fixture_child(context, found, zip_fd, out_fd, kind, expected, started=None):
     """Tests: the installer as a plain process in a folder of its own; its devices are the fixture's
     partition files under $A22X_ZIP_ROOT/dev/block/by-name."""
     root = context.root / 'zip-room'
@@ -888,6 +932,7 @@ def fixture_child(context, found, zip_fd, out_fd, kind, expected):
     os.set_inheritable(9, True)
     os.chdir(root / 'tmp')
     require(kind == 'script', 'ZIP_INSTALLER_INVALID', 'Fixtures run script installers only')
+    report_start(started)
     os.execve('/bin/sh', ['/bin/sh', 'update-binary', '3', '9', str(root / 'tmp/install.zip')],
               {'PATH': '/usr/bin:/bin', 'A22X_ZIP_ROOT': str(root), 'TMPDIR': str(root / 'tmp')})
 
@@ -958,11 +1003,11 @@ def write_counters(context, found):
     return counts
 
 
-def untouched(context, found, room, before, layout, counters):
+def untouched(context, found, room, before, layout, counters, now):
     """Whether the installer left every partition in its reach as it found it: the watched
     partitions by their hashes, super's layout, the kernel's count of sectors written to super,
     prism and optics, and the mappings in the room and those the installer made itself."""
-    if hashes(context, found) != before or write_counters(context, found) != counters:
+    if now != before or write_counters(context, found) != counters:
         return False
     if layout is not None and layout_hash(context, found) != layout:
         return False
@@ -1006,6 +1051,10 @@ def run(context, args, progress):
             # one found, so the result still names super when its layout changed.
             layout_run = layout_hash(context, found) if 'super' in found else None
             read_fd, write_fd = os.pipe()
+            start_read, first = os.pipe2(os.O_CLOEXEC)
+            # Above the numbers the installer's channels take (9 for the screen, 0-2).
+            start_write = fcntl.fcntl(first, fcntl.F_DUPFD_CLOEXEC, 10)
+            os.close(first)
             room = Room(context, found) if context.mode == 'device' else None
             if room:
                 room.attach_logical()
@@ -1016,31 +1065,40 @@ def run(context, args, progress):
             # script stopped without changing anything; over a layout the script had changed, its
             # mappings (made before) pointed elsewhere, and what it had written was left unsaid.
             native = (room is not None or context.mode == 'fixture') and native_possible(fd, sizes)
-            installer_code, native_error, native_ran = None, None, False
+            installer_code, native_error, native_ran, room_error, seen = None, None, False, None, None
             try:
                 pid = os.fork()
                 if pid == 0:
                     try:
                         os.close(read_fd)
+                        os.close(start_read)
                         null = os.open(os.devnull, os.O_RDWR)
                         os.dup2(null, 0)
                         os.dup2(2, 1)  # what the installer prints goes to the helper's log, never into its JSON
                         if room:
-                            room_child(room, fd, write_fd, about['installer'], about['installer_sha256'])
+                            room_child(room, fd, write_fd, about['installer'], about['installer_sha256'], start_write)
                         else:
                             os.setsid()
-                            fixture_child(context, found, fd, write_fd, about['installer'], about['installer_sha256'])
+                            fixture_child(context, found, fd, write_fd, about['installer'], about['installer_sha256'], start_write)
+                    except BaseException as error:  # noqa: BLE001 - told to the parent below
+                        report_start(start_write, error)
                     finally:
                         os._exit(127)
                 os.close(write_fd)
+                os.close(start_write)
                 try:
                     shown, code = follow(read_fd, pid, lambda text, part: progress(text, {'label': 'zip', 'size_bytes': 1000}, int(part * 1000)),
                                          time.monotonic() + RUN_SECONDS)
                 finally:
                     os.close(read_fd)
-                installer_code = code
-                if code != 0 and native:
-                    if untouched(context, found, room, before, layout_run, counters):
+                try:
+                    started, room_error = read_start(start_read)
+                finally:
+                    os.close(start_read)
+                installer_code = code if started else None
+                if code != 0 and native and started:
+                    seen = hashes(context, found)
+                    if untouched(context, found, room, before, layout_run, counters, seen):
                         native_ran = True
                         try:
                             written_natively, code = native_install(context, room, fd, sizes, found, progress)
@@ -1058,7 +1116,9 @@ def run(context, args, progress):
                 if room:
                     written = list(written) + room.written()
                     room.detach()
-        after = hashes(context, found)
+        # The hashes just read serve when nothing was written since (2026-11-14 review: BOOT, dtbo and
+        # every vbmeta were read twice in a row).
+        after = seen if seen is not None and not native_ran else hashes(context, found)
         changed = sorted(label for label in after if after[label] != before.get(label))
         # What an installer did to super through the device mapper: the logical partitions it
         # wrote to, and a layout that is no longer the one it found.
@@ -1085,6 +1145,9 @@ def run(context, args, progress):
         touched = sorted(label for label, digest in guarded.items() if now.get(label) != digest)
         require(not touched, 'PROTECTED_PARTITION_CHANGED',
                 'The installer of this ZIP changed a partition it may not write: ' + ', '.join(touched), touched=touched, **result)
+        if room_error is not None:
+            # The installer never ran: the room's own reason, never the recovery's writing in its place.
+            fail(room_error['code'], room_error['message'], **result)
         if native_error is not None:
             fail(getattr(native_error, 'code', None) or 'IO_ERROR', str(native_error),
                  **{**(getattr(native_error, 'details', None) or {}), **result})
