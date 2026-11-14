@@ -40,7 +40,7 @@ import tempfile
 import time
 
 import filesystem as fs
-from lp_metadata import BLKFLSBUF  # one definition
+from lp_metadata import drop_cached  # the one way to drop what a node remembers
 from filesystem import fail
 from operation_lock import operation_lock
 
@@ -222,7 +222,7 @@ class Media:
                 # mkfs wrote through the partitions, which keep their own cache: what this node
                 # remembers of those sectors is dropped before they are read through it.
                 with contextlib.suppress(OSError):
-                    fcntl.ioctl(fd, BLKFLSBUF)
+                    drop_cached(fd)
             sector0 = os.pread(fd, SECTOR, 0)
             table, rows = self.partitions(disk, fd)
             shown = []

@@ -1103,6 +1103,7 @@ PACKAGE NAME
 Packages
 Packages come over the recovery's Wi-Fi: this takes 10-30 minutes. Keep the phone powered.
 Packages need Wi-Fi in the recovery: connect, then restore Packages alone.
+Packages not installed now: %u
 Packages there: %u; not in this system: %u
 Packages were not installed: the system could not be upgraded first (pacman -Syu). Upgrade it, then restore Packages alone.
 Packages, the account and the desktop are set up as you choose on the next pages.

@@ -292,12 +292,12 @@ def linux_root(context, write=False):
                 context.mount('userdata', 'ro', True, now['volume_token'])
 
 
-def collect(pin, parts, accounts):
+def collect(pin, parts, accounts, limit=None):
     """(entries for file_archive.write_archive, fds to close, bytes of each part). The folders it
     opened are closed again when it fails (2026-11-13 review)."""
     entries = []
     try:
-        return collect_into(pin, parts, accounts, entries)
+        return collect_into(pin, parts, accounts, entries, limit)
     except BaseException:
         for e in entries:
             if e[1] is None:
@@ -306,30 +306,25 @@ def collect(pin, parts, accounts):
         raise
 
 
-def collect_into(pin, parts, accounts, entries):
+def collect_into(pin, parts, accounts, entries, limit=None):
     sizes = {}
     device = pin.stat.st_dev
     # What can be fetched again is left out: every account's cache, passed over while walking
     # (2026-11-14 review: a big ~/.cache made a home too large to copy before it was left out).
     caches = tuple(a['home'].strip('/') + '/.cache/' for a in accounts) + ('root-home/.cache/',)
 
-    # Each part is walked into a list of its own: the MAX_ENTRIES limit holds for each part, here as
-    # in inspect, which counts them apart (2026-11-14 review: two parts that each fit there failed
-    # together here). The folders opened stay in ENTRIES, closed by collect when it fails.
-    walked = []
-
+    # One limit for the whole archive (MAX_ENTRIES, or LIMIT when inspect leaves room for the settings):
+    # what one archive holds in memory stays bounded (2026-11-14 review of a limit for each part).
     def add(parent_fd, name, arcname):
-        before = len(walked)
+        before = len(entries)
         try:
-            fa.walk(parent_fd, name, device, arcname, walked, skip=caches)
+            fa.walk(parent_fd, name, device, arcname, entries, skip=caches, limit=limit)
         except FileNotFoundError:
             return 0
-        return sum(e[2].st_size for e in walked[before:] if e[1] is not None and stat.S_ISREG(e[2].st_mode))
+        return sum(e[2].st_size for e in entries[before:] if e[1] is not None and stat.S_ISREG(e[2].st_mode))
 
     if 'home' in parts:
         sizes['home'] = add(pin.fd, 'home', 'home') + add(pin.fd, 'root', 'root-home')
-        entries.extend(walked)
-        walked = []
     if 'settings' in parts:
         total = 0
         for path in SETTINGS:
@@ -347,7 +342,6 @@ def collect_into(pin, parts, accounts, entries):
                 if name.startswith('ssh_host_') and 'key' in name:
                     total += add(ssh, name, 'settings/' + SSH_KEYS + '/' + name)
         sizes['settings'] = total
-        entries.extend(walked)
     files = [e for e in entries if e[1] is not None]
     return files, [e[0] for e in entries if e[1] is None], sizes
 
@@ -452,15 +446,20 @@ def inspect(context):
             # 2026-11-14 review: a home with more entries than one archive takes made the whole page
             # say there was no Linux system. The system is shown; its sizes are unknown and REASON
             # says why the homes cannot be copied in one archive.
-            # Each part counted on its own (2026-11-14 review of that change: a home too large to
-            # count made the settings unknown too, though a backup of them alone works).
-            sizes = {}
-            for part in ('home', 'settings'):
+            # Each part counted on its own (2026-11-14 review: a home too large to count made the
+            # settings unknown too, though a backup of them alone works); the settings first, and
+            # the homes with room left for them, as the backup holds both in one archive under one
+            # limit (2026-11-14 review of a limit for each part): a home that fits only without the
+            # settings is said too large, never offered for a backup that would fail.
+            sizes, room = {}, None
+            for part in ('settings', 'home'):
                 try:
-                    _, folders, counted = collect(pin, (part,), accounts)
+                    files, folders, counted = collect(pin, (part,), accounts, room if part == 'home' else None)
                     for fd in folders:
                         os.close(fd)
                     sizes[part] = counted[part]
+                    if part == 'settings':
+                        room = fa.MAX_ENTRIES - len(files) - len(folders)
                 except fs.FilesystemError as error:
                     sizes[part] = -1
                     result['reason'] = result.get('reason') or error.code
@@ -715,12 +714,20 @@ def restore_from(context, volume, token, path, parts, progress):
     said = [line[6:] for line in lines if line.startswith('a22x: ')]
     require(status == 0 and 'done' in said, 'RESTORE_FAILED', 'The restore inside the system did not finish',
             exit=status, log=[line[:200] for line in lines[-12:]])
-    packages = next((s.split()[1:] for s in said if s.startswith('packages ') and len(s.split()) == 3), None)
+    return {'parts': parts, 'into': {'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', '')},
+            **script_result(said, note)}
+
+
+def script_result(said, note=''):
+    """What restore.sh SAID (its "a22x: " lines), as the result reads it."""
+    # Only the line of two counts (2026-11-14 review: "packages upgrade failed" is three words too, and
+    # int('upgrade') ended the helper with a traceback after everything else had been restored).
+    packages = next((s.split()[1:] for s in said if s.startswith('packages ') and len(s.split()) == 3
+                     and all(part.isdigit() for part in s.split()[1:])), None)
     if 'packages upgrade failed' in said:
         # 2026-11-14 review: the script said why and the result lost it.
         note = UPGRADE_FAILED
-    return {'parts': parts, 'into': {'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', '')},
-            'accounts_created': [s.split()[1] for s in said if s.startswith('account ') and s.endswith(' created')],
+    return {'accounts_created': [s.split()[1] for s in said if s.startswith('account ') and s.endswith(' created')],
             'accounts_kept': [s.split()[1] for s in said if s.startswith('account ') and s.endswith(' kept')],
             'owners_changed': sum(1 for s in said if s.startswith('owner ')),
             'packages_installed': int(packages[0]) if packages else 0, 'packages_missing': int(packages[1]) if packages else 0,

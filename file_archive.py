@@ -78,7 +78,7 @@ class Dir:
         self.base, self.parts, self.ident, self.arcname = base, parts, ident, arcname
 
 
-def walk(directory, name, device, arcname, out, parent=None, skip=()):
+def walk(directory, name, device, arcname, out, parent=None, skip=(), limit=None):
     """(Dir, name, lstat, archive name) for NAME and, for a folder, everything under it on the same
     filesystem. A folder is opened by descriptor while it is listed; a link inside it is never followed.
     What lies under an archive name in SKIP (prefixes ending in '/') is passed over without being
@@ -91,7 +91,7 @@ def walk(directory, name, device, arcname, out, parent=None, skip=()):
     if stat.S_ISSOCK(info.st_mode):
         return
     out.append((parent, name, info, arcname))
-    require(len(out) <= MAX_ENTRIES, 'SELECTION_TOO_LARGE', 'Too many files are selected at once')
+    require(len(out) <= (MAX_ENTRIES if limit is None else limit), 'SELECTION_TOO_LARGE', 'Too many files are selected at once')
     if stat.S_ISDIR(info.st_mode) and info.st_dev == device:
         inner = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
         try:
@@ -100,7 +100,7 @@ def walk(directory, name, device, arcname, out, parent=None, skip=()):
                     'A folder changed while it was read', file=arcname)
             here = Dir(parent.base, parent.parts + (name,), (info.st_dev, info.st_ino), arcname)
             for child in sorted(os.listdir(inner)):
-                walk(inner, child, device, arcname + '/' + child, out, here, skip)
+                walk(inner, child, device, arcname + '/' + child, out, here, skip, limit)
         finally:
             os.close(inner)
 
@@ -178,25 +178,33 @@ def close_sink(crypt, error):
     return None
 
 
+# The causes of a failed write said as such, by errno: one table for an errno met directly and
+# for one read in zstd's message (2026-11-14 review: the texts were written out twice).
+WRITE_CAUSES = (errno.ENOSPC, errno.EDQUOT, errno.EFBIG)
+
+
+def cause_error(number):
+    if number == errno.EFBIG:
+        return fs.FilesystemError('FILE_TOO_LARGE', 'This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4')
+    return fs.FilesystemError('INSUFFICIENT_SPACE', 'There is not enough space for the archive')
+
+
 def write_error(number, said=''):
     """The error for a write that failed with errno NUMBER, or, when only a pipe broke, with what
     zstd SAID about its own write (2026-11-14 review: every cause, EIO and a FAT32 file at 4 GiB
     too, was said as a full volume)."""
-    if number in (errno.ENOSPC, errno.EDQUOT):
-        return fs.FilesystemError('INSUFFICIENT_SPACE', 'There is not enough space for the archive')
-    if number == errno.EFBIG:
-        return fs.FilesystemError('FILE_TOO_LARGE', 'This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4')
+    if number in WRITE_CAUSES:
+        return cause_error(number)
     if number == errno.EPIPE and said:
         return said_error(said)
     return fs.FilesystemError('ARCHIVE_WRITE_FAILED', 'The archive could not be written', said=os.strerror(number))
 
 
 def said_error(said):
-    """The error for a write that failed as SAID (zstd's message, or the errno's text)."""
-    if os.strerror(errno.ENOSPC) in said or os.strerror(errno.EDQUOT) in said:
-        return fs.FilesystemError('INSUFFICIENT_SPACE', 'There is not enough space for the archive')
-    if os.strerror(errno.EFBIG) in said:
-        return fs.FilesystemError('FILE_TOO_LARGE', 'This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4')
+    """The error for a write that zstd said failed (its message names the errno's text)."""
+    for number in WRITE_CAUSES:
+        if os.strerror(number) in said:
+            return cause_error(number)
     return fs.FilesystemError('ARCHIVE_WRITE_FAILED', 'The archive could not be written', said=said[-200:])
 
 

@@ -242,7 +242,9 @@ class InstallerChecks(unittest.TestCase):
                 # The room's own shell for a script: the room failed (2026-11-14 review).
                 (b'EF{"code": "IO_ERROR", "message": "exec format error"}', 'script', (False, {**room, 'reason': 'exec format error'}, None)),
                 (b'F{"code": "ZIP_CHANGED", "message": "changed"}', 'binary', (False, {'code': 'ZIP_CHANGED', 'message': 'changed'}, None)),
-                (b'', 'script', (False, room, None))):
+                (b'', 'script', (False, room, None)),
+                # An F that cannot be read after E: an exec that failed, never the room's text (2026-11-14 review).
+                (b'EF{cut', 'binary', (True, None, {'code': 'ZIP_INSTALLER_NOT_STARTED', 'message': 'exec failed'}))):
             read, write = os.pipe()
             os.write(write, data)
             os.close(write)

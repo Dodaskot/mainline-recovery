@@ -30,7 +30,7 @@ static void android_plan_tick(App*a){
     a->aplan_asked=true;start_aplan_job(a,J_APLAN_SHOW);
 }
 #define APLAN_RETRY_MS 3000u
-#define APLAN_TRIES 20u
+#define APLAN_TRIES 5u   /* 3, 6, 12, 24 and 48 s: a few short checks, not one every 3 s (2026-11-14 review) */
 static void complete_aplan_job(App*a,const Json*j,int kind,bool ok){
     if(kind==J_APLAN_FORGET){
         a->aplan_forget_after=false;
@@ -51,10 +51,10 @@ static void complete_aplan_job(App*a,const Json*j,int kind,bool ok){
     }
     /* At the start another helper may hold the storage lease (2026-11-14, on the phone: the check
        ended OPERATION_BUSY and a plan from the Android app was not offered until a restart). It is
-       asked again a few seconds later, a minute at most. */
+       asked again, each time twice as late, for about a minute and a half. */
     if(!ok&&j&&a->aplan_tries<APLAN_TRIES){
         char code[48]={0};int e=json_get(j,0,"error");if(e>=0)jstring(j,e,"code",code,sizeof(code));
-        if(!strcmp(code,"OPERATION_BUSY")){a->aplan_tries++;a->aplan_asked=false;a->aplan_retry_at=a->now+APLAN_RETRY_MS;return;}
+        if(!strcmp(code,"OPERATION_BUSY")){a->aplan_asked=false;a->aplan_retry_at=a->now+((uint64_t)APLAN_RETRY_MS<<a->aplan_tries);a->aplan_tries++;return;}
     }
     a->aplan_known=true;a->aplan_present=a->aplan_valid=false;a->aplan_error[0]=0;
     if(!ok||!j){a->dirty=true;return;}

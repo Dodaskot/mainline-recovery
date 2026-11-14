@@ -115,6 +115,9 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
         if(json_bool(j,json_get(j,0,"packages_unsupported"),0)==1)append(a->message,sizeof(a->message),tr("This system's package manager is not known here: the packages were not installed."));
         else{snprintf(line,sizeof(line),T("Packages there: %u; not in this system: %u"),installed,lost);append(a->message,sizeof(a->message),line);}
         append(a->message,sizeof(a->message),"\n");
+        /* Left out because the system could not be upgraded first: counted apart (2026-11-14 review). */
+        unsigned int skipped=(unsigned int)json_uint(j,json_get(j,0,"packages_skipped"),0);
+        if(skipped){snprintf(line,sizeof(line),T("Packages not installed now: %u"),skipped);append(a->message,sizeof(a->message),line);append(a->message,sizeof(a->message),"\n");}
         if(missing[0]){append(a->message,sizeof(a->message),missing);append(a->message,sizeof(a->message),"\n");}
     }
     if(note[0])append(a->message,sizeof(a->message),tr(note));

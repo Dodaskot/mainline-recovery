@@ -177,6 +177,7 @@ typedef struct { char label[40],value[72],unit[12];unsigned char section; } SysR
 #define TRANSITION_DISSOLVE_MS 420u
 #define SETTINGS_DELAY_MS 3000u
 #define SETTINGS_RETRY_MS 10000u
+#define SETTINGS_RETRY_MAX_MS 300000u   /* a save kept in RAM is tried again ever less often, 5 min at most */
 #define SLEEP_POLL_MS 1000
 enum TransitionKind { TR_NONE,TR_OPEN,TR_CLOSE,TR_THEME,TR_SLIDE,TR_SLIDE_BACK,TR_FADE,TR_DISSOLVE };
 enum AnimationStyle { ANIM_ZOOM,ANIM_BLUR,ANIM_SLIDE,ANIM_FADE,ANIM_DISSOLVE,ANIM_OFF,ANIMATION_COUNT };
@@ -378,7 +379,7 @@ typedef struct {
     enum Screen nav_trail[NAV_TRAIL];int nav_depth;bool nav_backing,nav_hold;
     enum Screen job_page;bool job_page_mark,job_orphan,job_completing;
     unsigned int splash_percent,splash_from,animation,lock_mode,lock_pending_mode,access_mode,lock_failures;int lock_flow,lock_start_y,lock_drag,lock_kept_kind,access_kind,settings_broken;
-    uint64_t job_started,nav_settle_end,lock_wait_until,lock_shake_until,access_checked;int nav_settle_kind,nav_settle_amount;enum Screen lock_return,access_return;bool lock_frame_pending,lock_opened,lock_keyboard,lock_digits,tools_export_next,terminal_autostart,power_held,gesture_ready,gesture_terminal,usb_volumes_known,usb_mounting,usb_refresh_after;unsigned int nav_mode;int gesture,gesture_x0,gesture_y0,gesture_x,gesture_y,gesture_anchor_y,usb_rows[USB_VOLUME_ROWS],usb_row_count;uint64_t gesture_still_at;uint32_t*menu_backdrop;enum Screen menu_return;char usb_want[128];pid_t settings_pid;uint64_t settings_retry_at;uint32_t*lock_backdrop;
+    uint64_t job_started,nav_settle_end,lock_wait_until,lock_shake_until,access_checked;int nav_settle_kind,nav_settle_amount;enum Screen lock_return,access_return;bool lock_frame_pending,lock_opened,lock_keyboard,lock_digits,tools_export_next,terminal_autostart,power_held,gesture_ready,gesture_terminal,usb_volumes_known,usb_mounting,usb_refresh_after;unsigned int nav_mode;int gesture,gesture_x0,gesture_y0,gesture_x,gesture_y,gesture_anchor_y,usb_rows[USB_VOLUME_ROWS],usb_row_count;uint64_t gesture_still_at;uint32_t*menu_backdrop;enum Screen menu_return;char usb_want[128];pid_t settings_pid;uint64_t settings_retry_at;unsigned int settings_retries;uint32_t*lock_backdrop;
     char lock_note[96],lock_old[128],lock_new[128],lock_kept[PATH_LEN],access_id[40],access_channel[8],access_peer[72],access_prompt[PATH_LEN];
     char adb_id[40],adb_answered[40],adb_fingerprint[64],adb_comment[100],adb_peer[72];uint64_t adb_checked;enum Screen adb_return; /* An ADB key asked about on the phone. */
     uint64_t pressed_at,now;
@@ -4280,7 +4281,14 @@ static void settings_poll(App*a){
     if(!a->settings_pid)return;
     int status=0;pid_t got=waitpid(a->settings_pid,&status,WNOHANG);if(!got)return;
     a->settings_pid=0;
-    if(got>0&&WIFEXITED(status)&&WEXITSTATUS(status)==3){a->settings_dirty=true;a->settings_retry_at=a->now+SETTINGS_RETRY_MS;}
+    /* Kept in RAM (3): tried again after 10 s, then each time twice as late, 5 min at most (2026-11-14
+       review: a cache that cannot take the settings had python started and cache mounted every 10 s
+       for as long as the recovery ran). Saved: the next one starts from 10 s again. */
+    if(got>0&&WIFEXITED(status)&&WEXITSTATUS(status)==3){
+        uint64_t wait=SETTINGS_RETRY_MS;for(unsigned int n=0;n<a->settings_retries&&wait<SETTINGS_RETRY_MAX_MS;n++)wait*=2;
+        if(wait>SETTINGS_RETRY_MAX_MS)wait=SETTINGS_RETRY_MAX_MS;
+        a->settings_dirty=true;a->settings_retry_at=a->now+wait;a->settings_retries++;
+    }else if(got>0)a->settings_retries=0;
 }
 static void settings_flush(App*a){
     settings_poll(a);

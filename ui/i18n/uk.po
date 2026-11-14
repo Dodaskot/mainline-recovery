@@ -3318,6 +3318,9 @@ msgstr "Пакети йдуть через Wi-Fi recovery: це триває 10�
 msgid "Packages need Wi-Fi in the recovery: connect, then restore Packages alone."
 msgstr "Пакетам потрібен Wi-Fi у recovery: під’єднайтеся, а потім відновіть лише «Пакети»."
 
+msgid "Packages not installed now: %u"
+msgstr "Пакети, не встановлені зараз: %u"
+
 msgid "Packages there: %u; not in this system: %u"
 msgstr "Пакетів на місці: %u; немає в цій системі: %u"
 

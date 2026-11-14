@@ -53,7 +53,7 @@ import sys
 import time
 
 import filesystem as fs
-from lp_metadata import BLKFLSBUF  # one definition
+from lp_metadata import drop_cached  # the one way to drop what a node remembers
 import install
 from install import require
 from operation_lock import operation_lock
@@ -182,7 +182,7 @@ class Device:
 
     def flush(self, fd):
         os.fsync(fd)
-        fcntl.ioctl(fd, BLKFLSBUF)
+        drop_cached(fd)
 
     def zero(self, fd, start, length):
         """The range made zeros by the kernel, which this phone's eMMC does by trimming it: far

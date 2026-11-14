@@ -476,8 +476,7 @@ def native_install(context, room, fd, sizes, found, progress):
                         while at < len(image):
                             at += os.pwrite(writer, image[at:at + (1 << 20)], at)
                         os.fsync(writer)
-                        if context.mode == 'device':
-                            fcntl.ioctl(writer, lp.BLKFLSBUF)
+                        lp.drop_cached(writer)
                     finally:
                         os.close(writer)
                     require(install.target_hash(context, target) == hashlib.sha256(image).hexdigest(), 'READBACK_MISMATCH',
@@ -802,10 +801,16 @@ def report_start(fd, error=None):
                                              'message': str(error)[:300]}).encode())
 
 
+def room_failed(reason=None):
+    """The error of a room that could not be made (one text, 2026-11-14 review)."""
+    return {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared',
+            **({'reason': reason[:240]} if reason else {})}
+
+
 def read_start(fd):
     """(ready, error) from the started channel, read after the run ended: READY when E came first
     (the room was made and exec was called), ERROR the F that followed (exec failed) or came alone
-    (the room could not be made); see started()."""
+    (the room could not be made), or a room failure when nothing came; see started()."""
     data = b''
     os.set_blocking(fd, False)
     while True:
@@ -817,10 +822,12 @@ def read_start(fd):
             break
         data += chunk
     ready = data.startswith(b'E')
-    error = None if ready else {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}
+    error = None if ready else room_failed()
     at = data.find(b'F')
     if at >= 0:
-        error = error or {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}
+        # An F that cannot be read after E is still an exec that failed, never a room failure
+        # (2026-11-14 review: the room's text went into the installer's log).
+        error = {'code': 'ZIP_INSTALLER_NOT_STARTED', 'message': 'exec failed'} if ready else room_failed()
         with contextlib.suppress(ValueError):
             value = json.loads(data[at + 1:])
             if isinstance(value, dict) and isinstance(value.get('code'), str) and isinstance(value.get('message'), str):
@@ -839,8 +846,7 @@ def started(ready, error, kind):
     if error is None:
         return True, None, None
     if kind == 'script':
-        return False, {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared',
-                       'reason': error['message'][:240]}, None
+        return False, room_failed(error['message']), None
     return True, None, error
 
 
@@ -850,7 +856,7 @@ def check_installer(path, expected):
     require(hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, 'ZIP_CHANGED', 'The ZIP changed after it was reviewed')
 
 
-def room_child(room, zip_fd, out_fd, kind, expected, started=None):
+def room_child(room, zip_fd, out_fd, kind, expected, started_fd=None):
     """The process the installer runs in: new spaces, the room, then update-binary as TWRP calls it."""
     os.setsid()
     os.unshare(os.CLONE_NEWNS | os.CLONE_NEWPID | os.CLONE_NEWIPC | os.CLONE_NEWUTS)
@@ -862,8 +868,8 @@ def room_child(room, zip_fd, out_fd, kind, expected, started=None):
     if pid:
         # This process shares the room's mounts and stays outside its root: it stands in for ueventd.
         os.close(slave)
-        if started is not None:
-            os.close(started)
+        if started_fd is not None:
+            os.close(started_fd)
         os.set_blocking(master, False)
         st = os.stat(room.found['super']['path'])
         mapper = Mapper(room.root / 'dev/block', room.mapped_before, '%d:%d' % (os.major(st.st_rdev), os.minor(st.st_rdev)))
@@ -924,15 +930,15 @@ def room_child(room, zip_fd, out_fd, kind, expected, started=None):
         env = {'PATH': '/sbin:/system/bin:/bin', 'HOME': '/tmp', 'TMPDIR': '/tmp', 'ANDROID_ROOT': '/system', 'ANDROID_DATA': '/data',
                'EXTERNAL_STORAGE': '/sdcard', 'SHELL': '/sbin/sh', 'ASH_STANDALONE': '1'}
         command = ['/sbin/sh', '/tmp/update-binary'] if kind == 'script' else ['/tmp/update-binary']
-        report_start(started)
+        report_start(started_fd)
         os.execve(command[0], command + ['3', '9', '/tmp/install.zip'], env)
     except BaseException as error:  # noqa: BLE001 - reported to the parent through the started channel and stderr
         sys.stderr.write('room: %s\n' % error)
-        report_start(started, error)
+        report_start(started_fd, error)
         os._exit(126)
 
 
-def fixture_child(context, found, zip_fd, out_fd, kind, expected, started=None):
+def fixture_child(context, found, zip_fd, out_fd, kind, expected, started_fd=None):
     """Tests: the installer as a plain process in a folder of its own; its devices are the fixture's
     partition files under $A22X_ZIP_ROOT/dev/block/by-name."""
     root = context.root / 'zip-room'
@@ -950,7 +956,7 @@ def fixture_child(context, found, zip_fd, out_fd, kind, expected, started=None):
     os.set_inheritable(9, True)
     os.chdir(root / 'tmp')
     require(kind == 'script', 'ZIP_INSTALLER_INVALID', 'Fixtures run script installers only')
-    report_start(started)
+    report_start(started_fd)
     os.execve('/bin/sh', ['/bin/sh', 'update-binary', '3', '9', str(root / 'tmp/install.zip')],
               {'PATH': '/usr/bin:/bin', 'A22X_ZIP_ROOT': str(root), 'TMPDIR': str(root / 'tmp')})
 

@@ -3318,6 +3318,9 @@ msgstr "Pakiety idą przez Wi-Fi recovery: to trwa 10–30 minut. Nie wyłączaj
 msgid "Packages need Wi-Fi in the recovery: connect, then restore Packages alone."
 msgstr "Pakiety wymagają Wi-Fi w recovery: połącz się, a potem przywróć same Pakiety."
 
+msgid "Packages not installed now: %u"
+msgstr "Pakiety teraz niezainstalowane: %u"
+
 msgid "Packages there: %u; not in this system: %u"
 msgstr "Pakiety na miejscu: %u; brak w tym systemie: %u"
 

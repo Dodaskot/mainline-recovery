@@ -75,6 +75,17 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   on a block device fails the readback instead of passing it from the cache; the check for a plan
   from the Android app is asked again when storage is busy at the start (seen on the phone).
 
+- **Fixes from the fifth review** (17 findings): where settings, themes and the saved Wi-Fi list
+  go is one rule, `settings.choose`, a pure function: settings are written only when they can be
+  read now, where the next start reads them; a volume this recovery never writes (Android's
+  encryption, erofs) is told apart from one that cannot be written at this moment (busy, mounted by
+  another owner, checked on the phone), which keeps a save in RAM and is tried again ever less
+  often; every pair of states of both volumes is tested against what the next start reads. The
+  Wi-Fi list is changed in one locked read and write, and a busy list is retried by the hand-off. A
+  failed Arch upgrade no longer ends the Linux data helper with a traceback; its skipped packages are
+  shown. One limit holds for a Linux data archive, and a home is offered only when it fits beside
+  the settings. Every writer drops the page cache through one helper.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

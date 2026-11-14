@@ -195,7 +195,7 @@ class TestControlSocket(unittest.TestCase):
         self.disk = Path(self.tmp.name, 'disk')
         self.disk.mkdir()
         for name, value in (('RUN', run_dir), ('SAVED_RAM', Path(self.tmp.name, 'saved-ram.json')),
-                            ('_settings_volumes', lambda mode, action: action(self.disk)),
+                            ('_settings_volumes', lambda mode, action: ('ok', action(self.disk))),
                             ('interface_up', lambda: True), ('supplicant_running', lambda: True),
                             ('driver_up', lambda: None), ('start_supplicant', lambda: None), ('stop_dhcp', lambda: None),
                             ('dhcp', lambda: '10.42.0.23'), ('address', lambda: '10.42.0.23'),
@@ -268,7 +268,7 @@ class TestControlSocket(unittest.TestCase):
         (self.disk / 'a22x-recovery').mkdir()
         (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [
             {'ssid_hex': b'Other'.hex(), 'psk': 'a' * 64, 'added': 1}]}))
-        with mock.patch.object(w, '_settings_volumes', lambda mode, action: None):
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('busy', None)):
             self.assertIsNone(w.remember(b'Home', FakeSupplicant.KEY))
             with self.assertRaises(w.WifiError) as caught:
                 w.forget(b'Other')
@@ -285,7 +285,7 @@ class TestControlSocket(unittest.TestCase):
         (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [
             {'ssid_hex': b'Other'.hex(), 'psk': 'a' * 64, 'added': 1}]}))
         self.assertTrue(w.connect(b'Home', 'correct horse', True)['remembered'])
-        with mock.patch.object(w, '_settings_volumes', lambda mode, action: action(self.disk) if mode == 'ro' else None):
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('ok', action(self.disk)) if mode == 'ro' else ('failed', None)):
             with self.assertRaises(w.WifiError) as caught:
                 w.forget(b'Other')
             self.assertEqual(caught.exception.code, 'WIFI_SAVED_UNWRITTEN')
@@ -293,7 +293,7 @@ class TestControlSocket(unittest.TestCase):
             self.assertIn(b'Other'.hex(), [n['ssid_hex'] for n in w.saved_known()])
             with self.assertRaises(w.WifiError):
                 w.forget(b'Other')
-        with mock.patch.object(w, 'saved_known', return_value=None):
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('busy', None)):
             joined = w.connect(b'Home', 'correct horse', True)
         self.assertTrue(joined['connected'])
         self.assertFalse(joined['remembered'])
@@ -314,6 +314,24 @@ class TestControlSocket(unittest.TestCase):
         self.assertFalse(ram.exists())
         self.assertEqual([bytes.fromhex(n['ssid_hex']) for n in w.saved_known()], [b'Home'])
         self.assertTrue(ram.exists())
+
+    def test_a_change_reads_the_disk_under_the_lock_and_a_busy_list_is_told_apart(self):
+        # 2026-11-14 review: remember read the list from RAM outside the lock, so a network another
+        # writer had just saved was lost; and a busy volume was said as a failed write, which the
+        # hand-off never tries again.
+        (self.disk / 'a22x-recovery').mkdir()
+        ram = Path(self.tmp.name, 'saved-ram.json')
+        ram.write_text(json.dumps({'networks': [{'ssid_hex': b'Old'.hex(), 'psk': 'a' * 64}]}))
+        (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [
+            {'ssid_hex': b'Old'.hex(), 'psk': 'a' * 64}, {'ssid_hex': b'Other'.hex(), 'psk': 'b' * 64}]}))
+        self.assertTrue(w.remember(b'Home', FakeSupplicant.KEY))
+        names = [bytes.fromhex(n['ssid_hex']) for n in json.loads((self.disk / 'a22x-recovery/wifi.json').read_text())['networks']]
+        self.assertEqual(names, [b'Home', b'Old', b'Other'])
+        self.assertEqual([bytes.fromhex(n['ssid_hex']) for n in w.saved_known()], [b'Home', b'Old', b'Other'])
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('busy', None)):
+            self.assertIsNone(w.remember(b'Next', FakeSupplicant.KEY))
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: ('failed', None)):
+            self.assertIs(w.remember(b'Next', FakeSupplicant.KEY), False)
 
     def test_a_damaged_saved_list_holds_no_network(self):
         # 2026-11-14 review: a list, or entries that are no objects, raised AttributeError.

@@ -4,7 +4,7 @@
 #define LANGUAGE_COUNT 6
 static const char*const language_codes[LANGUAGE_COUNT]={"en","uk","de","es","fr","pl"};
 static const char*const language_names[LANGUAGE_COUNT]={"English","Українська","Deutsch","Español","Français","Polski"};
-#define MESSAGE_COUNT 2216
+#define MESSAGE_COUNT 2217
 static const char*const message_ids[MESSAGE_COUNT]={
 "  /  skip-identical",
 " / preview truncated",
@@ -1083,6 +1083,7 @@ static const char*const message_ids[MESSAGE_COUNT]={
 "Packages",
 "Packages come over the recovery's Wi-Fi: this takes 10-30 minutes. Keep the phone powered.",
 "Packages need Wi-Fi in the recovery: connect, then restore Packages alone.",
+"Packages not installed now: %u",
 "Packages there: %u; not in this system: %u",
 "Packages were not installed: the system could not be upgraded first (pacman -Syu). Upgrade it, then restore Packages alone.",
 "Packages, the account and the desktop are set up as you choose on the next pages.",
@@ -3302,6 +3303,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Пакети",
 "Пакети йдуть через Wi-Fi recovery: це триває 10–30 хвилин. Тримайте телефон увімкненим.",
 "Пакетам потрібен Wi-Fi у recovery: під’єднайтеся, а потім відновіть лише «Пакети».",
+"Пакети, не встановлені зараз: %u",
 "Пакетів на місці: %u; немає в цій системі: %u",
 "Пакети не встановлено: систему не вдалося спершу оновити (pacman -Syu). Оновіть її, а тоді відновіть лише «Пакети».",
 "Пакети, обліковий запис і робочий стіл налаштуються так, як ви виберете на наступних сторінках.",
@@ -5520,6 +5522,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Pakete",
 "Pakete kommen über das WLAN des Recovery: das dauert 10–30 Minuten. Telefon eingeschaltet lassen.",
 "Pakete brauchen WLAN im Recovery: verbinden, dann nur »Pakete« wiederherstellen.",
+"Jetzt nicht installierte Pakete: %u",
 "Pakete vorhanden: %u; nicht in diesem System: %u",
 "Pakete wurden nicht installiert: Das System konnte nicht zuerst aktualisiert werden (pacman -Syu). Aktualisieren Sie es und stellen Sie dann nur »Pakete« wieder her.",
 "Pakete, Konto und Desktop werden so eingerichtet, wie Sie es auf den nächsten Seiten wählen.",
@@ -7738,6 +7741,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Paquetes",
 "Los paquetes llegan por el Wi-Fi del recovery: tarda de 10 a 30 minutos. Mantén el teléfono encendido.",
 "Los paquetes necesitan Wi-Fi en el recovery: conéctate y restaura solo Paquetes.",
+"Paquetes no instalados ahora: %u",
 "Paquetes presentes: %u; no existen en este sistema: %u",
 "No se instalaron los paquetes: no se pudo actualizar antes el sistema (pacman -Syu). Actualícelo y después restaure solo «Paquetes».",
 "Los paquetes, la cuenta y el escritorio se configuran como elijas en las páginas siguientes.",
@@ -9956,6 +9960,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Paquets",
 "Les paquets passent par le Wi-Fi du recovery : cela prend 10 à 30 minutes. Gardez le téléphone allumé.",
 "Les paquets ont besoin du Wi-Fi dans le recovery : connectez-vous, puis restaurez Paquets seul.",
+"Paquets non installés pour l’instant : %u",
 "Paquets présents : %u ; absents de ce système : %u",
 "Les paquets n'ont pas été installés : le système n'a pas pu être mis à jour d'abord (pacman -Syu). Mettez-le à jour, puis restaurez seulement « Paquets ».",
 "Les paquets, le compte et le bureau sont configurés selon vos choix sur les pages suivantes.",
@@ -12174,6 +12179,7 @@ static const char*const message_text[LANGUAGE_COUNT-1][MESSAGE_COUNT]={
 "Pakiety",
 "Pakiety idą przez Wi-Fi recovery: to trwa 10–30 minut. Nie wyłączaj telefonu.",
 "Pakiety wymagają Wi-Fi w recovery: połącz się, a potem przywróć same Pakiety.",
+"Pakiety teraz niezainstalowane: %u",
 "Pakiety na miejscu: %u; brak w tym systemie: %u",
 "Nie zainstalowano pakietów: nie udało się najpierw zaktualizować systemu (pacman -Syu). Zaktualizuj go, a potem przywróć same «Pakiety».",
 "Pakiety, konto i pulpit zostaną skonfigurowane tak, jak wybierzesz na kolejnych stronach.",

@@ -143,59 +143,104 @@ class Damaged(unittest.TestCase):
         self.assertFalse(settings.write_disk({'theme': 'z'}))
         self.assertFalse((self.root / 'cache' / settings.RELATIVE).exists())
 
-    # Each state a settings volume can be in, for the table in settings.settings_root.
-    STATES = {  # holds the file, opens read-only, opens for writing, write_supported, there
-        'file': (True, True, True, True, True), 'file-busy': (True, True, False, True, True),
-        'file-never': (True, True, False, False, True), 'empty': (False, True, True, True, True),
-        'busy': (False, True, False, True, True), 'never': (False, True, False, False, True),
-        'dead': (False, False, False, True, True), 'absent': (False, False, False, True, False)}
-    TABLE = [  # cache, userdata, where a write goes (or what it raises)
-        ('file', 'file', 'cache'), ('file', 'empty', 'cache'), ('file', 'dead', 'cache'), ('file', 'never', 'cache'),
-        ('file-busy', 'empty', settings.Unreadable), ('file-busy', 'file', settings.Unreadable),
-        ('file-never', 'empty', settings.Unreadable),
-        ('empty', 'file', 'userdata'), ('empty', 'file-never', settings.Unreadable), ('empty', 'empty', 'cache'),
-        ('empty', 'never', 'cache'), ('empty', 'absent', 'cache'), ('empty', 'dead', settings.Unreadable),
-        ('busy', 'file', 'userdata'), ('busy', 'empty', settings.Unreadable), ('busy', 'never', settings.Unreadable),
-        ('busy', 'absent', settings.Unreadable),
-        ('never', 'empty', 'userdata'), ('never', 'file', 'userdata'), ('never', 'never', OSError),
-        ('dead', 'empty', settings.Unreadable), ('dead', 'file', settings.Unreadable),
-        ('absent', 'empty', 'userdata'), ('absent', 'file', 'userdata'), ('absent', 'never', OSError),
-        ('absent', 'absent', OSError)]
+    # Every state a settings volume can be in (2026-11-14, four reviews): there or not, mounted by
+    # another owner, never writable here (Android's encryption), writable only later, unreadable;
+    # each with the settings file or without it.
+    KINDS = {  # mountable, mounted, write_supported, read_only_reason_code, opens read-only, opens for writing
+        'absent': (False, False, False, None, False, False),
+        'now': (True, False, True, None, True, True),
+        'later': (True, False, True, None, True, False),
+        'outside': (False, True, False, None, True, False),
+        'never': (True, False, False, 'FSCRYPT_KEYS_UNAVAILABLE', True, False),
+        'dead': (True, False, True, None, False, False)}
+    STATES = ['absent'] + [kind + suffix for kind in ('now', 'later', 'outside', 'never', 'dead') for suffix in ('', '+file')]
 
-    def arrange(self, cache, userdata):
-        for label, state in (('cache', cache), ('userdata', userdata)):
-            holds, readable, writable, supported, there = self.STATES[state]
+    def every_state(self, cache, userdata, probe):
+        kinds = {'cache': cache, 'userdata': userdata}
+        violations = []
+
+        class Context(FakeContext):
+            def volume(self, label):
+                mountable, mounted, supported, code = Damaged.KINDS[kinds[label].split('+')[0]][:4]
+                return {'mounted': mounted, 'volume_token': 't-' + label, 'fs_type': 'ext4', 'mountable': mountable,
+                        'write_supported': supported, 'read_only_reason_code': code}
+
+        @contextlib.contextmanager
+        def volume_root(context, label, mode):
+            kind = kinds[label].split('+')[0]
+            ro, rw = self.KINDS[kind][4:]
+            if mode == 'rw' and kind == 'never':
+                violations.append(label)
+            if not (rw if mode == 'rw' else ro):
+                raise OSError('cannot open %s %s' % (label, mode))
+            self.calls.append(('open', label, mode))
+            yield self.root / label
+        for label, state in kinds.items():
             path = self.root / label / settings.RELATIVE
             path.unlink(missing_ok=True)
-            if holds:
-                path.write_text(json.dumps(GOOD))
-            self.readable[label], self.writable[label] = readable, writable
-            FakeContext.supported[label], FakeContext.mountable[label] = supported, there
-        self.addCleanup(lambda: (FakeContext.supported.update(cache=True, userdata=True),
-                                 FakeContext.mountable.update(cache=True, userdata=True)))
+            if state.endswith('+file'):
+                path.write_text(json.dumps({**GOOD, 'theme': 'before-' + label}))
+        with mock.patch.object(settings, 'volume_root', volume_root), \
+                mock.patch.object(settings.fs, 'DeviceContext', lambda: Context(self.root, self.calls)):
+            return probe(), violations
 
-    def test_every_state_of_both_volumes_writes_where_the_next_start_reads(self):
-        # 2026-11-14, three reviews of three attempts: one table for every state, each row tested.
-        for cache, userdata, expected in self.TABLE:
+    def read_now(self):
+        try:
+            return settings.read_disk()
+        except OSError as error:
+            return error
+
+    def test_every_state_of_both_volumes_writes_only_where_the_next_start_reads(self):
+        # One rule (settings.choose), checked against read_disk for all 121 pairs of states.
+        for cache in self.STATES:
+            for userdata in self.STATES:
+                with self.subTest(cache=cache, userdata=userdata):
+                    def probe():
+                        before = self.read_now()
+                        self.calls.clear()
+                        written = settings.write_disk({'theme': 'y'})
+                        opens = [call[1] for call in self.calls if call[0] == 'open']
+                        after = self.read_now()
+                        return before, written, opens, after
+                    (before, written, opens, after), violations = self.every_state(cache, userdata, probe)
+                    self.assertEqual(violations, [])  # a volume never writable here is never opened for writing
+                    self.assertLessEqual(max([opens.count(label) for label in ('cache', 'userdata')]), 1, opens)
+                    landed = [label for label in ('cache', 'userdata')
+                              if (self.root / label / settings.RELATIVE).is_file()
+                              and json.loads((self.root / label / settings.RELATIVE).read_text()).get('theme') == 'y']
+                    kinds = {'cache': cache.split('+')[0], 'userdata': userdata.split('+')[0]}
+                    holder = next((label for label in ('cache', 'userdata') if (cache, userdata)[label == 'userdata'].endswith('+file')
+                                   and kinds[label] not in ('absent', 'dead')), None)
+                    if written:
+                        self.assertEqual(len(landed), 1)
+                        # Never written while the settings cannot be read now...
+                        self.assertNotIsInstance(before, OSError)
+                        # ... where they are read from, or with none anywhere, on the first volume that may take them...
+                        first = next(label for label in ('cache', 'userdata') if kinds[label] not in ('absent', 'never'))
+                        self.assertEqual(landed[0], before.get('theme', '').replace('before-', '') if before else first)
+                        # ... and the next start reads what was written.
+                        self.assertEqual(after.get('theme'), 'y')
+                    else:
+                        self.assertEqual(landed, [])
+                        if not isinstance(before, OSError):
+                            # Readable now, yet not written: the volume to write is not writable at this moment.
+                            target = holder or next((label for label in ('cache', 'userdata') if kinds[label] not in ('absent', 'never')), None)
+                            self.assertTrue(target is None or kinds[target] != 'now', (target, kinds))
+
+    def test_the_rows_the_reviews_named(self):
+        expect = {('later', 'now'): None,          # cache busy a moment: kept in RAM, never moved to userdata
+                  ('outside', 'now'): None,        # cache mounted by another owner: the same
+                  ('now', 'never'): 'cache',       # Android's userdata beside an empty cache
+                  ('never', 'now'): 'userdata',    # a cache this recovery never writes
+                  ('absent', 'now'): 'userdata',   # no usable filesystem on cache
+                  ('now', 'later+file'): None,     # the settings are on userdata, not writable now
+                  ('now', 'dead'): None}           # userdata cannot be looked at: the start could not read either
+        for (cache, userdata), target in expect.items():
             with self.subTest(cache=cache, userdata=userdata):
-                self.arrange(cache, userdata)
-                self.calls.clear()
-                written = settings.write_disk({'theme': 'y'})
-                opens = [call[1] for call in self.calls if call[0] == 'open']
-                self.assertLessEqual(max(opens.count('cache'), opens.count('userdata'), 0), 1, opens)
-                landed = [label for label in ('cache', 'userdata')
-                          if (self.root / label / settings.RELATIVE).is_file()
+                written, _ = self.every_state(cache, userdata, lambda: settings.write_disk({'theme': 'y'}))
+                landed = [label for label in ('cache', 'userdata') if (self.root / label / settings.RELATIVE).is_file()
                           and json.loads((self.root / label / settings.RELATIVE).read_text()).get('theme') == 'y']
-                if isinstance(expected, str):
-                    self.assertTrue(written)
-                    self.assertEqual(landed, [expected])
-                    # The next start reads where the write went.
-                    self.assertEqual(self.chosen('ro'), expected)
-                else:
-                    self.assertFalse(written)
-                    self.assertEqual(landed, [])
-                    with self.assertRaises(expected):
-                        self.chosen('rw')
+                self.assertEqual((written, landed), (target is not None, [target] if target else []))
 
     def test_a_theme_that_cannot_be_copied_does_not_lock_the_phone(self):
         # 2026-11-14 review: an EIO on one theme made read_disk say the settings could not be read.

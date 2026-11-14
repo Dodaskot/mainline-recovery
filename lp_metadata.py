@@ -63,7 +63,7 @@ def name_bytes(name):
     return data.ljust(NAME, b'\0')
 
 
-BLKFLSBUF = 0x1261  # the one definition: flash, sdcard, identity_backup and zip_install take it from here
+BLKFLSBUF = 0x1261  # used through drop_cached: every writer drops the cache through it (2026-11-14 review)
 
 
 def drop_cached(fd):

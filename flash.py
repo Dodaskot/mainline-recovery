@@ -14,7 +14,6 @@ calibration data are never reachable from here.
 """
 import argparse
 import contextlib
-import fcntl
 import hashlib
 import json
 import lzma
@@ -74,7 +73,6 @@ CHECKSUM_FILE_LIMIT = 1 << 20
 PREFIX = 8192
 ROLLBACK_LIMIT = 64 * 1024 * 1024
 ROLLBACK_FOLDER = 'A22xPartitionBackups'
-BLKFLSBUF = lp.BLKFLSBUF
 
 
 class Lz4Reader:
@@ -749,8 +747,7 @@ def restore_copy(context, target, rollback, progress):
                 done += len(data)
                 progress('Putting the old content back', target, done)
             os.fsync(writer)
-            if context.mode == 'device':
-                fcntl.ioctl(writer, BLKFLSBUF)
+            lp.drop_cached(writer)
         finally:
             os.close(writer)
         return read_back(context, target, progress) == rollback['sha256']
@@ -949,8 +946,7 @@ def write_logical_content(context, args, progress, name, fd, compression, found,
     finally:
         close_reader(reader)
     image_sha = image.hexdigest()
-    if context.mode == 'device':
-        fcntl.ioctl(sfd, BLKFLSBUF)
+    lp.drop_cached(sfd)
     if length != args.image_bytes or image_sha != args.expected_sha256:
         fs.fail('IMAGE_CHANGED', 'The file changed during the write. Flash the partition again from a good image',
                 rollback=rollback)
@@ -1118,8 +1114,7 @@ def write(context, args, progress):
                         position += len(data)
                         progress('Writing', target, position)
                     os.fsync(writer)
-                    if context.mode == 'device':
-                        fcntl.ioctl(writer, BLKFLSBUF)
+                    lp.drop_cached(writer)
                 finally:
                     close_reader(reader)
                     os.close(writer)

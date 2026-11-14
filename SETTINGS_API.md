@@ -1,9 +1,19 @@
 # Settings helper
 
 `settings.py` keeps preferences and the optional password in
-`a22x-recovery/settings.json` on `cache`, or on `userdata` when `cache` cannot be
-used. Recovery runs from RAM, and `cache` survives a userdata wipe and an Android
+`a22x-recovery/settings.json` on `cache`, or on `userdata` when `cache` holds no
+filesystem this recovery can ever write (none at all, or one that is only read here).
+Recovery runs from RAM, and `cache` survives a userdata wipe and an Android
 install. `/run/a22x-recovery/settings.json` avoids a mount for every read.
+
+A save goes where the next start reads the settings, and only then: to the volume
+that holds them, or, when none does, to the first volume that can ever take them.
+When that volume cannot be written at this moment (busy, mounted by another owner,
+read-only for now), nothing is moved elsewhere: the save stays in RAM (exit 3) and
+the interface tries again after 10 s, then each time twice as late, 5 min at most.
+The rule is `settings.choose`; its tests check every state of both volumes against
+what the next start reads. The saved Wi-Fi networks (`a22x-recovery/wifi.json`)
+follow the same rule.
 
 ```
 settings.py status
