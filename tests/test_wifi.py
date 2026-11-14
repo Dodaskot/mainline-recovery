@@ -384,6 +384,32 @@ class TestControlSocket(unittest.TestCase):
         self.assertEqual([bytes.fromhex(n['ssid_hex']) for n in json.loads((self.disk / 'a22x-recovery/wifi.json').read_text())['networks']],
                          [b'Home'])
 
+    def test_the_list_never_removes_the_folder_that_holds_the_settings(self):
+        # 2026-11-14 review: clearing the path of wifi.json removed a22x-recovery itself when it was a
+        # link (to a real folder) or a file, the settings and their password with it.
+        real = self.disk / 'real-folder'
+        real.mkdir()
+        (real / 'settings.json').write_text('{"hash": "kept"}')
+        (self.disk / 'a22x-recovery').symlink_to('real-folder')
+        Path(self.tmp.name, 'saved-ram.json').unlink(missing_ok=True)
+        self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), False)
+        self.assertTrue((self.disk / 'a22x-recovery').is_symlink())
+        self.assertEqual((real / 'settings.json').read_text(), '{"hash": "kept"}')
+        (self.disk / 'a22x-recovery').unlink()
+        (self.disk / 'a22x-recovery').write_text('a file')
+        self.assertIs(w.remember(b'Home', FakeSupplicant.KEY), False)
+        self.assertEqual((self.disk / 'a22x-recovery').read_text(), 'a file')
+
+    def test_a_copy_in_ram_that_is_a_folder_is_set_right_from_the_disk(self):
+        # 2026-11-14 review: the list stayed unavailable until a restart.
+        (self.disk / 'a22x-recovery').mkdir()
+        (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [{'ssid_hex': b'Home'.hex(), 'psk': 'a' * 64}]}))
+        ram = Path(self.tmp.name, 'saved-ram.json')
+        ram.unlink(missing_ok=True)
+        ram.mkdir()
+        self.assertEqual([bytes.fromhex(n['ssid_hex']) for n in w.saved_known()], [b'Home'])
+        self.assertTrue(ram.is_file())
+
     def test_forget_refreshes_a_stale_copy_in_ram(self):
         # 2026-11-14 review: forget found the network gone from the disk and left RAM still naming it.
         (self.disk / 'a22x-recovery').mkdir()

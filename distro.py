@@ -1868,7 +1868,7 @@ def saved_key(context, ssid):
         # wifi.py's own reading of a list (2026-11-14 review: a list of JSON that was no object raised
         # AttributeError here, past every handler).
         try:
-            networks = wifi._networks(json.loads((context.root / 'wifi-saved.json').read_text()))
+            networks = wifi.networks_of(json.loads((context.root / 'wifi-saved.json').read_text()))
         except FileNotFoundError:
             networks = []
         except (OSError, ValueError):

@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import stat
+import threading
 import time
 
 ENV_FD = 'A22X_RECOVERY_LOCK_FD'
@@ -13,7 +14,16 @@ DEVICE_LOCK = '/run/lock/a22x-mainline-recovery.lock'
 # The leases this process holds now, by lock path. A second flock of the same file through a new
 # descriptor would be refused even inside the same process, so a step that needs the lease asks
 # held() first and then runs inside the caller's lease (filesystem.py close_logical, 2026-11-12).
+# Each entry is (normalized lock path, thread): a lease is lent only within the thread that holds it
+# (2026-11-14 review: adbd's threads borrowed each other's lease; one read settings from a cache
+# the other had just unmounted, found none, and let adb in without the password).
 _HELD = []
+
+
+def _key(path):
+    """The lock path as operation_lock records it: absolute and normalized (2026-11-14 review: '..'
+    kept in one spelling missed the lease recorded under the other)."""
+    return os.path.normpath(os.path.abspath(str(path)))
 # Set by the interface for a job it starts while its screenshot still holds the lease: until when
 # (CLOCK_MONOTONIC seconds) the job waits for it, MAX_WAIT at most (2026-11-14 review: a job started a
 # second after a screenshot to an unmounted card failed OPERATION_BUSY).
@@ -30,7 +40,7 @@ def _wait_until():
 
 def held(path=DEVICE_LOCK):
     """Whether this process holds the lease for PATH now."""
-    return str(Path(path).absolute()) in _HELD
+    return (_key(path), threading.get_ident()) in _HELD
 
 
 @contextlib.contextmanager
@@ -62,7 +72,7 @@ def operation_lock(path, mode='device'):
     A helper cannot bypass another session's lock by setting the environment: the
     descriptor must name this exact lock, and flock must still succeed.
     """
-    path = Path(path).absolute()
+    path = Path(_key(path))
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     for part in (path, *path.parents):
         if part.is_symlink():
@@ -87,11 +97,12 @@ def operation_lock(path, mode='device'):
                     raise
                 time.sleep(0.05)
         _regular(fd, path)
-        _HELD.append(str(path))
+        mine = (str(path), threading.get_ident())
+        _HELD.append(mine)
         try:
             yield fd
         finally:
-            _HELD.remove(str(path))
+            _HELD.remove(mine)
     finally:
         if fd is not None:
             # Closing the duplicate does not release a parent's shared open-file

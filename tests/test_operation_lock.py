@@ -62,6 +62,27 @@ class OperationLockTest(unittest.TestCase):
             self.assertIsNotNone(fd)
             self.assert_locked()
 
+    def test_a_lease_is_lent_only_within_its_own_thread(self):
+        # 2026-11-14 review: adbd's threads borrowed each other's lease; one read a cache the other had
+        # just unmounted, found no settings, and let adb in without the password.
+        import threading
+        import operation_lock as ol
+        seen = []
+        with operation_lock(self.path, 'fixture'):
+            def other():
+                try:
+                    with ol.lease(self.path, 'fixture'):
+                        seen.append('borrowed')
+                except BlockingIOError:
+                    seen.append('refused')
+            thread = threading.Thread(target=other)
+            thread.start()
+            thread.join()
+            # Spelled with '..', the same lock is found in this thread (2026-11-14 review).
+            odd = Path(self.temp.name) / 'x' / '..' / 'lock'
+            self.assertTrue(ol.held(odd))
+        self.assertEqual(seen, ['refused'])
+
     def test_child_reuses_lease_without_unlocking_parent_and_ui_is_blocked(self):
         with operation_lock(self.path, 'fixture') as fd:
             code = 'from operation_lock import operation_lock; import sys;\nwith operation_lock(sys.argv[1], "device"): print("CHILD_OK")'

@@ -110,6 +110,13 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   no network and is replaced; forgetting a network reads the disk first and keeps RAM in step;
   themes come from the volume that keeps the settings only.
 
+- **Fixes from the ninth review** (9 findings), and a lock that fails closed: once a password is
+  set, a mark at the root of the settings volume says so; settings found nowhere while it is there
+  are damaged, never "no password", so the next unforeseen way of losing them keeps the phone
+  locked until they are reset. A lease is lent only within the thread that holds it; a link where
+  the settings folder should be is damaged; the saved Wi-Fi list never removes the folder that also
+  holds the settings; a RAM copy of the list that cannot be read is set right from the disk.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

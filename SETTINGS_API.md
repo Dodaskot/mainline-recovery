@@ -15,6 +15,11 @@ The rule is `settings.choose`; its tests check every state of both volumes again
 what the next start reads. The saved Wi-Fi networks (`a22x-recovery/wifi.json`)
 follow the same rule.
 
+While a password is set, an empty file `.a22x-recovery-password` stays at the root of
+the volume that keeps the settings. Settings found nowhere while it is there are
+damaged (exit 4), never "no password": the phone stays locked until the damaged
+settings are reset together with userdata. Clearing the password removes it.
+
 ```
 settings.py status
 settings.py set [--language uk] [--theme CODE] [--terminal CODE] [--storage sd|usb]

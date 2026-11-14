@@ -319,6 +319,40 @@ class Damaged(unittest.TestCase):
             with self.assertRaises(settings.Unreadable):
                 settings.read_disk()
 
+    def test_a_dangling_link_for_the_settings_folder_is_damaged(self):
+        # 2026-11-14 review: a link there to a folder not there read as no settings, and the phone opened.
+        folder = self.root / 'cache' / settings.RELATIVE.parent
+        shutil.rmtree(folder)
+        folder.symlink_to('/nonexistent/folder')
+        with self.assertRaises(settings.Damaged):
+            settings.read_disk()
+
+    def test_a_password_once_set_never_reads_as_none(self):
+        # 2026-11-14 review: every way of misreading "not there" opened the phone. The mark of a password
+        # set, outside the settings folder, keeps missing settings locked until they are reset.
+        record = {**GOOD}
+        self.assertTrue(record.get('hash'))
+        self.assertTrue(settings.write_disk(record))
+        mark = self.root / 'cache' / settings.PASSWORD_MARK
+        self.assertTrue(mark.is_file())
+        shutil.rmtree(self.root / 'cache' / settings.RELATIVE.parent)  # whatever took the folder
+        with self.assertRaises(settings.Damaged) as caught:
+            settings.read_disk()
+        self.assertEqual(caught.exception.label, 'cache')
+        self.assertEqual(settings.reset_damaged(), 0)
+        self.assertFalse(mark.exists())
+        self.assertEqual(settings.read_disk(), {})
+        # Clearing the password removes the mark with it.
+        self.assertTrue(settings.write_disk(record))
+        self.assertTrue(mark.is_file())
+        self.assertTrue(settings.write_disk({k: v for k, v in record.items() if k not in ('hash', 'salt')}))
+        self.assertFalse(mark.exists())
+
+    def test_present_says_no_for_a_loop_of_links(self):
+        loop = self.root / 'loop'
+        loop.symlink_to('loop')
+        self.assertFalse(settings.present(loop))
+
     def test_themes_come_from_the_volume_that_keeps_the_settings(self):
         # 2026-11-14 reviews: themes are written where the settings are; a theme or note left on
         # another volume came back at every start whatever removed it.

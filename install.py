@@ -31,7 +31,7 @@ import zlib
 import bootimage
 import filesystem as fs
 from lp_metadata import drop_cached
-from operation_lock import operation_lock, ENV_FD, held as lease_held
+from operation_lock import operation_lock, ENV_FD, lease
 
 CHUNK = 1024 * 1024
 MAX_JSON = 2 * CHUNK
@@ -697,14 +697,11 @@ class DeviceContext:
         nothing may read a partition while super changes under it. Inside the caller's lease when
         it holds one, else under a lease of its own; while another operation runs, nothing is closed
         and the checks refuse super."""
-        if lease_held(self.lock_path):
-            closed = self.fs.close_logical()
-        else:
-            try:
-                with operation_lock(self.lock_path, self.mode):
-                    closed = self.fs.close_logical()
-            except BlockingIOError:
-                return []
+        try:
+            with lease(self.lock_path, self.mode):  # the one borrowing rule (2026-11-14 review)
+                closed = self.fs.close_logical()
+        except BlockingIOError:
+            return []
         if closed:
             # The graph and the mounts were read when this context was made.
             self.raw = _backend_storage().DeviceContext()

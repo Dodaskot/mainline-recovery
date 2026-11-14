@@ -150,49 +150,75 @@ def copy_themes(root):
 
 def present(path):
     """Whether PATH is a regular file (following links): False when nothing is there and for anything
-    that is no regular file; a failure to look (EIO, EACCES) is raised (2026-11-14 review: Path.is_file()
-    answers False to every error). For files this recovery ships or keeps in RAM; whether a volume
-    holds the settings is entry()'s question, where a folder counts as there."""
+    that is no regular file, a loop of links too; a failure to look (EIO, EACCES) is raised
+    (2026-11-14 reviews: Path.is_file() answers False to every error). For files this recovery ships
+    or keeps in RAM; whether a volume holds the settings is entry()'s question."""
     try:
         return stat.S_ISREG(os.stat(path).st_mode)
     except (FileNotFoundError, NotADirectoryError):
         return False
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            return False
+        raise
 
 
-def entry(path):
-    """Whether anything is at PATH, as the settings file: False only when nothing is (ENOENT); a
-    folder, a link, a loop of links, a FIFO, or a file where a folder of the path should be, all count
-    as there, to be read and found damaged; any other failure to look is raised (2026-11-14 reviews:
-    an error, then anything that was no regular file, read as no settings, and the phone opened
-    without its password)."""
+def _folders(root, relative):
+    """The folders of RELATIVE under ROOT, looked at one by one, links never followed: None when one
+    is missing (nothing can be there), False when one is no real folder (a link, a file: whatever is
+    reached through it is damaged, never "not there": 2026-11-14 review of a dangling link there),
+    True when all are real folders."""
+    path = Path(root)
+    for part in Path(relative).parts[:-1]:
+        path = path / part
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            return None
+        if not stat.S_ISDIR(st.st_mode):
+            return False
+    return True
+
+
+def entry(root, relative):
+    """Whether anything is at ROOT/RELATIVE, as the settings file: False only when nothing is (it or
+    one of its folders is missing); a folder, a link, a FIFO there, or a folder of the path that is
+    no real folder, all count as there, to be read and found damaged; any other failure to look is
+    raised (2026-11-14 reviews: an error, then anything that was no regular file, read as no
+    settings, and the phone opened without its password)."""
+    folders = _folders(root, relative)
+    if folders is None:
+        return False
+    if folders is False:
+        return True
     try:
-        os.lstat(path)
+        os.lstat(Path(root) / relative)
         return True
     except FileNotFoundError:
         return False
-    except NotADirectoryError:
-        return True
-    except OSError as error:
-        if error.errno == errno.ELOOP:
-            return True
-        raise
 
 
 class NotRegular(OSError):
     """Where a file should be there is something else."""
 
 
-def read_bytes(path):
-    """The bytes of the regular file at PATH, opened as filesystem.open_regular opens (its type proven
-    on the descriptor, links never followed); None when nothing is there; NotRegular when something
-    else is; OSError when it cannot be read now. One reader for the settings and the saved Wi-Fi list
-    (2026-11-14 review: two copies classified the same states differently)."""
+def read_bytes(root, relative):
+    """The bytes of the regular file at ROOT/RELATIVE, opened as filesystem.open_regular opens (its
+    type proven on the descriptor, links never followed, its folders real folders); None when
+    nothing is there; NotRegular when something else is; OSError when it cannot be read now. One
+    reader for the settings and the saved Wi-Fi list (2026-11-14 review)."""
+    folders = _folders(root, relative)
+    if folders is None:
+        return None
+    if folders is False:
+        raise NotRegular(errno.ENOTDIR, 'A folder of the path is no real folder')
+    path = Path(root) / relative
     try:
         fd = fs.open_regular(path)
     except FileNotFoundError:
         # Gone between the look and the open, or its reopen failed: "not there" only when a look
         # finds nothing (2026-11-14 review: any ENOENT read as no settings).
-        if not entry(path):
+        if not entry(root, relative):
             return None
         raise OSError(errno.EIO, 'The file is there and could not be opened')
     except NotADirectoryError as error:
@@ -211,9 +237,9 @@ def read_bytes(path):
 
 def clear_entry(root, relative):
     """Remove what keeps a regular file from being written at ROOT/RELATIVE: a folder of the path that
-    is no real folder (a file, a link), or at the path itself anything but a regular file (a folder,
-    a link, a FIFO). A regular file there stays."""
-    path = root
+    is no real folder (a file, a link), or at the path itself anything but a regular file. For the
+    reset of damaged settings only, which erases them together with userdata."""
+    path = Path(root)
     for part in Path(relative).parts[:-1]:
         path = path / part
         try:
@@ -223,7 +249,19 @@ def clear_entry(root, relative):
         if not stat.S_ISDIR(st.st_mode):
             os.unlink(path)
             return
-    target = root / relative
+    clear_file(root, relative)
+
+
+def clear_file(root, relative):
+    """Remove ROOT/RELATIVE itself when it is no regular file (a folder, a link, a FIFO), never one of
+    its folders: NotRegular when one of them is no real folder (2026-11-14 review: the Wi-Fi list
+    removed the folder that also holds the settings, their password with them)."""
+    folders = _folders(root, relative)
+    if folders is None:
+        return
+    if folders is False:
+        raise NotRegular(errno.ENOTDIR, 'A folder of the path is no real folder')
+    target = Path(root) / relative
     try:
         st = os.lstat(target)
     except FileNotFoundError:
@@ -234,11 +272,56 @@ def clear_entry(root, relative):
         os.unlink(target)
 
 
-def read_regular(path, label):
-    """The text of the settings file at PATH on LABEL: None when nothing is there; Damaged when what
-    is there is no regular file or no text; Unreadable when it cannot be read now."""
+# Written at the volume's root once a password is set, removed only when it is cleared or the
+# damaged settings are reset: settings found nowhere while it is there are damaged, never "no
+# password" (2026-11-14 review: every way of misreading "not there" opened the phone; with this,
+# the next one keeps it locked). Outside a22x-recovery, so nothing that befalls that folder takes it.
+PASSWORD_MARK = Path('.a22x-recovery-password')
+
+
+def _marked(context):
+    """The first volume there that carries PASSWORD_MARK, or None; Unreadable when one cannot be
+    looked at."""
+    for label in VOLUMES:
+        try:
+            volume = context.volume(label)
+        except fs.FilesystemError:
+            continue
+        if not volume.get('mountable') and not volume.get('mounted'):
+            continue
+        try:
+            with volume_root(context, label, 'ro') as root:
+                if entry(root, PASSWORD_MARK):
+                    return label
+        except (OSError, ValueError, fs.FilesystemError) as error:
+            raise Unreadable('The settings volume %s cannot be read now' % label) from error
+    return None
+
+
+def mark_password(root, record):
+    """PASSWORD_MARK at ROOT while RECORD holds a password; gone when it holds none."""
+    mark = Path(root) / PASSWORD_MARK
+    if record.get('hash'):
+        fd = os.open(mark, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    else:
+        clear_file(root, PASSWORD_MARK)
+        mark.unlink(missing_ok=True)
+    folder = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
     try:
-        data = read_bytes(path)
+        os.fsync(folder)
+    finally:
+        os.close(folder)
+
+
+def read_regular(root, relative, label):
+    """The text of the settings file at ROOT/RELATIVE on LABEL: None when nothing is there; Damaged
+    when what is there is no regular file or no text; Unreadable when it cannot be read now."""
+    try:
+        data = read_bytes(root, relative)
     except NotRegular as error:
         raise Damaged('The settings on %s are damaged' % label, label) from error
     except OSError as error:
@@ -272,15 +355,19 @@ def read_disk():
                 copy_themes(root)
                 # 2026-11-12 review: a file that cannot be read now (EIO, a busy card) is not a
                 # damaged one: it is no reason to offer erasing userdata, and still opens nothing.
-                text = read_regular(root / RELATIVE, label)
-                if text is None:
-                    return {}
-                try:
-                    return checked(json.loads(text), label)
-                except ValueError as error:
-                    if isinstance(error, Damaged):
-                        raise
-                    raise Damaged('The settings on %s are damaged' % label, label) from error
+                text = read_regular(root, RELATIVE, label)
+                if text is not None:
+                    try:
+                        return checked(json.loads(text), label)
+                    except ValueError as error:
+                        if isinstance(error, Damaged):
+                            raise
+                        raise Damaged('The settings on %s are damaged' % label, label) from error
+            # No settings: only when no volume carries the mark of a password set (see PASSWORD_MARK).
+            marked = _marked(context)
+            if marked is not None:
+                raise Damaged('The settings on %s are missing, and a password was set' % marked, marked)
+            return {}
         except (Damaged, Unreadable, NoSettingsVolume):
             raise
         except (OSError, ValueError, fs.FilesystemError) as error:
@@ -359,12 +446,12 @@ def _look(context, label, mode, relative, opened):
             _close(opened)
         else:
             try:
-                return True, entry(root / relative), 'now', root
+                return True, entry(root, relative), 'now', root
             except OSError:
                 return True, None, 'now', None
     try:
         root = opened.enter_context(volume_root(context, label, 'ro'))
-        holds = entry(root / relative)
+        holds = entry(root, relative)
     except (OSError, ValueError, fs.FilesystemError):
         _close(opened)
         return True, None, write, None
@@ -428,6 +515,7 @@ def write_disk(record):
                 finally:
                     os.close(fd)
                 temporary.replace(path)
+                mark_password(root, record)
                 return True
         except (OSError, ValueError, fs.FilesystemError):
             return False
@@ -495,11 +583,18 @@ def reset_damaged():
                 context.unmount('userdata', volume['volume_token'])
                 volume = context.volume('userdata')
             context.format('userdata', 'ext4' if volume.get('fs_type') == 'ext4' else 'f2fs', True, volume['volume_token'])
+            if cache is None:
+                # The mark of a password set goes too, wherever it is, or the next start would find
+                # it beside no settings and ask for the reset again.
+                with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
+                    with volume_root(context, 'cache', 'rw') as other:
+                        mark_password(other, {})
             if cache is not None:
                 # Whatever stands there goes: a folder, a link, a file where a folder should be
                 # (2026-11-14 review: unlink failed on those after userdata was erased, every time).
                 clear_entry(cache, RELATIVE)
                 (cache / RELATIVE).unlink(missing_ok=True)
+                mark_password(cache, {})
     RAM_COPY.unlink(missing_ok=True)
     os.sync()
     return 0
