@@ -440,10 +440,11 @@ def _ready(context, label):
     does not replay it (noload), and a write cut short by a reset may be whole only in the journal,
     its blocks half in place: settings that read as older ones, as damaged, or not at all at every
     start (2026-11-14 review; seen on the phone: a file saved with fsync alone is not in a noload
-    view of the device as a reset leaves it). Replayed without a mount (filesystem.replay_journal),
-    and only for a volume that is not mounted: one that is mounted is left to whoever mounted it.
-    When the replay fails the volume is looked at as it is. Cache also comes to every start
-    replayed (ramdisk/init runs e2fsck -p on it before anything mounts it). f2fs needs none:
+    view of the device as a reset leaves it). Replayed without a mount (filesystem.replay_journal:
+    the journal and nothing more), and only for a volume that is not mounted: one that is mounted
+    is left to whoever mounted it. When the replay fails, or the partition is read-only, the volume
+    is looked at as it is. Cache also comes to every start replayed (ramdisk/init runs e2fsck -p
+    on it before anything mounts it). f2fs needs none:
     without its roll-forward (norecovery) it shows its last checkpoint, which is whole and is what
     sync() writes before a save is said done."""
     volume = _volume(context, label)

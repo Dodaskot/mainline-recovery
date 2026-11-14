@@ -190,7 +190,7 @@ class CheckCache(unittest.TestCase):
             tool.write_text('#!/bin/sh\necho "e2fsck $*"\nexit 1\n')
             tool.chmod(0o755)
             r = subprocess.run(['sh', '-c', function + 'check_cache "$1" "$2"; echo rc=$?', 'sh', str(tmp / 'cache.img'), str(tmp / 'log')],
-                               capture_output=True, text=True, timeout=30, env=dict(os.environ, E2FSCK=str(tool)))
+                               capture_output=True, text=True, timeout=30, env=dict(os.environ, E2FSCK=str(tool), CHECK_LIMIT='timeout -s KILL 20'))
             self.assertEqual((r.stdout.strip(), r.stderr), ('rc=0', ''))
             self.assertEqual((tmp / 'log').read_text(), 'e2fsck -p %s\nexit=1\n' % (tmp / 'cache.img'))
             # No cache, or no e2fsck: nothing happens, and the start goes on.
@@ -200,6 +200,13 @@ class CheckCache(unittest.TestCase):
             r = subprocess.run(['sh', '-c', function + 'check_cache "$1" "$2"; echo rc=$?', 'sh', str(tmp / 'cache.img'), str(tmp / 'log3')],
                                capture_output=True, text=True, timeout=30, env=dict(os.environ, E2FSCK=str(tmp / 'missing')))
             self.assertEqual((r.stdout.strip(), (tmp / 'log3').exists()), ('rc=0', False))
+            # 2026-11-14 review: e2fsck -p waits for ever after a write error; the start goes on.
+            self.assertIn('${CHECK_LIMIT:-/bin/busybox timeout -s KILL 120} "$tool" -p "$dev"', function)
+            tool.write_text('#!/bin/sh\nexec sleep 30\n')
+            r = subprocess.run(['sh', '-c', function + 'check_cache "$1" "$2"; echo rc=$?', 'sh', str(tmp / 'cache.img'), str(tmp / 'log4')],
+                               capture_output=True, text=True, timeout=20,
+                               env=dict(os.environ, E2FSCK=str(tool), CHECK_LIMIT='timeout -s KILL 1'))
+            self.assertEqual((r.stdout.strip(), (tmp / 'log4').read_text()), ('rc=0', 'exit=137\n'))
 
 
 class BusyWait(unittest.TestCase):

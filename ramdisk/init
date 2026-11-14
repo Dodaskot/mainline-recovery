@@ -58,7 +58,9 @@ check_cache() {
     tool=${E2FSCK:-/sbin/e2fsck}
     [ -b "$dev" ] || [ -f "$dev" ] || return 0
     [ -x "$tool" ] || return 0
-    "$tool" -p "$dev" > "$log" 2>&1
+    # Not without a limit: e2fsck -p waits for ever after a write error (2026-11-14 review, seen
+    # with 1.47.4), and nothing of the recovery has started yet.
+    ${CHECK_LIMIT:-/bin/busybox timeout -s KILL 120} "$tool" -p "$dev" > "$log" 2>&1
     echo "exit=$?" >> "$log"
     return 0
 }

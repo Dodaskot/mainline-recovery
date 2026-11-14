@@ -1158,37 +1158,64 @@ class CheckRepairTest(FilesystemFixtureSupport):
 
 
 class ReplayJournalTest(FilesystemFixtureSupport):
-    def test_a_journal_is_replayed_without_a_mount_and_garbage_is_refused(self):
+    def image(self, name='cache.img'):
         import shutil
         import subprocess
-        tools = [shutil.which(name) for name in ('mkfs.ext4', 'debugfs', 'e2fsck')]
+        tools = [shutil.which(name_) for name_ in ('mkfs.ext4', 'debugfs', 'e2fsck')]
         if not all(tools):
             self.skipTest('e2fsprogs are not installed on this host')
-        mkfs, debugfs, e2fsck = tools
-        image = self.root / 'cache.img'
+        image = self.root / name
         with open(image, 'wb') as handle:
             handle.truncate(16 << 20)
-        subprocess.run([mkfs, '-q', '-F', str(image)], check=True)
+        subprocess.run([tools[0], '-q', '-F', str(image)], check=True)
+        return image, tools[1], tools[2]
 
-        def flag():
-            with open(image, 'rb') as handle:
-                return fs.probe_magic(handle.read(8192))['needs_recovery']
-        self.assertFalse(flag())
-        self.assertEqual(fs.replay_journal(image, tool=e2fsck)['exit_code'], 0)  # nothing to replay
+    @staticmethod
+    def flag(image):
+        with open(image, 'rb') as handle:
+            return fs.probe_magic(handle.read(8192))['needs_recovery']
+
+    def test_a_journal_is_replayed_without_a_mount_and_nothing_more(self):
+        import subprocess
+        image, debugfs, e2fsck = self.image()
+        self.assertFalse(self.flag(image))
+        fs.replay_journal(image, tool=debugfs)  # nothing to replay
         # A transaction left in the journal, as a reset leaves it: a block written through the
-        # journal and never put in place.
+        # journal and never put in place; and an orphan inode on the list, which stays.
         commands = self.root / 'journal.cmd'
         commands.write_text('jo\njw -b 333 /dev/zero\njc\n')
         subprocess.run([debugfs, '-w', '-f', str(commands), str(image)], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.assertTrue(flag())
-        self.assertIn(fs.replay_journal(image, tool=e2fsck)['exit_code'], (0, 1))
-        self.assertFalse(flag())
+        self.assertTrue(self.flag(image))
+        fs.replay_journal(image, tool=debugfs)
+        self.assertFalse(self.flag(image))
+        self.assertEqual(subprocess.run([e2fsck, '-fn', str(image)], stdout=subprocess.DEVNULL).returncode, 0)
+
+    def test_what_is_no_ext4_or_stays_unreplayed_is_a_failure_and_a_hang_is_stopped(self):
+        import subprocess
+        image, debugfs, _ = self.image()
         garbage = self.root / 'zeros.img'
         with open(garbage, 'wb') as handle:
             handle.truncate(4 << 20)
-        self.assert_error('JOURNAL_REPLAY_FAILED', fs.replay_journal, garbage, e2fsck)
+        self.assert_error('JOURNAL_REPLAY_FAILED', fs.replay_journal, garbage, debugfs)
         self.assert_error('CHECK_UNAVAILABLE', fs.replay_journal, image, str(self.root / 'none'))
+        commands = self.root / 'journal.cmd'
+        commands.write_text('jo\njw -b 333 /dev/zero\njc\n')
+        subprocess.run([debugfs, '-w', '-f', str(commands), str(image)], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # debugfs exits 0 whatever happened: a tool that replays nothing is found by the superblock.
+        idle = self.root / 'idle'
+        idle.write_text('#!/bin/sh\nexit 0\n')
+        idle.chmod(0o755)
+        self.assert_error('JOURNAL_REPLAY_FAILED', fs.replay_journal, image, str(idle))
+        hangs = self.root / 'hangs'
+        hangs.write_text('#!/bin/sh\nexec sleep 30\n')
+        hangs.chmod(0o755)
+        with mock.patch.object(fs, 'REPLAY_SECONDS', 0.3), self.assertRaises(subprocess.TimeoutExpired):
+            fs.replay_journal(image, tool=str(hangs))
+        self.assertTrue(self.flag(image))  # still to be replayed
+        fs.replay_journal(image, tool=debugfs)
+        self.assertFalse(self.flag(image))
 
     def test_the_fixture_replays_nothing_and_answers_as_the_device_does(self):
         self.assertEqual(fs.FixtureContext(self.root).replay('userdata')['volume']['id'], 'userdata')
