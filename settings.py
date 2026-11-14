@@ -33,7 +33,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import filesystem as fs
-from operation_lock import operation_lock
+from operation_lock import lease
 
 RAM_COPY = Path(os.environ.get('A22X_SETTINGS_RAM', '/run/a22x-recovery/settings.json'))
 RELATIVE = Path('a22x-recovery/settings.json')
@@ -149,9 +149,10 @@ def copy_themes(root):
 
 
 def present(path):
-    """Whether PATH is a regular file: False only when nothing is there; any other failure to look
-    (EIO, EACCES, a damaged inode) is raised (2026-11-14 review: Path.is_file() answers False to
-    every error). For a file this recovery ships or keeps in RAM; settings are looked at by entry()."""
+    """Whether PATH is a regular file (following links): False when nothing is there and for anything
+    that is no regular file; a failure to look (EIO, EACCES) is raised (2026-11-14 review: Path.is_file()
+    answers False to every error). For files this recovery ships or keeps in RAM; whether a volume
+    holds the settings is entry()'s question, where a folder counts as there."""
     try:
         return stat.S_ISREG(os.stat(path).st_mode)
     except (FileNotFoundError, NotADirectoryError):
@@ -160,10 +161,10 @@ def present(path):
 
 def entry(path):
     """Whether anything is at PATH, as the settings file: False only when nothing is (ENOENT); a
-    folder, a link, a FIFO, or a file where a folder of the path should be, all count as there, to
-    be read and found damaged; any other failure to look is raised (2026-11-14 reviews: an error,
-    then anything that was no regular file, read as no settings, and the phone opened without
-    its password)."""
+    folder, a link, a loop of links, a FIFO, or a file where a folder of the path should be, all count
+    as there, to be read and found damaged; any other failure to look is raised (2026-11-14 reviews:
+    an error, then anything that was no regular file, read as no settings, and the phone opened
+    without its password)."""
     try:
         os.lstat(path)
         return True
@@ -171,32 +172,79 @@ def entry(path):
         return False
     except NotADirectoryError:
         return True
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            return True
+        raise
+
+
+class NotRegular(OSError):
+    """Where a file should be there is something else."""
+
+
+def read_bytes(path):
+    """The bytes of the regular file at PATH, opened as filesystem.open_regular opens (its type proven
+    on the descriptor, links never followed); None when nothing is there; NotRegular when something
+    else is; OSError when it cannot be read now. One reader for the settings and the saved Wi-Fi list
+    (2026-11-14 review: two copies classified the same states differently)."""
+    try:
+        fd = fs.open_regular(path)
+    except FileNotFoundError:
+        # Gone between the look and the open, or its reopen failed: "not there" only when a look
+        # finds nothing (2026-11-14 review: any ENOENT read as no settings).
+        if not entry(path):
+            return None
+        raise OSError(errno.EIO, 'The file is there and could not be opened')
+    except NotADirectoryError as error:
+        raise NotRegular(errno.ENOTDIR, 'A file stands where a folder should be') from error
+    except fs.FilesystemError as error:
+        if error.code == 'REGULAR_FILE_REQUIRED':
+            raise NotRegular(errno.EINVAL, 'No regular file') from error
+        raise OSError(errno.EIO, str(error)) from error
+    except OSError as error:
+        if error.errno == errno.ELOOP:
+            raise NotRegular(errno.ELOOP, 'A link stands where the file should be') from error
+        raise
+    with os.fdopen(fd, 'rb') as stream:
+        return stream.read()
+
+
+def clear_entry(root, relative):
+    """Remove what keeps a regular file from being written at ROOT/RELATIVE: a folder of the path that
+    is no real folder (a file, a link), or at the path itself anything but a regular file (a folder,
+    a link, a FIFO). A regular file there stays."""
+    path = root
+    for part in Path(relative).parts[:-1]:
+        path = path / part
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISDIR(st.st_mode):
+            os.unlink(path)
+            return
+    target = root / relative
+    try:
+        st = os.lstat(target)
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(st.st_mode):
+        shutil.rmtree(target)
+    elif not stat.S_ISREG(st.st_mode):
+        os.unlink(target)
 
 
 def read_regular(path, label):
     """The text of the settings file at PATH on LABEL: None when nothing is there; Damaged when what
-    is there is no regular file or no text; Unreadable when it cannot be read now. Opened as
-    filesystem.open_regular opens: its type proven on the descriptor, links never followed, so
-    nothing changes between the look and the read (2026-11-14 review)."""
+    is there is no regular file or no text; Unreadable when it cannot be read now."""
     try:
-        fd = fs.open_regular(path)
-    except FileNotFoundError:
-        return None
-    except NotADirectoryError as error:
+        data = read_bytes(path)
+    except NotRegular as error:
         raise Damaged('The settings on %s are damaged' % label, label) from error
-    except fs.FilesystemError as error:
-        if error.code == 'REGULAR_FILE_REQUIRED':
-            raise Damaged('The settings on %s are damaged' % label, label) from error
-        raise Unreadable('The settings on %s cannot be read now' % label) from error
-    except OSError as error:
-        if error.errno == errno.ELOOP:  # a link where the file should be
-            raise Damaged('The settings on %s are damaged' % label, label) from error
-        raise Unreadable('The settings on %s cannot be read now' % label) from error
-    try:
-        with os.fdopen(fd, 'rb') as stream:
-            data = stream.read()
     except OSError as error:
         raise Unreadable('The settings on %s cannot be read now' % label) from error
+    if data is None:
+        return None
     try:
         return data.decode()
     except UnicodeDecodeError as error:
@@ -214,10 +262,14 @@ def read_disk():
     copies of the rule).
     """
     context = fs.DeviceContext()
-    with operation_lock(context.lock_path, context.mode):
+    with lease(context.lock_path, context.mode):
         try:
-            # The themes of every volume looked at, as before (2026-11-14 review: only the chosen one's).
-            with settings_root(context, 'ro', visit=copy_themes) as (label, root):
+            # The themes of the volume that keeps the settings only: themes are written there and
+            # nowhere else (settings_root 'rw' chooses the same volume), and a theme or note left on
+            # another volume by an older release would come back at every start, whatever removes
+            # it (2026-11-14 reviews: first only this volume's, then every volume's, were copied).
+            with settings_root(context, 'ro') as (label, root):
+                copy_themes(root)
                 # 2026-11-12 review: a file that cannot be read now (EIO, a busy card) is not a
                 # damaged one: it is no reason to offer erasing userdata, and still opens nothing.
                 text = read_regular(root / RELATIVE, label)
@@ -323,10 +375,9 @@ def _look(context, label, mode, relative, opened):
 
 
 @contextlib.contextmanager
-def settings_root(context, mode, relative=RELATIVE, visit=None):
+def settings_root(context, mode, relative=RELATIVE):
     """(label, root) of the volume choose() gives, open in MODE; RELATIVE: another file kept the
-    same way (the saved Wi-Fi networks); VISIT(root) for each volume looked at that is open
-    read-only (read_disk copies the themes of each). Volumes are looked at in order until one holds
+    same way (the saved Wi-Fi networks). Volumes are looked at in order until one holds
     the file or cannot be looked at, each opened once; every other is closed before the caller works
     in the chosen one, and all of them whatever fails. When the caller's work is done, a failure to
     close a volume afterwards does not undo it (2026-11-14 review: a password written to disk was
@@ -340,8 +391,6 @@ def settings_root(context, mode, relative=RELATIVE, visit=None):
             everything.callback(opened.close)
             there, holds, write, root = _look(context, label, mode, relative, opened)
             looked.append((label, there, holds, write, root, opened))
-            if visit is not None and mode == 'ro' and root is not None:
-                visit(root)
             if holds is not False:  # the holder, or one that cannot be looked at: choose stops there
                 break
         label = choose([entry_[:4] for entry_ in looked], mode)
@@ -352,20 +401,21 @@ def settings_root(context, mode, relative=RELATIVE, visit=None):
         if root is None:  # never by choose's contract; said, not asserted (python -O drops asserts)
             raise Unreadable('The settings volume %s was not opened' % label)
     except BaseException:
-        everything.close()
+        _close(everything)
         raise
     try:
         yield label, root
     except BaseException:
-        everything.close()
+        # The caller's own error stands: a volume that fails to close never replaces it (2026-11-14
+        # review: Damaged settings became Unreadable, and their reset was never offered).
+        _close(everything)
         raise
-    with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
-        everything.close()
+    _close(everything)
 
 
 def write_disk(record):
     context = fs.DeviceContext()
-    with operation_lock(context.lock_path, context.mode):
+    with lease(context.lock_path, context.mode):
         try:
             with settings_root(context, 'rw') as (_, root):
                 path = root / RELATIVE
@@ -401,9 +451,7 @@ def load():
     # never replaced by the older one on disk (2026-11-14 review: is_file() said no copy on any error).
     try:
         return checked(json.loads(RAM_COPY.read_text()))
-    except FileNotFoundError:
-        pass
-    except ValueError:
+    except (FileNotFoundError, ValueError):
         pass
     deadline = time.monotonic() + LOCK_WAIT
     while True:
@@ -439,7 +487,7 @@ def reset_damaged():
     except OSError:
         return 1
     context = fs.DeviceContext()
-    with operation_lock(context.lock_path, context.mode):
+    with lease(context.lock_path, context.mode):
         with contextlib.ExitStack() as stack:
             cache = stack.enter_context(volume_root(context, 'cache', 'rw')) if label == 'cache' else None
             volume = context.volume('userdata')
@@ -448,6 +496,9 @@ def reset_damaged():
                 volume = context.volume('userdata')
             context.format('userdata', 'ext4' if volume.get('fs_type') == 'ext4' else 'f2fs', True, volume['volume_token'])
             if cache is not None:
+                # Whatever stands there goes: a folder, a link, a file where a folder should be
+                # (2026-11-14 review: unlink failed on those after userdata was erased, every time).
+                clear_entry(cache, RELATIVE)
                 (cache / RELATIVE).unlink(missing_ok=True)
     RAM_COPY.unlink(missing_ok=True)
     os.sync()

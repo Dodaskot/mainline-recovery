@@ -55,7 +55,7 @@ class Damaged(unittest.TestCase):
             self.calls.append(('open', label, mode))
             yield self.root / label
         patches = [mock.patch.object(settings, 'volume_root', volume_root),
-                   mock.patch.object(settings, 'operation_lock', lambda *a, **k: contextlib.nullcontext()),
+                   mock.patch.object(settings, 'lease', lambda *a, **k: contextlib.nullcontext()),
                    mock.patch.object(settings.fs, 'DeviceContext', lambda: FakeContext(self.root, self.calls)),
                    mock.patch.object(settings, 'RAM_COPY', self.root / 'ram.json'),
                    mock.patch.object(settings, 'copy_themes', lambda root: None)]
@@ -274,13 +274,59 @@ class Damaged(unittest.TestCase):
                 settings.read_disk()
         self.assertFalse((self.root / 'userdata' / settings.RELATIVE).exists())
 
-    def test_themes_of_every_volume_looked_at_are_copied(self):
-        # 2026-11-14 review: read_disk copied the themes of the chosen volume only.
+    def test_a_reset_removes_whatever_stands_where_the_settings_should_be(self):
+        # 2026-11-14 review: for a folder at settings.json, or a file where its folder should be,
+        # unlink failed after userdata was erased; every try erased it again and the phone stayed locked.
+        rel = settings.RELATIVE
+        for name, make in (('folder', lambda: (self.root / 'cache' / rel).mkdir()),
+                           ('file for its folder', lambda: (shutil.rmtree(self.root / 'cache' / rel.parent),
+                                                           (self.root / 'cache' / rel.parent).write_text('x'))),
+                           ('loop of links', lambda: (shutil.rmtree(self.root / 'cache' / rel.parent),
+                                                      os.symlink(rel.parent.name, self.root / 'cache' / rel.parent)))):
+            with self.subTest(name):
+                parent = self.root / 'cache' / rel.parent
+                if parent.is_symlink() or parent.is_file():
+                    parent.unlink()
+                elif parent.is_dir():
+                    shutil.rmtree(parent)
+                parent.mkdir()
+                make()
+                with self.assertRaises(settings.Damaged):
+                    settings.read_disk()
+                self.calls.clear()
+                self.assertEqual(settings.reset_damaged(), 0)
+                self.assertEqual([c for c in self.calls if c[0] == 'format'], [('format', 'userdata', 'ext4')])
+                self.assertEqual(settings.read_disk(), {})
+                (self.root / 'cache' / rel.parent).mkdir(exist_ok=True)
+
+    def test_damaged_settings_stay_damaged_when_a_volume_fails_to_close(self):
+        # 2026-11-14 review: the unmount's error replaced Damaged, and the reset was never offered.
+        self.write('cache', '{not json')
+
+        @contextlib.contextmanager
+        def closing_fails(context, label, mode):
+            self.calls.append(('open', label, mode))
+            yield self.root / label
+            raise OSError(16, 'Device or resource busy')
+        with mock.patch.object(settings, 'volume_root', closing_fails):
+            with self.assertRaises(settings.Damaged):
+                settings.read_disk()
+
+    def test_settings_there_that_cannot_be_opened_are_never_none(self):
+        # 2026-11-14 review: any ENOENT from the open (its reopen through /proc too) read as no settings.
+        self.write('cache', json.dumps(GOOD))
+        with mock.patch.object(settings.fs, 'open_regular', side_effect=FileNotFoundError(2, 'No such file')):
+            with self.assertRaises(settings.Unreadable):
+                settings.read_disk()
+
+    def test_themes_come_from_the_volume_that_keeps_the_settings(self):
+        # 2026-11-14 reviews: themes are written where the settings are; a theme or note left on
+        # another volume came back at every start whatever removed it.
         self.write('userdata', json.dumps(GOOD))
         copied = []
         with mock.patch.object(settings, 'copy_themes', lambda root: copied.append(Path(root).name)):
             settings.read_disk()
-        self.assertEqual(copied, ['cache', 'userdata'])
+        self.assertEqual(copied, ['userdata'])
 
     def test_with_no_settings_anywhere_reads_and_writes_choose_one_volume(self):
         # 2026-11-14 review: beside a cache never written here, themes went to userdata and were read from cache.

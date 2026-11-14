@@ -24,7 +24,7 @@ import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import filesystem as fs
-from operation_lock import operation_lock
+from operation_lock import lease
 import settings
 
 MAGIC = b'A22XTHM1'
@@ -280,7 +280,7 @@ def on_disk(context, change):
     # review: a theme written to userdata after cache refused it was not read at the next start;
     # a volume Files had opened read-only refused every theme, though settings reopen it).
     try:
-        with operation_lock(context.lock_path, context.mode):
+        with lease(context.lock_path, context.mode):
             with settings.settings_root(context, 'rw') as (_, root):
                 change(root / settings.THEMES)
                 return True

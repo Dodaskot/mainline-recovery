@@ -51,6 +51,17 @@ class OperationLockTest(unittest.TestCase):
             with mock.patch.dict(os.environ, {ol.WAIT_ENV: strange}):
                 self.assertLessEqual(ol._wait_until(), time.monotonic() + ol.MAX_WAIT)
 
+    def test_a_step_inside_the_lease_of_its_own_process_borrows_it(self):
+        # 2026-11-14 review: distro.py held the lease and wifi.py asked for it again in the same
+        # process; the second flock was refused and the saved key was never read from the disk.
+        import operation_lock as ol
+        with operation_lock(self.path, 'fixture'):
+            with ol.lease(self.path, 'fixture') as fd:
+                self.assertIsNone(fd)
+        with ol.lease(self.path, 'fixture') as fd:
+            self.assertIsNotNone(fd)
+            self.assert_locked()
+
     def test_child_reuses_lease_without_unlocking_parent_and_ui_is_blocked(self):
         with operation_lock(self.path, 'fixture') as fd:
             code = 'from operation_lock import operation_lock; import sys;\nwith operation_lock(sys.argv[1], "device"): print("CHILD_OK")'

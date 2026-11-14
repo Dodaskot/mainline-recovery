@@ -198,9 +198,10 @@ class TestControlSocket(unittest.TestCase):
 
         def volumes(mode, action):
             # As wifi._settings_volumes: a failure of the action on the volume is 'failed'.
+            import filesystem as fs
             try:
                 return 'ok', action(self.disk)
-            except (OSError, ValueError):
+            except (OSError, ValueError, fs.FilesystemError):
                 return 'failed', None
         for name, value in (('RUN', run_dir), ('SAVED_RAM', Path(self.tmp.name, 'saved-ram.json')),
                             ('_settings_volumes', volumes),
@@ -369,10 +370,27 @@ class TestControlSocket(unittest.TestCase):
                 raise OSError(5, 'Input/output error')
             return real(path, *args, **kwargs)
         with mock.patch.object(settings, 'volume_root', volume_root), mock.patch.object(settings.os, 'lstat', failing), \
-                mock.patch('operation_lock.operation_lock', lambda *a, **k: contextlib.nullcontext()), \
+                mock.patch('operation_lock.lease', lambda *a, **k: contextlib.nullcontext()), \
                 mock.patch.object(fs, 'DeviceContext', Context), mock.patch.object(w, '_settings_volumes', REAL_SETTINGS_VOLUMES):
             self.assertIsNone(w.remember(b'Home', FakeSupplicant.KEY))
         self.assertEqual(json.loads((self.disk / 'a22x-recovery/wifi.json').read_text()), listed)
+
+    def test_a_list_that_is_no_file_holds_no_network_and_is_replaced(self):
+        # 2026-11-14 review: a folder or a link where wifi.json should be failed every change for good.
+        (self.disk / 'a22x-recovery/wifi.json').mkdir(parents=True)
+        Path(self.tmp.name, 'saved-ram.json').unlink(missing_ok=True)
+        self.assertEqual(w.saved_known(), [])
+        self.assertTrue(w.remember(b'Home', FakeSupplicant.KEY))
+        self.assertEqual([bytes.fromhex(n['ssid_hex']) for n in json.loads((self.disk / 'a22x-recovery/wifi.json').read_text())['networks']],
+                         [b'Home'])
+
+    def test_forget_refreshes_a_stale_copy_in_ram(self):
+        # 2026-11-14 review: forget found the network gone from the disk and left RAM still naming it.
+        (self.disk / 'a22x-recovery').mkdir()
+        (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': []}))
+        Path(self.tmp.name, 'saved-ram.json').write_text(json.dumps({'networks': [{'ssid_hex': b'X'.hex(), 'psk': 'a' * 64}]}))
+        self.assertEqual(w.forget(b'X')['saved_count'], 0)
+        self.assertEqual(w.saved_known(), [])
 
     def test_forget_asks_the_disk_not_a_stale_copy_in_ram(self):
         # 2026-11-14 review: a RAM copy without a network on disk made forget report it gone.
@@ -394,7 +412,7 @@ class TestControlSocket(unittest.TestCase):
             yield 'cache', self.disk
             raise fs.FilesystemError('UNMOUNT_FAILED', 'busy')
         with mock.patch.object(settings, 'settings_root', closing_fails), \
-                mock.patch('operation_lock.operation_lock', lambda *a, **k: contextlib.nullcontext()), \
+                mock.patch('operation_lock.lease', lambda *a, **k: contextlib.nullcontext()), \
                 mock.patch.object(fs, 'DeviceContext', lambda: mock.Mock(lock_path='/nonexistent', mode='fixture')):
             self.assertEqual(REAL_SETTINGS_VOLUMES('rw', lambda root: 'written'), ('ok', 'written'))
             self.assertEqual(REAL_SETTINGS_VOLUMES('rw', lambda root: (_ for _ in ()).throw(OSError(5, 'eio'))), ('failed', None))

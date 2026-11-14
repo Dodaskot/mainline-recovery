@@ -33,6 +33,18 @@ def held(path=DEVICE_LOCK):
     return str(Path(path).absolute()) in _HELD
 
 
+@contextlib.contextmanager
+def lease(path=DEVICE_LOCK, mode='device'):
+    """The lease for PATH: this process's own when it holds it already (a step run inside its
+    caller's lease, as distro.py's saved Wi-Fi key), else a new one (2026-11-14 review: a second
+    flock of the same file in one process is refused, and the step failed busy every time)."""
+    if held(path):
+        yield None
+        return
+    with operation_lock(path, mode) as fd:
+        yield fd
+
+
 def _regular(fd, path):
     opened = os.fstat(fd)
     named = os.stat(path, follow_symlinks=False)

@@ -1860,24 +1860,23 @@ def image_slot(name, live):
     return candidate
 
 
-
-
 def saved_key(context, ssid):
     """The key the recovery saved when it joined SSID: a WPA key in hex, or '' for an open network.
     The interface marks a network joined from the saved list, whose password it never had."""
-    def listed(text):
-        return [n for n in json.loads(text).get('networks', []) if isinstance(n, dict)]
+    import wifi
     if context.mode == 'fixture':
+        # wifi.py's own reading of a list (2026-11-14 review: a list of JSON that was no object raised
+        # AttributeError here, past every handler).
         try:
-            networks = listed((context.root / 'wifi-saved.json').read_text())
+            networks = wifi._networks(json.loads((context.root / 'wifi-saved.json').read_text()))
         except FileNotFoundError:
             networks = []
         except (OSError, ValueError):
             networks = None
     else:
-        # As wifi.py keeps them: its RAM copy, else the volume settings_root chooses (2026-11-14
-        # review: here a failed stat read as no list, and only cache was asked).
-        import wifi
+        # As wifi.py keeps them: its RAM copy, else the volume settings_root chooses, inside this
+        # helper's lease (operation_lock.lease; 2026-11-14 reviews: here a failed stat read as no
+        # list and only cache was asked; then a second flock in this process was refused).
         networks = wifi.saved_known()
     require(networks is not None, 'WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     for network in networks:

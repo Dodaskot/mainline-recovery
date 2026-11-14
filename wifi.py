@@ -184,12 +184,12 @@ def _settings_volumes(mode, action):
     _beside()
     import filesystem as fs
     import settings
-    from operation_lock import operation_lock
+    from operation_lock import lease
     context = fs.DeviceContext()
     deadline = time.monotonic() + LOCK_WAIT
     while True:
         try:
-            with operation_lock(context.lock_path, context.mode):
+            with lease(context.lock_path, context.mode):
                 done = None
                 try:
                     with settings.settings_root(context, mode, SAVED_RELATIVE) as (_, root):
@@ -209,36 +209,44 @@ def _settings_volumes(mode, action):
 
 
 def _read_list(root):
-    """The list in ROOT: none when the file is not there; a file that cannot be looked at raises,
-    never read as none (2026-11-14 review: Path.is_file() said no file on any error, and the next
-    remember wrote one network over all the others)."""
+    """The list in ROOT, read by settings.read_bytes: none when nothing is there, and none when what
+    is there is no list (no regular file, no JSON): a damaged list holds no network, and the next
+    write replaces it (2026-11-14 review: a folder or a link there failed every change for good); a
+    file that cannot be read now raises, never read as none (2026-11-14 review: the next remember
+    wrote one network over all the others)."""
     _beside()
-    import filesystem as fs
+    import settings
     try:
-        fd = fs.open_regular(root / SAVED_RELATIVE)
-    except FileNotFoundError:
+        data = settings.read_bytes(root / SAVED_RELATIVE)
+    except settings.NotRegular:
         return []
-    with os.fdopen(fd, 'rb') as stream:
-        data = stream.read()
+    if data is None:
+        return []
     try:
         return _networks(json.loads(data.decode()))
     except ValueError:
         return []
 
 
+def _read_and_keep(root):
+    """The list in ROOT, copied to RAM under the same lock."""
+    networks = _read_list(root)
+    _ram_saved(networks)
+    return networks
+
+
 def saved_known():
     """The remembered networks: [{'ssid_hex', 'psk', 'added'}], newest first; None when they cannot
     be read now (the settings volume is busy or will not open), which is not the same as none."""
-    if SAVED_RAM.is_file():
-        try:
-            return _networks(json.loads(SAVED_RAM.read_text()))
-        except ValueError:
-            pass
-    def read(root):
-        networks = _read_list(root)
-        _ram_saved(networks)
-        return networks
-    status, networks = _settings_volumes('ro', read)
+    # Not there or damaged: the disk is read; any other failure to read the copy is said, never
+    # taken for no copy (2026-11-14 review: is_file() said no copy on any error).
+    try:
+        return _networks(json.loads(SAVED_RAM.read_text()))
+    except (FileNotFoundError, ValueError):
+        pass
+    except OSError:
+        return None
+    status, networks = _settings_volumes('ro', _read_and_keep)
     return networks if status == 'ok' else None
 
 
@@ -253,11 +261,13 @@ def _update(change):
     written under another hold, two writers lost one's network). True when written; None when the
     volume or lock cannot be had now (nothing changed; try again); False when the write failed."""
     def update(root):
+        import settings
         current = _read_list(root)
         networks = change(current)
         if networks == current:
             _ram_saved(current)
             return True
+        settings.clear_entry(root, SAVED_RELATIVE)  # a damaged list that is no file goes (2026-11-14 review)
         path = root / SAVED_RELATIVE
         path.parent.mkdir(mode=0o700, exist_ok=True)
         _atomic(path, {'schema': 'a22x.wifi.saved.v1', 'networks': networks})
@@ -283,19 +293,22 @@ def saved_key(ssid):
 
 
 def forget(ssid):
+    """The list on disk decides, read under the lock and copied to RAM (2026-11-14 reviews: a stale
+    RAM copy said a network on disk was not saved; a forget that found nothing left a stale RAM
+    copy that still named it). A network the disk does not hold needs no write and no volume
+    writable now; one it holds is removed in one locked read and write."""
+    status, current = _settings_volumes('ro', _read_and_keep)
+    if status == 'ok' and all(n.get('ssid_hex') != ssid.hex() for n in current):
+        return {**state(), 'saved_count': len(current)}
+    if status != 'ok':
+        fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     kept = []
 
-    def without(current):
-        kept[:] = [n for n in current if n.get('ssid_hex') != ssid.hex()]
+    def without(networks):
+        kept[:] = [n for n in networks if n.get('ssid_hex') != ssid.hex()]
         return kept
-    # The list on disk, under the lock, decides; RAM only follows it (2026-11-14 review: a stale RAM
-    # copy said a network on disk was not saved). When the volume cannot be written now, a network
-    # the disk does not hold is forgotten already: no reason to fail (2026-11-14 review before).
     saved = _update(without)
     if saved is None:
-        status, current = _settings_volumes('ro', _read_list)
-        if status == 'ok' and all(n.get('ssid_hex') != ssid.hex() for n in current):
-            return {**state(), 'saved_count': len(current)}
         fail('WIFI_SAVED_UNAVAILABLE', 'The saved networks cannot be read now. Try again in a moment.')
     # A failed write is said: the network would come back at the next start (2026-11-14 review).
     if saved is False:

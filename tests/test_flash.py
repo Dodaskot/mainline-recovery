@@ -631,7 +631,7 @@ class Settings(unittest.TestCase):
         @contextlib.contextmanager
         def lock(*args):
             yield
-        with mock.patch.object(self.settings.fs, 'DeviceContext', Context), mock.patch.object(self.settings, 'operation_lock', lock):
+        with mock.patch.object(self.settings.fs, 'DeviceContext', Context), mock.patch.object(self.settings, 'lease', lock):
             with self.assertRaises(OSError):
                 self.real_read_disk()
         found = self.root / 'cache-root'
@@ -642,7 +642,7 @@ class Settings(unittest.TestCase):
         class Found(Context):
             def volume(self, label):
                 return {'mounted': False, 'mountable': True, 'volume_token': 't'}
-        with mock.patch.object(self.settings.fs, 'DeviceContext', Found), mock.patch.object(self.settings, 'operation_lock', lock), \
+        with mock.patch.object(self.settings.fs, 'DeviceContext', Found), mock.patch.object(self.settings, 'lease', lock), \
                 mock.patch.object(self.settings, 'volume_root', present):
             self.assertEqual(self.real_read_disk(), {})
 

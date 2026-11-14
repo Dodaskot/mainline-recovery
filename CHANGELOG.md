@@ -101,6 +101,15 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   longer undoes it; forgetting a Wi-Fi network asks the disk, not the copy in RAM; the installer
   pages take a saved network's key by the same rule as Wi-Fi.
 
+- **Fixes from the eighth review** (15 findings): a helper that already holds the storage lease
+  lends it to the steps it runs (the installer's saved Wi-Fi key was never read from disk); the
+  reset of damaged settings removes whatever stands where they should be (a folder, a link, a file
+  where their folder should be) instead of failing after userdata was erased; damaged settings stay
+  damaged when a volume fails to close; settings that are there but cannot be opened are never
+  none; one reader serves the settings and the saved Wi-Fi list; a Wi-Fi list that is no file holds
+  no network and is replaced; forgetting a network reads the disk first and keeps RAM in step;
+  themes come from the volume that keeps the settings only.
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 
