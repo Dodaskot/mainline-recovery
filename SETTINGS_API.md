@@ -19,9 +19,9 @@ Only a regular file `a22x-recovery/settings.json` counts as settings, never a li
 may be a link only to a folder of the same volume. A partition without a filesystem holds
 nothing; a volume that cannot be found or read at the moment (the list of volumes failing
 while a card comes or goes, a mount that fails) is "cannot be read now" (exit 2), never
-"no settings". One exception: after a cache that was read, can take the settings and holds
-neither them nor the password mark, a userdata that cannot be read is passed over, so a
-fresh phone with a damaged userdata still opens.
+"no settings". That holds beside an empty cache too: older releases (0.6.180 to 0.6.206)
+could save to userdata while cache was whole, so a recovery that never saved settings stays
+locked while a userdata it recognizes cannot be read.
 While a password is set, an empty file `.a22x-recovery-password` stays at the root of
 the volume that keeps the settings (written before the password, kept by Wipe cache
 and firmware installs, added at the start for a password set by an older release).

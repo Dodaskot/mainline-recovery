@@ -6,12 +6,8 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
 
 ## Not released yet (1.0.1)
 
-- **A phone with no password is not locked by a userdata that cannot be read, and a save
-  survives a reset** (the focused review of review-23, three findings, all in `settings.py`):
-  - a recovery with no settings yet and no password mark on a cache it can write stayed locked
-    with "Try again" at every start while userdata would not mount (a damaged filesystem): the
-    very case a recovery is for. Such a userdata is now passed over, for reading and for saving;
-    a mark on the cache, or a cache that never takes settings, still keeps the lock;
+- **A save of the settings survives a reset, and a card removed at the start locks nothing**
+  (the focused reviews of review-23 and review-24, all in `settings.py`):
   - the list of volumes failing with a bare `OSError` (a card or a stick removed while sysfs is
     read) locked a phone with no password the same way; it is "cannot be read now" for that
     volume only, as the other failures of the list are;
@@ -20,10 +16,13 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
     was set could show the state before it. `sync()` now writes it in place before the save is
     said done, and the journal of an ext4 the recovery may write is replayed once (mounted for
     writing and unmounted) before the settings are read.
-  One bound is left on purpose: when the settings were first kept on userdata because cache had
-  no filesystem, cache was formatted afterwards, and userdata cannot be mounted at a start, the
-  recovery opens with the defaults for that start.
-  Tests: 880 Python, 110 backend; the walk reads these states too. On the phone (1.0.14, the new
+  One finding is left as it was, on purpose: a recovery that has never saved settings stays
+  locked with "Try again" while a userdata it recognizes cannot be mounted. Passing such a
+  userdata over was tried and taken back after the review of review-24: releases 0.6.180 to
+  0.6.206 saved to userdata whenever cache could not be written at that moment, so a password
+  may be there beside a cache that is whole and empty, and it would have read as none. The walk
+  now starts from that state too.
+  Tests: 881 Python, 110 backend. On the phone (1.0.14, the new
   `settings.py` run from RAM): 16 fields read from cache, the same record saved and read back.
   The journal replay itself was not provoked on the phone (it needs a reset in the middle of a
   write).

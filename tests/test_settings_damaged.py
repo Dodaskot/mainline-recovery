@@ -473,8 +473,8 @@ class Damaged(unittest.TestCase):
                   ('never', 'now'): 'userdata',    # a cache this recovery never writes
                   ('absent', 'now'): 'userdata',   # no usable filesystem on cache
                   ('now', 'later+file'): None,     # the settings are on userdata, not writable now
-                  ('now', 'dead'): 'cache',        # userdata cannot be looked at: an empty cache takes them (review 23)
-                  ('never', 'dead'): None}         # ... but not past a cache that could never have taken them
+                  ('now', 'dead'): None,           # userdata cannot be looked at: the start could not read either
+                  ('never', 'dead'): None}         # the same past a cache that never takes them
         for (cache, userdata), target in expect.items():
             with self.subTest(cache=cache, userdata=userdata):
                 written, _ = self.every_state(cache, userdata, lambda: settings.write_disk({'theme': 'y'}))
@@ -482,13 +482,24 @@ class Damaged(unittest.TestCase):
                           and json.loads((self.root / label / settings.RELATIVE).read_text()).get('theme') == 'y']
                 self.assertEqual((written, landed), (target is not None, [target] if target else []))
 
-    def test_a_fresh_phone_opens_whatever_userdata_shows(self):
-        # 2026-11-14 review (23): no settings, no mark, and a userdata that would not mount, or a list
-        # of volumes failing with a bare OSError for it, locked the recovery at every start.
-        for userdata in ('dead', 'now'):
-            with self.subTest(userdata=userdata):
-                read, _ = self.every_state('now', userdata, self.read_now)
-                self.assertEqual(read, {})
+    def test_a_password_on_userdata_beside_an_empty_cache_is_never_passed_over(self):
+        # 2026-11-14 review (24): releases 0.6.180 to 0.6.206 saved to userdata whenever cache could
+        # not be written at that moment. Passing over a userdata that cannot be looked at, after an
+        # empty cache, read that password as none; the next save wrote settings without it to cache.
+        (self.root / 'userdata' / settings.PASSWORD_MARK).touch()
+        read, _ = self.every_state('now', 'now+file', self.read_now)   # '+file': GOOD, with its password
+        self.assertEqual(read.get('hash'), GOOD['hash'])
+        read, _ = self.every_state('now', 'dead+file', self.read_now)
+        self.assertIsInstance(read, settings.Unreadable)
+        written, _ = self.every_state('now', 'dead+file', lambda: settings.write_disk({'language': 'uk'}))
+        self.assertFalse(written)
+        self.assertFalse((self.root / 'cache' / settings.RELATIVE).exists())
+        read, _ = self.every_state('now', 'now+file', self.read_now)
+        self.assertEqual(read.get('hash'), GOOD['hash'])
+
+    def test_a_list_of_volumes_that_fails_with_a_bare_error_is_cannot_be_read_now(self):
+        # 2026-11-14 review (23): a bare OSError from the list (a stick removed while sysfs is read)
+        # passed every "except Unreadable" and locked a phone whose settings on cache hold no password.
         real = FakeContext.volume
 
         def vanishing(context, label, *args):
@@ -498,11 +509,6 @@ class Damaged(unittest.TestCase):
         self.write('cache', json.dumps({'theme': 'aurora'}))
         with mock.patch.object(FakeContext, 'volume', vanishing):
             self.assertEqual(settings.read_disk(), {'theme': 'aurora'})
-        # A mark on the cache, or a cache that never takes settings, still locks: a password may be there.
-        (self.root / 'cache' / settings.RELATIVE).unlink()
-        (self.root / 'cache' / settings.PASSWORD_MARK).touch()
-        read, _ = self.every_state('now', 'dead', self.read_now)
-        self.assertIsInstance(read, settings.Unreadable)
 
     def test_a_journal_left_by_a_reset_is_replayed_before_the_settings_are_read(self):
         # 2026-11-14 review (23): a read-only look does not replay the ext4 journal, so a save cut by a

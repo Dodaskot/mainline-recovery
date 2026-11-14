@@ -4,9 +4,11 @@ one by one in both directions; this walks them all, as the review suggested).
 P1: a password stored and not cleared never reads as "no password".
 P2: with no password stored (never set, cleared, or a set or clear that stopped halfway), nothing
     asks for userdata to be erased.
-P3: with no password and a cache that can be read and can take the settings, the recovery opens,
-    whether the cache holds settings or not: a volume after it that cannot be looked at locks
-    nothing (2026-11-14 reviews: userdata that would not mount locked such a phone for good).
+P3: with no password and the settings on a cache that can be read, the recovery opens: a volume
+    after them that cannot be looked at locks nothing (2026-11-14 review: userdata that would not
+    mount locked such a phone for good). With no settings on the cache it stays locked then: a
+    password may be on userdata beside an empty cache (releases 0.6.180 to 0.6.206 saved there
+    whenever cache could not be written at that moment), and P1 comes first.
 
 Each case: a start state, a first operation done whole, a second one stopped at every step it
 writes (a crash, or an I/O error), each under several states of the two volumes, as filesystem.py
@@ -283,11 +285,6 @@ class Properties(unittest.TestCase):
                     self.assertNotIsInstance(outcome, settings.Damaged, ('P2',) + case)
                 if password == 'no' and event == 'none' and cache_holds and at['cache'] in READABLE and not restored:
                     self.assertIsInstance(outcome, dict, ('P3',) + case)
-                if (password == 'no' and event == 'none' and at['cache'] in ('now', 'later', 'outside')
-                        and not self.keepers(seen) and not restored):
-                    # No password, and a cache that can be read and can take the settings: whatever
-                    # userdata shows, the recovery opens.
-                    self.assertIsInstance(outcome, dict, ('P3',) + case)
                 if kinds == ('nofs', 'nofs'):
                     # No filesystem on either partition: nothing can be kept, the recovery opens.
                     self.assertEqual(outcome, {}, ('P3',) + case)
@@ -298,7 +295,13 @@ class Properties(unittest.TestCase):
         legacy = self.new_world('legacy')
         (legacy.root('cache') / settings.RELATIVE.parent).mkdir()
         (legacy.root('cache') / settings.RELATIVE).write_text(json.dumps({**BASE, **SECRET}))
-        return (('fresh', fresh, 'no'), ('legacy', legacy, 'legacy'))
+        # As releases 0.6.180 to 0.6.206 could leave it: the password on userdata (cache could not
+        # be written at that moment), beside a cache that is whole and empty; the mark since added.
+        moved = self.new_world('moved')
+        (moved.root('userdata') / settings.RELATIVE.parent).mkdir()
+        (moved.root('userdata') / settings.RELATIVE).write_text(json.dumps({**BASE, **SECRET}))
+        (moved.root('userdata') / settings.PASSWORD_MARK).touch()
+        return (('fresh', fresh, 'no'), ('legacy', legacy, 'legacy'), ('moved', moved, 'yes'))
 
     @staticmethod
     def after(state, op, done):

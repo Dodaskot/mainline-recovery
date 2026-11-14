@@ -466,24 +466,20 @@ def verdict(looks):
     A volume without a filesystem is passed over: nothing is on it, as on one erased (only Download
     Mode, or a format, brings that about: see the module); a volume that could not be looked at
     before the holder is Unreadable; with no holder, a mark anywhere is Damaged (2026-11-14 reviews).
-    One exception, as in settled(): after a volume that was looked at, can take the settings
-    ('write' is not 'never') and holds neither them nor a mark, a volume that cannot be looked at
-    is passed over (2026-11-14 review: a fresh phone whose userdata would not mount stayed locked
-    for good). The settings go to the first volume that can take them, so they could be further on
-    only if they were first kept there while this one had no filesystem."""
+    That holds after an empty cache too, though a recovery that never saved settings stays locked
+    while its userdata cannot be looked at: releases 0.6.180 to 0.6.206 saved to userdata whenever
+    cache could not be opened for writing at that moment, so a password may be there beside a
+    cache that is whole, writable and empty (2026-11-14 review: passing such a userdata over read
+    that password as none, and the next save made it so)."""
     holder = None
-    empty = False
     for look in looks:
         if not look['there']:
             continue
         if not look['known']:
-            if empty:
-                continue
             raise Unreadable('The settings volume %s cannot be read now' % look['label'])
         if look['holds']:
             holder = look['label']
             break
-        empty = empty or (not look['marked'] and look.get('write') != 'never')
     marks = [look['label'] for look in looks if look['there'] and look['known'] and look['marked']]
     if holder is None and marks:
         raise Damaged('The settings are missing, and %s says a password was set' % marks[0], marks[0], marks)
@@ -677,15 +673,10 @@ def settings_root(context, mode, relative=RELATIVE, seen=None):
     everything = contextlib.ExitStack()
     try:
         looked = []
-        empty = False
         for label in VOLUMES:
             opened = contextlib.ExitStack()
             everything.callback(opened.close)
             there, found, write, root, mark = _look(context, label, mode, relative, opened)
-            if there and found is None and empty:
-                _close(opened)  # passed over, as verdict() passes it over
-                continue
-            empty = empty or (there and found is False and write != 'never' and not mark)
             looked.append((label, there, found, write, root, opened))
             if seen is not None and there and found is not None:
                 seen[label] = mark
