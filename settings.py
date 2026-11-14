@@ -761,16 +761,14 @@ def _encode(record):
 
 def _copy_themes(context):
     """The themes to RAM from the volume themes.py keeps them on (settings_root's choice); best
-    effort: a volume that cannot be looked at now leaves the bundled themes only. True when that
-    volume still holds anything of the older store (its settings, its mark, its Wi-Fi list) to be
-    retired."""
+    effort: a volume that cannot be looked at now leaves the bundled themes only."""
     with contextlib.suppress(*FAILS):
         with settings_root(context, 'ro') as (_, root):
             copy_themes(root)
-            return _older_store_on(root)
-    return False
 
 
+# In the record in misc: 'gone' once the older store was emptied on every volume (_retire_volumes).
+OLDER_STORE = 'older_store'
 WIFI_RELATIVE = Path('a22x-recovery/wifi.json')  # wifi.SAVED_RELATIVE: the list of releases up to 1.0.1
 
 
@@ -793,11 +791,15 @@ def _retire_volumes(context):
     after misc was erased, or its damaged copies reset, the older file brought back a password
     cleared since, or the one the reset was for). Only once misc holds the Wi-Fi list too: wifi.py
     finds the older list beside the older settings file (2026-11-14 review: removed first, the list
-    was never copied). Each volume on its own, best effort: what stays is retired at a later start."""
+    was never copied). Each volume on its own, best effort. True when every volume was looked at and
+    holds none of it now: the record then says so (OLDER_STORE), and no later start looks again;
+    until then each start does (2026-11-14 review: only the volume of the themes was looked at, and
+    a mark left on another came back as damage)."""
     if not _wifi_in_misc():
-        return
+        return False
+    done = True
     for label in VOLUMES:
-        with contextlib.suppress(*FAILS):
+        try:
             volume = _volume(context, label)
             if volume is None:
                 continue
@@ -814,6 +816,9 @@ def _retire_volumes(context):
                 # never come back from it.
                 clear_file(root, WIFI_RELATIVE)
                 (root / WIFI_RELATIVE).unlink(missing_ok=True)
+        except FAILS:
+            done = False
+    return done
 
 
 def read_disk(details=None):
@@ -824,8 +829,8 @@ def read_disk(details=None):
     context = fs.DeviceContext()
     with lease(context.lock_path, context.mode):
         try:
-            data, twice = misc_store.state('settings')
-            if data is not None and not twice:
+            data, twice, readable = misc_store.state('settings')
+            if data is not None and not twice and readable:
                 # A write stopped between the two copies: the second is written again before
                 # anything relies on two (2026-11-14 review: the older store was retired beside one
                 # copy, whose damage then read as no record).
@@ -843,14 +848,26 @@ def read_disk(details=None):
                 if isinstance(error, Damaged):
                     raise
                 raise Damaged('The settings in misc are damaged', 'misc') from error
-            if _copy_themes(context) and twice:
-                _retire_volumes(context)
+            _copy_themes(context)
+            if twice:
+                record = _retired(context, record)
             return record
         record = read_volumes(details)
         with contextlib.suppress(*FAILS):
             misc_store.write('settings', _encode(record))
-            _retire_volumes(context)
+            record = _retired(context, record)
         return record
+
+
+def _retired(context, record):
+    """RECORD, marked OLDER_STORE 'gone' once _retire_volumes has emptied the older store everywhere
+    (written to misc then; best effort: else the next start tries again)."""
+    if record.get(OLDER_STORE) == 'gone' or not _retire_volumes(context):
+        return record
+    record = {**record, OLDER_STORE: 'gone'}
+    with contextlib.suppress(*FAILS):
+        misc_store.write('settings', _encode(record))
+    return record
 
 
 def write_disk(record):
@@ -863,6 +880,11 @@ def write_disk(record):
             misc_store.read('settings')
             misc_store.write('settings', _encode(record))
             return True
+        except misc_store.Foreign:
+            # Another program's bytes in the area, which is not this recovery's: never taken; the
+            # settings stay in the older store, read from there too (2026-11-14 review: no save
+            # survived a restart).
+            return write_volumes(record)
         except (misc_store.Damaged, *FAILS):
             return False
 
@@ -927,20 +949,6 @@ def reset_damaged():
     with lease(context.lock_path, context.mode):
         with contextlib.ExitStack() as stack:
             names = {label, *marks} - {'userdata', 'misc'}
-            if label == 'misc':
-                # The older store goes too, or it would come back once misc holds no record
-                # (2026-11-14 review: the password the reset was for returned from cache); only
-                # where it is, so a cache that holds none of it need not open for writing (2026-11-14
-                # review). A volume that cannot be looked at stops the reset before anything is erased.
-                for name in VOLUMES:
-                    if name == 'userdata':
-                        continue
-                    volume = _volume(context, name)
-                    if volume is None:
-                        continue
-                    with volume_root(context, name, 'ro') as root:
-                        if _older_store_on(_its_root(root, volume)):
-                            names.add(name)
             others = {name: stack.enter_context(volume_root(context, name, 'rw'))
                       for name in sorted(names)}
             volume = context.volume('userdata')
@@ -955,7 +963,10 @@ def reset_damaged():
                 (root / RELATIVE).unlink(missing_ok=True)
                 drop_mark(root)
             if label == 'misc':
-                misc_store.clear('settings')
+                # An empty record, not none: the older store is never read again (it would bring
+                # back the password the reset was for), so no volume but userdata is needed for the
+                # reset (2026-11-14 reviews); later starts empty it (_retired).
+                misc_store.write('settings', _encode({}))
     RAM_COPY.unlink(missing_ok=True)
     os.sync()
     return 0

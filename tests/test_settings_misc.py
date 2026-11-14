@@ -16,6 +16,7 @@ import misc_store  # noqa: E402
 import settings  # noqa: E402
 
 SECRET = {'theme': 'aurora', 'hash': 'ab' * 32, 'salt': '0f' * 16}
+GONE = {settings.OLDER_STORE: 'gone'}
 
 
 class Context:
@@ -80,15 +81,15 @@ class Misc(unittest.TestCase):
         self.legacy = dict(SECRET)
         self.put_legacy('cache')
         (self.volumes['userdata'] / settings.PASSWORD_MARK).touch()
-        self.assertEqual(settings.read_disk(), SECRET)
-        self.assertEqual(json.loads(misc_store.read('settings')), SECRET)
+        self.assertEqual(settings.read_disk(), {**SECRET, **GONE})
+        self.assertEqual(json.loads(misc_store.read('settings')), {**SECRET, **GONE})
         # Then the older store is emptied, so it can never come back (2026-11-14 review).
         self.assertEqual(self.legacy_files(), [])
         self.legacy = {}  # the file is never read again: what it says no longer counts
-        self.assertEqual(settings.read_disk(), SECRET)
+        self.assertEqual(settings.read_disk(), {**SECRET, **GONE})
         self.assertEqual(self.legacy_reads, 1)
         self.assertTrue(settings.write_disk({'theme': 'x'}))
-        self.assertEqual(settings.read_disk(), {'theme': 'x'})
+        self.assertEqual(settings.read_disk(), {'theme': 'x', **GONE})
 
     def test_no_file_anywhere_is_copied_too_so_userdata_is_never_asked_again(self):
         self.assertEqual(settings.read_disk(), {})
@@ -100,12 +101,13 @@ class Misc(unittest.TestCase):
         misc_store.write('wifi', b'{"networks": []}')
         settings.write_disk(dict(SECRET))
         self.put_legacy('cache', {'theme': 'old'})
-        with mock.patch.object(settings, '_copy_themes', lambda context: True):
-            self.assertEqual(settings.read_disk(), SECRET)
+        (self.volumes['userdata'] / settings.PASSWORD_MARK).touch()  # on a volume beside the themes' too
+        self.assertEqual(settings.read_disk(), {**SECRET, **GONE})
         self.assertEqual(self.legacy_files(), [])
+        self.assertEqual(json.loads(misc_store.read('settings')), {**SECRET, **GONE})
         misc_store.clear('settings')  # misc erased in Download Mode: the defaults, never the older file
         self.legacy = {}
-        self.assertEqual(settings.read_disk(), {})
+        self.assertEqual(settings.read_disk(), GONE)
 
     def test_the_older_store_goes_only_once_misc_holds_the_wifi_list_too(self):
         # 2026-11-14 review: wifi.py finds the older list beside the older settings file; removed
@@ -114,12 +116,11 @@ class Misc(unittest.TestCase):
         self.put_legacy('cache')
         older = self.volumes['cache'] / settings.WIFI_RELATIVE
         older.write_text('{"networks": []}')
-        with mock.patch.object(settings, '_copy_themes', lambda context: True):
-            settings.read_disk()
-            self.assertEqual(len(self.legacy_files()), 2)  # the Wi-Fi list not in misc yet: all kept
-            self.assertTrue(older.exists())
-            misc_store.write('wifi', b'{"networks": []}')
-            settings.read_disk()
+        settings.read_disk()
+        self.assertEqual(len(self.legacy_files()), 2)  # the Wi-Fi list not in misc yet: all kept
+        self.assertTrue(older.exists())
+        misc_store.write('wifi', b'{"networks": []}')
+        settings.read_disk()
         self.assertFalse(older.exists())
         self.assertEqual(self.legacy_files(), [])
         import wifi
@@ -132,15 +133,26 @@ class Misc(unittest.TestCase):
         data[misc_store.AREAS['settings'] + misc_store.SLOT:misc_store.AREAS['settings'] + 2 * misc_store.SLOT] = bytes(misc_store.SLOT)
         self.misc.write_bytes(bytes(data))
         self.put_legacy('cache', {'theme': 'old'})
-        self.assertEqual(misc_store.state('settings'), (json.dumps(SECRET, sort_keys=True).encode() + b'\n', False))
-        with mock.patch.object(misc_store, 'write', side_effect=OSError(5, 'eio')), \
-                mock.patch.object(settings, '_copy_themes', lambda context: True):
+        self.assertEqual(misc_store.state('settings'), (json.dumps(SECRET, sort_keys=True).encode() + b'\n', False, True))
+        with mock.patch.object(misc_store, 'write', side_effect=OSError(5, 'eio')):
             self.assertEqual(settings.read_disk(), SECRET)
         self.assertEqual(len(self.legacy_files()), 2)  # one copy only: the older store is kept
-        with mock.patch.object(settings, '_copy_themes', lambda context: True):
-            self.assertEqual(settings.read_disk(), SECRET)
+        self.assertEqual(settings.read_disk(), {**SECRET, **GONE})
         self.assertTrue(misc_store.state('settings')[1])
         self.assertEqual(self.legacy_files(), [])
+
+    def test_an_area_with_another_program_s_bytes_leaves_the_settings_in_the_older_store(self):
+        # 2026-11-14 review: no save survived a restart while another's bytes stood in the area.
+        data = bytearray(self.misc.read_bytes())
+        data[misc_store.AREAS['wifi'] + 7] = 1
+        self.misc.write_bytes(bytes(data))
+        saved = []
+        with mock.patch.object(settings, 'write_volumes', lambda record: saved.append(record) or True):
+            self.assertTrue(settings.write_disk(dict(SECRET)))
+        self.assertEqual(saved, [SECRET])
+        self.assertEqual(self.misc.read_bytes(), bytes(data))  # never written over
+        self.legacy = dict(SECRET)
+        self.assertEqual(settings.read_disk(), SECRET)  # read from there too
 
     def test_what_the_older_store_cannot_tell_is_never_copied(self):
         for error in (settings.Unreadable('userdata will not mount'), settings.Damaged('damaged', 'cache')):
@@ -173,7 +185,8 @@ class Misc(unittest.TestCase):
         real_clear = misc_store.clear
         with mock.patch.object(misc_store, 'clear', lambda name: (order.append(('clear', name)), real_clear(name))):
             self.assertEqual(settings.reset_damaged(), 0)
-        self.assertEqual(order, [('format', 'userdata'), ('clear', 'settings')])
+        self.assertEqual(order, [('format', 'userdata')])
+        self.assertEqual(misc_store.read('settings'), b'{}\n')  # an empty record: the older store is never read again
         self.assertEqual(settings.read_disk(), {})
 
     def test_the_reset_of_damaged_copies_takes_the_older_store_on_cache_too(self):
@@ -185,8 +198,11 @@ class Misc(unittest.TestCase):
             data[misc_store.AREAS['settings'] + index * misc_store.SLOT + misc_store.SECTOR] ^= 0xff
         self.misc.write_bytes(bytes(data))
         self.assertEqual(settings.reset_damaged(), 0)
+        self.legacy = dict(SECRET)  # what the older file says no longer counts
+        self.assertEqual(settings.read_disk(), {})  # the empty record; the next start empties the older store
+        misc_store.write('wifi', b'{"networks": []}')
+        self.assertEqual(settings.read_disk(), GONE)
         self.assertEqual(self.legacy_files(), [])
-        self.assertIsNone(misc_store.read('settings'))
 
     def test_the_reset_needs_no_writable_cache_when_the_older_store_is_not_there(self):
         # 2026-11-14 review: the reset failed before anything was erased when cache would not open
@@ -204,18 +220,12 @@ class Misc(unittest.TestCase):
                 raise OSError(30, 'Read-only file system')
             with real(context, label, mode) as root:
                 yield root
+        self.put_legacy('cache')
         with mock.patch.object(settings, 'volume_root', read_only):
             self.assertEqual(settings.reset_damaged(), 0)
-        self.assertEqual(self.context.formatted, ['userdata'])
-        self.assertIsNone(misc_store.read('settings'))
-        self.put_legacy('cache')
-        settings.write_disk(dict(SECRET))
-        self.misc.write_bytes(bytes(data))
-        self.context.formatted.clear()
-        with mock.patch.object(settings, 'volume_root', read_only):
-            with self.assertRaises(OSError):  # the older store is there and cannot go: nothing erased
-                settings.reset_damaged()
-        self.assertEqual(self.context.formatted, [])
+            self.assertEqual(self.context.formatted, ['userdata'])
+            self.legacy = dict(SECRET)
+            self.assertEqual(settings.read_disk(), {})  # never the password the reset was for
 
     def test_a_reset_with_nothing_damaged_erases_nothing(self):
         settings.write_disk(dict(SECRET))

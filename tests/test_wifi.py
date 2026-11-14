@@ -571,5 +571,17 @@ class SavedInMisc(unittest.TestCase):
         self.assertEqual(self.names(json.loads(misc_store.read('wifi'))['networks']), [b'Work'])
 
 
+    def test_an_area_with_another_program_s_bytes_leaves_the_list_in_the_older_file(self):
+        import misc_store
+        data = bytearray(self.misc.read_bytes())
+        data[misc_store.AREAS['settings'] + 9] = 1
+        self.misc.write_bytes(bytes(data))
+        written = []
+        with mock.patch.object(w, '_write_legacy_list', lambda networks: written.append(networks)):
+            self.assertTrue(w.remember(b'Home', 'a' * 64))
+        self.assertEqual([self.names(n) for n in written], [[b'Home']])
+        self.assertEqual(self.misc.read_bytes(), bytes(data))
+
+
 if __name__ == '__main__':
     unittest.main()

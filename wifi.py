@@ -243,6 +243,17 @@ def _legacy_list():
         raise _Busy() from error
 
 
+def _write_legacy_list(networks):
+    """NETWORKS as the older release's file, beside its settings (while misc's area is not this
+    recovery's)."""
+    _beside()
+    import filesystem as fs
+    import settings
+    with settings.settings_root(fs.DeviceContext(), 'rw') as (_, root):
+        settings.clear_file(root, SAVED_RELATIVE)
+        settings.write_bytes(root, SAVED_RELATIVE, _encoded(networks))
+
+
 def _retire_legacy_list():
     """The older release's file gone once its list is in misc, so networks forgotten since never come
     back when misc reads as holding none (2026-11-14 review). Best effort."""
@@ -266,8 +277,8 @@ def _read_list(root):
     if root is MISC:
         import misc_store
         try:
-            data, twice = misc_store.state('wifi')
-            if data is not None and not twice:
+            data, twice, readable = misc_store.state('wifi')
+            if data is not None and not twice and readable:
                 with contextlib.suppress(OSError, ValueError):
                     misc_store.write('wifi', data)  # a write stopped between the copies
         except misc_store.Damaged:
@@ -331,7 +342,12 @@ def _change(change):
         # Written as the settings are (settings.write_bytes), through a link to a folder of the volume.
         if root is MISC:
             import misc_store
-            misc_store.write('wifi', _encoded(networks))
+            try:
+                misc_store.write('wifi', _encoded(networks))
+            except misc_store.Foreign:
+                # Another program's bytes in misc's area, which is not this recovery's: the list
+                # stays in the older file, read from there too (2026-11-14 review).
+                _write_legacy_list(networks)
         else:
             settings.clear_file(root, SAVED_RELATIVE)
             settings.write_bytes(root, SAVED_RELATIVE, _encoded(networks))

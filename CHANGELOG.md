@@ -25,16 +25,19 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
 
   Bytes in the area that are not this recovery's are never written over; once a record of this
   recovery's is there, they are damage to it and read as damaged settings, never as none (before
-  that, as no record: a stray byte on a phone that never had a password asks for nothing). A
-  copy missing after a save that stopped between the two is written again by the next read. The file of an older release is read once, while `misc` holds
+  that, as no record: a stray byte on a phone that never had a password asks for nothing, and
+  the area is not taken while such bytes are in it: the settings then stay in the older store).
+  A copy missing after a save that stopped between the two is written again by the next read,
+  never past a copy that cannot be read. The file of an older release is read once, while `misc` holds
   no record, copied, and then removed with its marks once `misc` holds both copies and the Wi-Fi
-  list too (also by the reset of damaged settings, which needs cache writable only when the
-  older store is on it), so it never comes back. The boot splash takes its theme from `misc`. Themes stay on cache. The journal replay added in the reviews before (by a mount, by `e2fsck`, by `debugfs`)
+  list too, on every volume, until the record says it is done; the reset of damaged settings
+  writes an empty record, so the older store is never read again and no volume but userdata is
+  needed for it. The boot splash takes its theme from `misc`. Themes stay on cache. The journal replay added in the reviews before (by a mount, by `e2fsck`, by `debugfs`)
   is gone again: nothing reads the settings from a filesystem after that first copy. What stays
   of those reviews: `sync()` before a save of the older store is said done, a card removed at
   the start is "cannot be read now", a command that does not come back is a failed look, and
   the check of cache in `ramdisk/init` has a limit of 120 s.
-  Tests: 904 Python, 110 backend, 106 UI self-tests, 23 of 23 UI targets (every stop of a write,
+  Tests: 907 Python, 110 backend, 106 UI self-tests, 23 of 23 UI targets (every stop of a write,
   a cut header, damage to either copy, a copy that cannot be read, another program's bytes,
   nothing outside the record's 64 KiB ever written). On the phone: 1.0.15 and then 1.0.16
   written to recovery, read back and started. At the first start the 16 settings and 5

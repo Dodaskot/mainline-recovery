@@ -157,18 +157,19 @@ class Store(unittest.TestCase):
         data[ms.AREAS['wifi'] + 100] = 7
         self.misc.write_bytes(bytes(data))
         # Nothing of this recovery's in the area: another's bytes, no record (2026-11-14 review: read
-        # as damage, a stray byte asked to erase userdata on a phone that never had a password).
-        self.assertIsNone(ms.read('wifi'))
-        with self.assertRaises(ms.Foreign):
-            ms.write('wifi', b'x')
+        # as damage, a stray byte asked to erase userdata on a phone that never had a password), and
+        # the area is never taken while they are there, by either record (2026-11-14 review: the
+        # first Wi-Fi write turned another's bytes in the settings slots into damage).
+        self.assertEqual((ms.read('wifi'), ms.read('settings')), (None, None))
+        for name in ms.AREAS:
+            with self.assertRaises(ms.Foreign):
+                ms.write(name, b'x')
         self.assertEqual(self.misc.read_bytes(), bytes(data))
-        # Once a record of ours is in the area, anything else in it is damage, never "no record"
+        # Once the area is this recovery's, anything else in it is damage, never "no record"
         # (2026-11-14 review: both headers lost read a password as none), and the next write repairs it.
+        ms.clear('wifi')
+        ms.write('wifi', b'{}')
         ms.write('settings', b'mine')
-        with self.assertRaises(ms.Damaged):
-            ms.read('wifi')
-        ms.write('wifi', b'x')
-        self.assertEqual((ms.read('wifi'), ms.read('settings')), (b'x', b'mine'))
         first = ms.AREAS['settings']
         data = bytearray(self.misc.read_bytes())
         for index in (0, 1):
@@ -176,15 +177,32 @@ class Store(unittest.TestCase):
         self.misc.write_bytes(bytes(data))
         with self.assertRaises(ms.Damaged):
             ms.read('settings')
-        ms.clear('settings')  # the reset the owner asks for clears whatever stands there
-        self.assertIsNone(ms.read('settings'))
+        ms.write('settings', b'again')
+        self.assertEqual(ms.read('settings'), b'again')
+        # A header cut inside its name is a copy of this recovery's cut short, never another's.
+        self.assertEqual(ms.classify('settings', ms.MAGIC + b'set' + bytes(ms.SLOT - 11)), ('torn',))
         self.assertEqual(ms.field('settings', 'theme'), '')
         ms.write('settings', b'{"theme": "aurora"}')
         self.assertEqual(ms.field('settings', 'theme'), 'aurora')
 
+    def test_with_a_slot_unreadable_nothing_is_decided_on_ownership_or_repaired(self):
+        ms.write('wifi', b'{}')
+        ms.write('settings', b'x')
+        real_pread = os.pread
+        wifi = ms.AREAS['wifi']
+
+        def pread(fd, size, offset):
+            if offset == wifi:
+                raise OSError(5, 'Input/output error')
+            return real_pread(fd, size, offset)
+        with mock.patch('os.pread', pread):
+            self.assertEqual(ms.state('settings'), (b'x', True, False))
+            with self.assertRaises(OSError):
+                ms.write('wifi', b'y')  # a copy of it cannot be read: not written over blindly
+
     def test_a_write_stopped_between_the_copies_is_told(self):
         ms.write('settings', b'old')
-        self.assertEqual(ms.state('settings'), (b'old', True))
+        self.assertEqual(ms.state('settings'), (b'old', True, True))
         real_pwrite, calls = os.pwrite, [0]
 
         def pwrite(fd, data, offset):
@@ -194,9 +212,9 @@ class Store(unittest.TestCase):
             return real_pwrite(fd, data, offset)
         with mock.patch('os.pwrite', pwrite), self.assertRaises(Crash):
             ms.write('settings', b'new')
-        self.assertEqual(ms.state('settings'), (b'new', False))
+        self.assertEqual(ms.state('settings'), (b'new', False, True))
         ms.write('settings', b'new')
-        self.assertEqual(ms.state('settings'), (b'new', True))
+        self.assertEqual(ms.state('settings'), (b'new', True, True))
 
     def test_limits_and_a_misc_that_cannot_hold_or_be_read(self):
         with self.assertRaises(ValueError):
