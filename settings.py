@@ -31,6 +31,7 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import time
 
@@ -55,6 +56,12 @@ DEFAULTS = {'language': 'en', 'theme': 'graphite', 'terminal': 'auto', 'storage'
 TEXT_KEYS = ('language', 'theme', 'terminal', 'storage', 'animation', 'timezone', 'android_log')
 ANIMATIONS = ('zoom', 'blur', 'slide', 'fade', 'dissolve', 'off')
 HEX = re.compile(r'[0-9a-f]+')
+
+
+# What a look at a volume may fail with: a mount command that does not come back is a
+# subprocess.TimeoutExpired, no OSError (2026-11-14 review: it left with a traceback and exit 1,
+# which says "wrong password").
+FAILS = (OSError, ValueError, fs.FilesystemError, subprocess.SubprocessError)
 
 
 class Unreadable(OSError):
@@ -119,7 +126,7 @@ def volume_root(context, label, mode):
                 yield Path(context.volume(label)['mountpoint'])
             finally:
                 os.sync()
-                with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
+                with contextlib.suppress(*FAILS):
                     context.mount(label, 'ro', True, context.volume(label)['volume_token'])
             return
         if mode == 'rw' and (volume['read_only'] or not volume['write_supported']):
@@ -416,7 +423,7 @@ def _volume(context, label):
     three copies)."""
     try:
         volume = context.volume(label)
-    except (OSError, ValueError, fs.FilesystemError) as error:
+    except FAILS as error:
         # The list reads sysfs and /dev, and fails with a bare OSError when a card or a stick goes
         # while it is read (2026-11-14 review: that passed every "except Unreadable" and locked a
         # phone with no password).
@@ -432,26 +439,23 @@ def _ready(context, label):
     """_volume, after the journal of an ext4 this recovery may write was replayed: a read-only look
     does not replay it (noload), and a write cut short by a reset may be whole only in the journal,
     its blocks half in place: settings that read as older ones, as damaged, or not at all at every
-    start (2026-11-14 review). Mounted for writing once, as distro.boot_check does, and left as it
-    was found: unmounted, or read-only when the recovery itself had it mounted so before the first
-    read (the list of saved BOOTs, the updates: 2026-11-14 review); a volume mounted for writing
-    has its journal live, and one of another owner is not touched. When the replay fails the volume
-    is looked at as it is. f2fs needs none: without its roll-forward (norecovery) it shows its last
-    checkpoint, which is whole and is what sync() writes before a save is said done."""
+    start (2026-11-14 review). Mounted for writing once and unmounted, as distro.boot_check does;
+    when that fails the volume is looked at as it is. Only a volume that is not mounted: one that
+    is mounted is never remounted by a look at the settings, whoever mounted it and however (a
+    read-only mount the user made of a damaged userdata to save its files would have had its
+    journal replayed; a failure halfway left Flash without the mount it held: 2026-11-14 review).
+    The first look of a start comes before any such mount (ramdisk/init: handoff.py, then the
+    tidy of cache, which mounts it for writing itself). f2fs needs none: without its roll-forward
+    (norecovery) it shows its last checkpoint, which is whole and is what sync() writes before a
+    save is said done."""
     volume = _volume(context, label)
-    if (volume is None or not volume.get('needs_recovery')
+    if (volume is None or volume.get('mounted') or not volume.get('needs_recovery')
             or volume.get('read_only_reason_code') in NEVER_WRITABLE):
         return volume
-    mounted = volume.get('mounted')
-    if mounted and not (volume.get('read_only') and volume.get('mount_owner') == 'filesystem'):
-        return volume
     try:
-        context.mount(label, 'rw', True, volume['volume_token'])  # filesystem.py unmounts its own first
-        if mounted:
-            context.mount(label, 'ro', True, context.volume(label)['volume_token'])
-        else:
-            context.unmount(label)
-    except (OSError, ValueError, fs.FilesystemError):
+        context.mount(label, 'rw', True, volume['volume_token'])
+        context.unmount(label)
+    except FAILS:
         pass
     return _volume(context, label)
 
@@ -529,7 +533,7 @@ def _read_look(context, label, opened):
     try:
         root = _its_root(opened.enter_context(volume_root(context, label, 'ro')), volume)
         look.update(root=root, holds=holds(root, RELATIVE), marked=marked(root), known=True)
-    except (OSError, ValueError, fs.FilesystemError):
+    except FAILS:
         pass
     return look
 
@@ -594,7 +598,7 @@ def read_disk(details=None):
             return record
         except (Damaged, Unreadable, NoSettingsVolume):
             raise
-        except (OSError, ValueError, fs.FilesystemError) as error:
+        except FAILS as error:
             raise Unreadable('The settings volume cannot be read now') from error
         finally:
             _close(opened)
@@ -633,7 +637,7 @@ def choose(states, mode):
 
 def _close(opened):
     """Close a volume this call no longer needs: a failure to unmount it is no failure of the work."""
-    with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
+    with contextlib.suppress(*FAILS):
         opened.close()
 
 
@@ -652,7 +656,7 @@ def _look(context, label, mode, relative, opened):
     if mode == 'rw' and write == 'later':
         try:
             root = opened.enter_context(volume_root(context, label, 'rw'))
-        except (OSError, ValueError, fs.FilesystemError):
+        except FAILS:
             _close(opened)
         else:
             try:
@@ -663,7 +667,7 @@ def _look(context, label, mode, relative, opened):
     try:
         root = _its_root(opened.enter_context(volume_root(context, label, 'ro')), volume)
         found, mark = holds(root, relative), marked(root)
-    except (OSError, ValueError, fs.FilesystemError):
+    except FAILS:
         _close(opened)
         return True, None, write, None, False
     if mode != 'ro':
@@ -732,7 +736,7 @@ def _drop_other_marks(context, keep, seen):
                     continue
                 with volume_root(context, label, 'ro') as root:
                     found = marked(_its_root(root, volume))
-            except (OSError, ValueError, fs.FilesystemError):
+            except FAILS:
                 continue
         if found:
             volume = _ready(context, label)
@@ -770,7 +774,7 @@ def write_disk(record):
                 else:
                     drop_mark(root)
             return True
-        except (OSError, ValueError, fs.FilesystemError):
+        except FAILS:
             return False
 
 
@@ -783,7 +787,7 @@ def ensure_mark(record, details):
     if not record.get('hash') or holder is None or details.get('marked'):
         return
     context = fs.DeviceContext()
-    with contextlib.suppress(OSError, ValueError, fs.FilesystemError):
+    with contextlib.suppress(*FAILS):
         with lease(context.lock_path, context.mode):
             with settings_root(context, 'rw') as (label, root):
                 text = read_regular(root, RELATIVE, label) if label == holder else None
@@ -830,7 +834,7 @@ def store(record):
     remember(record)
     try:
         return 0 if write_disk(record) else 3
-    except (OSError, ValueError, fs.FilesystemError):
+    except FAILS:
         return 3
 
 
@@ -935,6 +939,6 @@ if __name__ == '__main__':
     except Damaged as error:
         print(error, file=sys.stderr)
         sys.exit(4)
-    except (OSError, ValueError, fs.FilesystemError) as error:
+    except FAILS as error:
         print(error, file=sys.stderr)
         sys.exit(2)

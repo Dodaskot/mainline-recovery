@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -533,17 +534,19 @@ class Damaged(unittest.TestCase):
         volume.update(needs_recovery=True, read_only_reason_code='FSCRYPT_KEYS_UNAVAILABLE')
         settings._ready(Context(), 'cache')
         self.assertEqual(seen, [])
-        # 2026-11-14 review (25): the recovery's own read-only mount, made before the first read, is
-        # replayed too and left read-only; a mount for writing, or another owner's, is not touched.
-        volume.update(read_only_reason_code=None, mounted=True, read_only=True, mount_owner='filesystem')
-        settings._ready(Context(), 'cache')
-        self.assertEqual(seen, [('cache', 'rw'), ('cache', 'ro')])
-        for other in ({'read_only': False}, {'mount_owner': 'storage'}):
-            del seen[:]
-            volume.update(needs_recovery=True, read_only=True, mount_owner='filesystem')
-            volume.update(other)
+        # 2026-11-14 review (26): a volume that is mounted is never remounted by a look, whoever
+        # mounted it; and a mount command that does not come back is no traceback.
+        for state in ({'read_only': True, 'mount_owner': 'filesystem'}, {'read_only': False, 'mount_owner': 'filesystem'},
+                      {'read_only': True, 'mount_owner': 'storage'}):
+            volume.update(needs_recovery=True, read_only_reason_code=None, mounted=True, **state)
             settings._ready(Context(), 'cache')
-            self.assertEqual(seen, [], other)
+            self.assertEqual(seen, [], state)
+        volume.update(mounted=False)
+
+        class Hangs(Context):
+            def mount(self, label, mode, confirmed, token):
+                raise subprocess.TimeoutExpired('mount', 30)
+        self.assertTrue(settings._ready(Hangs(), 'cache')['needs_recovery'])
 
     def test_clearing_the_password_looks_for_other_marks_after_the_journal_is_replayed(self):
         # 2026-11-14 review (25): _drop_other_marks looked through _volume, so a mark that was only
