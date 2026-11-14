@@ -182,13 +182,20 @@ def write_error(number, said=''):
     """The error for a write that failed with errno NUMBER, or, when only a pipe broke, with what
     zstd SAID about its own write (2026-11-14 review: every cause, EIO and a FAT32 file at 4 GiB
     too, was said as a full volume)."""
-    if number in (errno.ENOSPC, errno.EDQUOT) or (number == errno.EPIPE and (
-            os.strerror(errno.ENOSPC) in said or os.strerror(errno.EDQUOT) in said)):
+    if number in (errno.ENOSPC, errno.EDQUOT):
+        return said_error(os.strerror(errno.ENOSPC))
+    if number == errno.EFBIG:
+        return said_error(os.strerror(errno.EFBIG))
+    return said_error(said if number == errno.EPIPE and said else os.strerror(number))
+
+
+def said_error(said):
+    """The error for a write that failed as SAID (zstd's message, or the errno's text)."""
+    if os.strerror(errno.ENOSPC) in said or os.strerror(errno.EDQUOT) in said:
         return fs.FilesystemError('INSUFFICIENT_SPACE', 'There is not enough space for the archive')
-    if number == errno.EFBIG or (number == errno.EPIPE and os.strerror(errno.EFBIG) in said):
+    if os.strerror(errno.EFBIG) in said:
         return fs.FilesystemError('FILE_TOO_LARGE', 'This volume cannot hold a file this large: FAT32 stops at 4 GiB. Use exFAT or ext4')
-    reason = said if number == errno.EPIPE and said else os.strerror(number)
-    return fs.FilesystemError('ARCHIVE_WRITE_FAILED', 'The archive could not be written', said=reason[-200:])
+    return fs.FilesystemError('ARCHIVE_WRITE_FAILED', 'The archive could not be written', said=said[-200:])
 
 
 def raise_cause(late, error):
@@ -392,7 +399,9 @@ def write_archive(out, files, total, progress, extra=(), left_out=None):
         proc.stdin.close()
         said = proc.stderr.read().decode(errors='replace').strip()[-200:]
         if proc.wait() != 0:
-            fail('ARCHIVE_WRITE_FAILED', 'The archive could not be written', said=said)
+            # zstd's own last write failed (the final flush, after the tar stream was whole): its
+            # message says why (2026-11-14 review: a card full at the last block was a plain failure).
+            raise said_error(said)
     except OSError as error:
         if proc.poll() is None:
             proc.kill()

@@ -81,6 +81,12 @@ class Updates(unittest.TestCase):
         self.assertGreater(updates.version_key('1.0.0-rc1'), updates.version_key('0.6.235'))
         self.assertLess(updates.version_key('1.0.0-RC2-public'), updates.version_key('1.0.0-public'))
         self.assertEqual(updates.version_name('1.0.1-rc1'), '1.0.1')
+        # The kind before its number (2026-11-14 review of that rule).
+        order = ['1.0.0-dev3', '1.0.0-alpha3', '1.0.0-beta', '1.0.0-beta2', '1.0.0-pre1', '1.0.0-rc', '1.0.0-rc1', '1.0.0', '1.0.0-r1']
+        keys = [updates.version_key(v) for v in order]
+        self.assertEqual(keys, sorted(keys))
+        self.assertEqual(len(set(keys)), len(keys))
+        self.assertEqual(updates.version_name('1.0.0-rc2-r3'), '1.0.0.0.3')
         self.assertEqual((updates.version_name('v1.0.0'), updates.version_name('1.0.0-r10'), updates.version_name('0.6.206-public')),
                          ('1.0.0', '1.0.0.0.10', '0.6.206'))
         with self.assertRaises(updates.fs.FilesystemError):

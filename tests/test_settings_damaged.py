@@ -43,12 +43,13 @@ class Damaged(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix='a22x-settings-', dir=os.environ.get('TMPDIR')))
         self.addCleanup(shutil.rmtree, self.root, True)
         self.calls, self.readable = [], {'cache': True, 'userdata': True}
+        self.writable = {'cache': True, 'userdata': True}
         for label in ('cache', 'userdata'):
             (self.root / label / 'a22x-recovery').mkdir(parents=True)
 
         @contextlib.contextmanager
         def volume_root(context, label, mode):
-            if not self.readable[label]:
+            if not self.readable[label] or (mode == 'rw' and not self.writable[label]):
                 raise OSError('cannot mount ' + label)
             self.calls.append(('open', label, mode))
             yield self.root / label
@@ -102,22 +103,44 @@ class Damaged(unittest.TestCase):
         with self.assertRaises(OSError):
             settings.read_disk()
 
+    def chosen(self, mode):
+        with settings.settings_root(FakeContext(self.root, self.calls), mode) as (label, root):
+            self.assertEqual(root, self.root / label)
+            return label
+
     def test_settings_and_themes_go_where_the_next_start_reads_them(self):
         # 2026-11-14 review: a write that failed on cache went to userdata, unread while cache holds settings.
-        context = FakeContext(self.root, self.calls)
-        self.assertEqual(settings.settings_volume(context), 'cache')  # none yet: the first that opens
+        for mode in ('ro', 'rw'):
+            self.assertEqual(self.chosen(mode), 'cache')  # none yet: the first that opens
         self.write('userdata', json.dumps(GOOD))
-        self.assertEqual(settings.settings_volume(context), 'userdata')
+        self.assertEqual((self.chosen('ro'), self.chosen('rw')), ('userdata', 'userdata'))
         self.write('cache', json.dumps(GOOD))
-        self.assertEqual(settings.settings_volume(context), 'cache')
+        self.assertEqual((self.chosen('ro'), self.chosen('rw')), ('cache', 'cache'))
         self.readable = {'cache': False, 'userdata': True}
-        with self.assertRaises(settings.Unreadable):
-            settings.settings_volume(context)
+        for mode in ('ro', 'rw'):
+            with self.assertRaises(settings.Unreadable):
+                self.chosen(mode)
         self.readable = {'cache': True, 'userdata': False}
         self.calls.clear()
         self.assertTrue(settings.write_disk({'theme': 'y'}))
         # Opened once, for writing (2026-11-14 review: once read-only to choose it, then again).
         self.assertEqual([call for call in self.calls if call[0] == 'open'], [('open', 'cache', 'rw')])
+
+    def test_a_volume_that_cannot_be_written_and_holds_nothing_is_passed_over(self):
+        # 2026-11-14 review: Android's encrypted userdata, never writable here, made every first save
+        # of the settings fail while cache held none yet.
+        (self.root / 'cache' / settings.RELATIVE).unlink(missing_ok=True)
+        self.writable = {'cache': True, 'userdata': False}
+        self.calls.clear()
+        self.assertTrue(settings.write_disk({'theme': 'y'}))
+        self.assertTrue((self.root / 'cache' / settings.RELATIVE).is_file())
+        # cache opened once and kept open while userdata was looked at read-only.
+        self.assertEqual([call for call in self.calls if call[0] == 'open'], [('open', 'cache', 'rw'), ('open', 'userdata', 'ro')])
+        # Where the settings are, a volume that cannot be written fails the write: never another.
+        (self.root / 'cache' / settings.RELATIVE).unlink()
+        self.write('userdata', json.dumps(GOOD))
+        self.assertFalse(settings.write_disk({'theme': 'z'}))
+        self.assertFalse((self.root / 'cache' / settings.RELATIVE).exists())
 
     def test_a_theme_that_cannot_be_copied_does_not_lock_the_phone(self):
         # 2026-11-14 review: an EIO on one theme made read_disk say the settings could not be read.

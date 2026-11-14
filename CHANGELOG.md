@@ -55,6 +55,15 @@ day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md)
   job started during a screenshot waits for it instead of failing; a pre-release is older than its
   version; settings and themes open their volume once.
 
+- **Fixes from the third review** (14 findings, all fixed): settings, themes and saved Wi-Fi
+  networks are saved again on a phone whose userdata is Android's (a regression of the round
+  before); a network list that could not be written changes nothing, in RAM neither; pre-release
+  kinds are ordered (alpha, beta, rc); an updater that cannot run is an installer that stopped, not a
+  room that failed; a card full at zstd's last block is said as full; homes and settings are counted
+  apart, and a part comes back once it can be counted again; missing packages are named when Arch
+  could not be upgraded; the hand-off waits about 20 s in all; smaller fixes (descriptors closed on
+  every path, one drop_cached at the bottom, one read of each saved BOOT).
+
 - **Updates** (README, limitations): a download needs 40 MiB on cache; with cache full of saved
   BOOT copies it stops with CACHE_FULL (found updating 0.6.206 to 1.0.0 on the phone).
 

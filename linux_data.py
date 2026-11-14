@@ -444,13 +444,18 @@ def inspect(context):
             # 2026-11-14 review: a home with more entries than one archive takes made the whole page
             # say there was no Linux system. The system is shown; its sizes are unknown and REASON
             # says why the homes cannot be copied in one archive.
-            try:
-                files, opened, sizes = collect(pin, ('home', 'settings'), accounts)
-                for fd in opened:
-                    os.close(fd)
-            except fs.FilesystemError as error:
-                sizes = {'home': -1, 'settings': -1}
-                result['reason'] = error.code
+            # Each part counted on its own (2026-11-14 review of that change: a home too large to
+            # count made the settings unknown too, though a backup of them alone works).
+            sizes = {}
+            for part in ('home', 'settings'):
+                try:
+                    _, opened, counted = collect(pin, (part,), accounts)
+                    for fd in opened:
+                        os.close(fd)
+                    sizes[part] = counted[part]
+                except fs.FilesystemError as error:
+                    sizes[part] = -1
+                    result['reason'] = result.get('reason') or error.code
             result.update(linux=True, os={'id': release.get('ID', ''), 'name': release.get('PRETTY_NAME') or release.get('NAME', ''),
                                           'family': family},
                           accounts=[a['name'] for a in accounts],

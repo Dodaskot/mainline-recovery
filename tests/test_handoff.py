@@ -77,12 +77,20 @@ class TestHandoff(unittest.TestCase):
     def test_the_start_waits_for_a_busy_list_a_short_while_in_all(self):
         # 2026-11-14 review: each network waited about 30-60 s, before the interface came up.
         record = {'schema': 'a22x.handoff.v1', 'wifi': [{'ssid': 'Net %d' % i, 'password': 'password%d' % i} for i in range(8)]}
-        now = [0.0]
+        now, tried = [0.0], []
+
+        def busy(ssid, key):
+            tried.append(ssid)
+            now[0] += 3  # each try waits for the lock itself
         with mock.patch.object(handoff.time, 'monotonic', lambda: now[0]), \
-                mock.patch.object(handoff.time, 'sleep', lambda seconds: now.__setitem__(0, now[0] + seconds)):
-            applied = handoff.apply_record(record, remember=lambda ssid, key: None, load=dict, store=lambda current: None)
-        self.assertLessEqual(now[0], handoff.WAIT_SECONDS)
+                mock.patch.object(handoff.time, 'sleep', lambda seconds: now.__setitem__(0, now[0] + seconds)), \
+                mock.patch.object(wifi, 'psk', wraps=wifi.psk) as psk:
+            applied = handoff.apply_record(record, remember=busy, load=dict, store=lambda current: None)
+        # One deadline for all: no network waits past it, nor gets a try of its own after it.
+        self.assertLessEqual(now[0], handoff.WAIT_SECONDS + 3)
+        self.assertEqual(set(tried), {b'Net 7'})
         self.assertEqual(len(applied['wifi_not_saved']), 8)
+        self.assertEqual(psk.call_count, 8)  # each key derived once
 
     def test_strange_language_and_zone_change_nothing(self):
         stored = []

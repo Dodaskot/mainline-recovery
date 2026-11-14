@@ -197,43 +197,68 @@ def read_disk():
 @contextlib.contextmanager
 def settings_root(context, mode, relative=RELATIVE):
     """(label, root) of the volume the settings are read from at the next start, as read_disk
-    chooses it: the first of VOLUMES that holds a settings file, else the first that can be opened;
-    opened once, in MODE. Writes of settings and themes go there and nowhere else (2026-11-14 review:
-    a write that failed on cache went to userdata, which is not read while cache holds settings; and
-    the volume was mounted once to choose it and again to write). RELATIVE: another file kept the
-    same way (the saved Wi-Fi networks). A volume that should open and does not raises Unreadable.
-    Called under the operation lock."""
+    chooses it: the first of VOLUMES that holds a settings file, else the first that opens; opened
+    in MODE. Writes of settings and themes go there and nowhere else (2026-11-14 review: a write
+    that failed on cache went to userdata, which is not read while cache holds settings).
+    RELATIVE: another file kept the same way (the saved Wi-Fi networks). Called under the
+    operation lock.
+
+    Each volume is opened once: the first one without the file stays open while the others are
+    looked at (2026-11-14 review). A volume that cannot be opened for writing is passed over when a
+    read-only look shows it does not hold the file (2026-11-14 review of that change: Android's
+    encrypted userdata, never writable here, kept every setting from being saved on cache); a
+    volume that holds it, or cannot be looked at at all, raises Unreadable."""
     first = None
-    for label in VOLUMES:
-        try:
-            volume = context.volume(label)
-        except fs.FilesystemError:
-            continue
-        if not volume.get('mountable') and not volume.get('mounted'):
-            continue
-        opened = contextlib.ExitStack()
-        try:
-            root = opened.enter_context(volume_root(context, label, mode))
-            holds = (root / relative).is_file()
-        except (OSError, ValueError, fs.FilesystemError) as error:
-            opened.close()
-            raise Unreadable('The settings volume %s cannot be read now' % label) from error
-        if holds:
-            with opened:
-                yield label, root
-            return
-        opened.close()
-        first = first or label
-    if first is None:
-        raise OSError('No settings volume could be read')
-    with volume_root(context, first, mode) as root:
-        yield first, root
+    try:
+        for label in VOLUMES:
+            try:
+                volume = context.volume(label)
+            except fs.FilesystemError:
+                continue
+            if not volume.get('mountable') and not volume.get('mounted'):
+                continue
+            opened = contextlib.ExitStack()
+            try:
+                root = opened.enter_context(volume_root(context, label, mode))
+            except (OSError, ValueError, fs.FilesystemError) as error:
+                opened.close()
+                if mode != 'ro' and not _holds(context, label, relative):
+                    continue
+                raise Unreadable('The settings volume %s cannot be used now' % label) from error
+            try:
+                holds = (root / relative).is_file()
+            except OSError as error:
+                opened.close()
+                raise Unreadable('The settings volume %s cannot be read now' % label) from error
+            if holds:
+                if first is not None:
+                    first[1].close()
+                    first = None
+                with opened:
+                    yield label, root
+                return
+            if first is None:
+                first = (label, opened, root)
+            else:
+                opened.close()
+        if first is None:
+            raise OSError('No settings volume could be read')
+        label, opened, root = first
+        first = None
+        with opened:
+            yield label, root
+    finally:
+        if first is not None:
+            first[1].close()
 
 
-def settings_volume(context, relative=RELATIVE):
-    """The label settings_root chooses."""
-    with settings_root(context, 'ro', relative) as (label, _):
-        return label
+def _holds(context, label, relative):
+    """Whether LABEL holds RELATIVE, looked at read-only; Unreadable when it cannot be looked at."""
+    try:
+        with volume_root(context, label, 'ro') as root:
+            return (root / relative).is_file()
+    except (OSError, ValueError, fs.FilesystemError) as error:
+        raise Unreadable('The settings volume %s cannot be read now' % label) from error
 
 
 def write_disk(record):

@@ -196,6 +196,17 @@ class NativeFallback(unittest.TestCase):
         details = failed['error']['details']
         self.assertEqual((details['installer_exit'], details['written_by_recovery'], details['changed']), (None, False, []))
 
+    def test_the_channels_are_closed_when_the_run_cannot_start(self):
+        # 2026-11-14 review: an error before the run left the installer's channels open.
+        from unittest import mock
+        path = self.archive('rom.zip', 'ui_print "never runs"', code=0)
+        about = self.helper('inspect', path)[1]
+        before = len(os.listdir('/proc/self/fd'))
+        with mock.patch.object(zi.os, 'fork', side_effect=OSError(11, 'Resource temporarily unavailable')):
+            code, failed, _ = self.helper('run', path, '--expected-sha256', about['sha256'], '--confirm')
+        self.assertEqual(code, 2, failed)
+        self.assertEqual(len(os.listdir('/proc/self/fd')), before)
+
     def test_the_recovery_writes_nothing_itself_without_the_room(self):
         with self.assertRaises(fs.FilesystemError) as caught:
             zi.native_install(None, None, -1, {'system': 4096}, {}, lambda *a: None)
@@ -218,6 +229,20 @@ class InstallerChecks(unittest.TestCase):
             zi.check_installer(folder / 'update-binary', hashlib.sha256(b'#!/sbin/sh\necho reviewed\n').hexdigest())
         self.assertEqual(caught.exception.code, 'ZIP_CHANGED')
         zi.check_installer(folder / 'update-binary', hashlib.sha256(b'#!/sbin/sh\necho changed\n').hexdigest())
+
+    def test_an_installer_that_could_not_be_started_is_no_room_failure(self):
+        # 2026-11-14 review: E was written before exec; an updater that cannot run here (its
+        # interpreter missing) was said as a room that could not be made.
+        for data, expected in ((b'E', (True, None)), (b'EF{"code": "IO_ERROR", "message": "exec"}', (True, None)),
+                               (b'F{"code": "ZIP_CHANGED", "message": "changed"}', (False, {'code': 'ZIP_CHANGED', 'message': 'changed'})),
+                               (b'', (False, {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}))):
+            read, write = os.pipe()
+            os.write(write, data)
+            os.close(write)
+            try:
+                self.assertEqual(zi.read_start(read), expected, data)
+            finally:
+                os.close(read)
 
     def test_getprop_matches_the_name_as_text(self):
         import subprocess

@@ -219,13 +219,18 @@ def saved_read():
 
 
 def saved_write(networks):
-    _ram_saved(networks)
+    """NETWORKS as the saved list: on the settings volume first, then in RAM; when the disk cannot
+    take it, nothing changes, RAM neither (2026-11-14 review: RAM changed first, so a forget that
+    failed was done on a second try without a write, and a network not saved showed as saved)."""
     def write(root):
         path = root / SAVED_RELATIVE
         path.parent.mkdir(mode=0o700, exist_ok=True)
         _atomic(path, {'schema': 'a22x.wifi.saved.v1', 'networks': networks})
         return True
-    return _settings_volumes('rw', write) is True
+    if _settings_volumes('rw', write) is not True:
+        return False
+    _ram_saved(networks)
+    return True
 
 
 def remember(ssid, key):

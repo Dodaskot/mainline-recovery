@@ -220,8 +220,10 @@ if want packages && [ -f "$STAGED/packages.txt" ]; then
         esac
         if has "$n"; then installed=$((installed + 1)); else want="$want $n"; fi
     done
-    # The package lists are made ready (Arch: upgraded) only when something is missing.
+    # The package lists are made ready (Arch: upgraded) only when something is missing. When that
+    # fails, what is missing stays missing and is named (2026-11-14 review: it was counted as none).
     if [ -n "$want" ] && ! prepare; then
+        for n in $want; do missing=$((missing + 1)); say "missing $n"; done
         want=
     fi
     for n in $want; do

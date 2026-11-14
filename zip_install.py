@@ -803,7 +803,10 @@ def report_start(fd, error=None):
 
 
 def read_start(fd):
-    """(started, error) from the started channel, read after the run ended."""
+    """(started, error) from the started channel, read after the run ended. E first: the room was
+    ready and the installer was started; when its exec itself then failed (an updater that cannot
+    run here), that is an installer that stopped without changing anything, not a room that could
+    not be made (2026-11-14 review)."""
     data = b''
     os.set_blocking(fd, False)
     while True:
@@ -814,7 +817,7 @@ def read_start(fd):
         if not chunk:
             break
         data += chunk
-    if data == b'E':
+    if data.startswith(b'E'):
         return True, None
     error = {'code': 'ZIP_ROOM_FAILED', 'message': 'The room for the installer could not be prepared'}
     at = data.find(b'F')
@@ -1050,11 +1053,6 @@ def run(context, args, progress):
             # The layout the installer starts from, after the recovery's own fit; LAYOUT stays the
             # one found, so the result still names super when its layout changed.
             layout_run = layout_hash(context, found) if 'super' in found else None
-            read_fd, write_fd = os.pipe()
-            start_read, first = os.pipe2(os.O_CLOEXEC)
-            # Above the numbers the installer's channels take (9 for the screen, 0-2).
-            start_write = fcntl.fcntl(first, fcntl.F_DUPFD_CLOEXEC, 10)
-            os.close(first)
             room = Room(context, found) if context.mode == 'device' else None
             if room:
                 room.attach_logical()
@@ -1066,7 +1064,23 @@ def run(context, args, progress):
             # mappings (made before) pointed elsewhere, and what it had written was left unsaid.
             native = (room is not None or context.mode == 'fixture') and native_possible(fd, sizes)
             installer_code, native_error, native_ran, room_error, seen = None, None, False, None, None
+            # The installer's channels, closed whatever happens (2026-11-14 review: an error before
+            # the run left them open).
+            channels = {}
+
+            def close_channel(name):
+                number = channels.pop(name, None)
+                if number is not None:
+                    os.close(number)
             try:
+                read_fd, write_fd = os.pipe()
+                channels.update(read=read_fd, write=write_fd)
+                start_read, first = os.pipe2(os.O_CLOEXEC)
+                channels.update(start_read=start_read, first=first)
+                # Above the numbers the installer's channels take (9 for the screen, 0-2).
+                start_write = fcntl.fcntl(first, fcntl.F_DUPFD_CLOEXEC, 10)
+                channels['start_write'] = start_write
+                close_channel('first')
                 pid = os.fork()
                 if pid == 0:
                     try:
@@ -1084,17 +1098,15 @@ def run(context, args, progress):
                         report_start(start_write, error)
                     finally:
                         os._exit(127)
-                os.close(write_fd)
-                os.close(start_write)
+                close_channel('write')
+                close_channel('start_write')
                 try:
                     shown, code = follow(read_fd, pid, lambda text, part: progress(text, {'label': 'zip', 'size_bytes': 1000}, int(part * 1000)),
                                          time.monotonic() + RUN_SECONDS)
                 finally:
-                    os.close(read_fd)
-                try:
-                    started, room_error = read_start(start_read)
-                finally:
-                    os.close(start_read)
+                    close_channel('read')
+                started, room_error = read_start(start_read)
+                close_channel('start_read')
                 installer_code = code if started else None
                 if code != 0 and native and started:
                     seen = hashes(context, found)
@@ -1111,6 +1123,9 @@ def run(context, args, progress):
                     else:
                         shown = list(shown) + [NATIVE_REFUSED]
             finally:
+                for name in list(channels):
+                    with contextlib.suppress(OSError):
+                        close_channel(name)
                 os.sync()
                 written, left = unmap_after(room.mapped_before) if room else ([], [])
                 if room:

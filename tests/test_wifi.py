@@ -285,10 +285,14 @@ class TestControlSocket(unittest.TestCase):
         (self.disk / 'a22x-recovery/wifi.json').write_text(json.dumps({'networks': [
             {'ssid_hex': b'Other'.hex(), 'psk': 'a' * 64, 'added': 1}]}))
         self.assertTrue(w.connect(b'Home', 'correct horse', True)['remembered'])
-        with mock.patch.object(w, 'saved_write', return_value=False):
+        with mock.patch.object(w, '_settings_volumes', lambda mode, action: action(self.disk) if mode == 'ro' else None):
             with self.assertRaises(w.WifiError) as caught:
                 w.forget(b'Other')
             self.assertEqual(caught.exception.code, 'WIFI_SAVED_UNWRITTEN')
+            # Nothing changed, RAM neither: a second try writes again and fails again (2026-11-14 review).
+            self.assertIn(b'Other'.hex(), [n['ssid_hex'] for n in w.saved_known()])
+            with self.assertRaises(w.WifiError):
+                w.forget(b'Other')
         with mock.patch.object(w, 'saved_known', return_value=None):
             joined = w.connect(b'Home', 'correct horse', True)
         self.assertTrue(joined['connected'])

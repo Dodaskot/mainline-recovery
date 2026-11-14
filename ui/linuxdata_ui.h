@@ -10,6 +10,9 @@
 static bool ld_job(int kind){return kind==J_LD_INSPECT||kind==J_LD_BACKUP||kind==J_LD_RESTORE;}
 static const char*const ld_part_names[LD_PARTS]={"home","accounts","settings","packages"};
 static const char*const ld_part_titles[LD_PARTS]={"Home folders","Accounts","Settings","Packages"};
+static bool ld_part_usable(const App*a,unsigned int n){
+    return a->ld_linux&&(n!=3||a->ld_packages>=0)&&!(n==0&&a->ld_home==UINT64_MAX)&&!(n==2&&a->ld_settings==UINT64_MAX);
+}
 static unsigned int ld_mask(const Json*j,int list){
     unsigned int mask=0;if(list<0||j->tokens[list].type!=J_ARRAY)return 0;
     for(int i=list+1;i<json_next(j,list);i=json_next(j,i)){char name[24];if(json_string(j,i,name,sizeof(name))<=0)continue;
@@ -64,10 +67,12 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
                 a->ld_account_count=(unsigned int)json_uint(j,json_get(j,parts,"accounts"),0);
                 int packages=json_get(j,parts,"packages");a->ld_packages=packages>=0&&j->tokens[packages].type==J_PRIMITIVE&&j->text[j->tokens[packages].start]!='-'?(int)json_uint(j,packages,0):-1;}
         }
-        if(a->ld_packages<0)a->ld_parts&=~8u;
-        /* Homes and settings not counted cannot be backed up (2026-11-14 review: the button stayed
-           on for a selection that would fail): left out of the selection, their rows off. */
-        if(a->ld_home==UINT64_MAX)a->ld_parts&=~5u;
+        /* Parts that cannot be backed up now (packages unknown, homes or settings not counted) are
+           left out of the selection and their rows are off (2026-11-14 review: the button stayed on
+           for a selection that would fail); each one comes back once it is known again (2026-11-14
+           review of that: it stayed out after a Refresh that counted it). */
+        a->ld_parts|=a->ld_parts_off;a->ld_parts_off=0;
+        for(unsigned int n=0;n<LD_PARTS;n++)if((a->ld_parts>>n&1u)&&!ld_part_usable(a,n)){a->ld_parts&=~(1u<<n);a->ld_parts_off|=1u<<n;}
         a->ld_dest_count=0;int list=json_get(j,0,"destinations");
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->ld_dest_count<LD_DESTS;i=json_next(j,i)){
             LdDest*d=&a->ld_dest[a->ld_dest_count++];jstring(j,i,"volume",d->id,sizeof(d->id));jstring(j,i,"label",d->label,sizeof(d->label));d->free=json_uint(j,json_get(j,i,"free_bytes"),0);}
@@ -114,9 +119,6 @@ static void complete_ld_job(App*a,const Json*j,int kind,bool ok){
     }
     if(note[0])append(a->message,sizeof(a->message),tr(note));
     screen(a,RESULT);
-}
-static bool ld_part_usable(const App*a,unsigned int n){
-    return a->ld_linux&&(n!=3||a->ld_packages>=0)&&!((n==0||n==2)&&a->ld_home==UINT64_MAX);
 }
 static void ld_row(App*a,int y,const char*title,const char*detail,bool on,bool enabled,int action){
     Rect r={28,y,664,76};rounded(a,r,20,on&&enabled?PANEL2:PANEL);

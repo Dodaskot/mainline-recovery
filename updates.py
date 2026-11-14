@@ -39,7 +39,10 @@ UPDATES = 'a22x-recovery/updates'
 BUILD = Path('/etc/a22x-recovery/build.json')
 
 
-PRE_RELEASE = re.compile(r'-(?:alpha|beta|rc|pre|preview|dev)\.?([0-9]*)(?=-|$)', re.IGNORECASE)
+PRE_RELEASE = re.compile(r'-(alpha|beta|rc|preview|pre|dev)\.?([0-9]*)(?=-|$)', re.IGNORECASE)
+# The kinds of pre-release in their order: the kind counts before its number (2026-11-14 review:
+# beta2 came after rc1, and beta was rc).
+PRE_KINDS = {'dev': 0, 'alpha': 1, 'beta': 2, 'pre': 3, 'preview': 3, 'rc': 4}
 
 
 def version_key(text):
@@ -53,7 +56,7 @@ def version_key(text):
         return ()
     numbers = [int(part) for part in match.group(1).split('.')]
     pre = PRE_RELEASE.search(match.group(2))
-    stage = (0, int(pre.group(1) or 0)) if pre else (1, 0)
+    stage = (0, PRE_KINDS[pre.group(1).lower()], int(pre.group(2) or 0)) if pre else (1, 0, 0)
     revision = re.search(r'-r([0-9]+)(?:-|$)', match.group(2))
     return tuple(numbers + [0] * (4 - len(numbers))) + stage + (int(revision.group(1)) if revision else 0,)
 
@@ -65,7 +68,7 @@ def version_name(text):
     the copy's description says which release it is."""
     key = version_key(text)
     require(key, 'UPDATE_UNUSABLE', 'The release does not name a version')
-    parts = list(key[:4]) + [key[6]]
+    parts = list(key[:4]) + [key[-1]]
     while len(parts) > 3 and parts[-1] == 0:
         parts.pop()
     return '.'.join(str(part) for part in parts)

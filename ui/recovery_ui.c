@@ -411,7 +411,7 @@ typedef struct {
     /* A password as dots: when the last character was typed, and how many there were then. */
     uint64_t secret_typed_at;unsigned int secret_count;bool secret_show;
     bool backup_encrypt,pw_wrong;char backup_password[260],backup_password_file[PATH_LEN];int pw_retry_kind;enum Screen pw_return;
-    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160],ld_reason[64];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
+    bool ld_known,ld_linux;char ld_os[96],ld_accounts[160],ld_reason[64];uint64_t ld_home,ld_settings;unsigned int ld_account_count,ld_parts,ld_parts_off,ld_restore_parts,ld_dest_count,ld_archive_count;int ld_packages,ld_dest_index,ld_selected;unsigned int ld_page;LdDest ld_dest[LD_DESTS];LdArchive ld_archives[LD_ARCHIVES];
     bool fs_select,fs_select_all;unsigned int fs_sel_count;char fs_sel[FS_SEL_MAX][256];
     int fs_prompt_kind,fs_destination_index;
     unsigned int fs_confirm_page;
@@ -6387,6 +6387,17 @@ static int test_linux_data(void){
     assert(a->ld_linux&&a->ld_home==UINT64_MAX&&a->ld_settings==UINT64_MAX&&!strcmp(a->ld_reason,"SELECTION_TOO_LARGE"));render(a);
     /* Homes and settings not counted are out of the selection and cannot be chosen (2026-11-14 review). */
     assert(!(a->ld_parts&5u)&&!test_button(a,A_LD_PART+0)->enabled&&!test_button(a,A_LD_PART+2)->enabled&&test_button(a,A_LD_PART+1)->enabled);
+    /* Settings counted on their own stay usable beside a home too large; a Refresh that counts the
+       home again brings it back into the selection (2026-11-14 review of that rule). */
+    static const char home_only[]="{\"ok\":true,\"linux\":true,\"reason\":\"SELECTION_TOO_LARGE\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
+        "\"parts\":{\"home\":-1,\"settings\":4096,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
+    a->ld_parts=15u;a->ld_parts_off=0;   /* the owner chose every part */
+    assert(json_parse(&j,home_only,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);
+    assert((a->ld_parts&4u)&&!(a->ld_parts&1u)&&test_button(a,A_LD_PART+2)->enabled&&!test_button(a,A_LD_PART+0)->enabled);
+    static const char counted[]="{\"ok\":true,\"linux\":true,\"reason\":\"\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
+        "\"parts\":{\"home\":1024,\"settings\":4096,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
+    assert(json_parse(&j,counted,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);render(a);
+    assert((a->ld_parts&5u)==5u&&test_button(a,A_LD_PART+0)->enabled);
     static const char changed[]="{\"ok\":true,\"linux\":true,\"reason\":\"FILE_CHANGED\",\"os\":{\"name\":\"Ubuntu\"},\"accounts\":[\"alex\"],"
         "\"parts\":{\"home\":-1,\"settings\":-1,\"accounts\":1,\"packages\":3},\"destinations\":[],\"archives\":[]}";
     assert(json_parse(&j,changed,tokens,256)>0);complete_ld_job(a,&j,J_LD_INSPECT,true);

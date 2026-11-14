@@ -332,7 +332,7 @@ class LinuxData(unittest.TestCase):
         (stubs / 'pacman').chmod(0o755)
         # A list already there needs no upgrade at all (2026-11-14 review: it upgraded the system as a
         # side effect); a failed upgrade is said, and nothing is installed onto the older system.
-        for upgrade, installs, upgrades, said in (('1', False, 1, 'a22x: packages upgrade failed'),
+        for upgrade, installs, upgrades, said in (('1', False, 1, 'a22x: packages 0 2'),
                                                   ('0', True, 1, 'a22x: packages 2 0'), ('1', False, 0, 'a22x: packages 2 0')):
             log.unlink(missing_ok=True)
             if upgrades:
@@ -344,6 +344,10 @@ class LinuxData(unittest.TestCase):
             self.assertEqual(sum(1 for c in calls if c.startswith('pacman -Syu')), upgrades, calls)
             self.assertEqual(any(c.startswith('pacman -S ') for c in calls), installs, calls)
             self.assertIn(said, out.stdout)
+            if upgrade == '1' and upgrades:
+                # The failed upgrade is said, and what is missing is named as missing.
+                self.assertIn('a22x: packages upgrade failed', out.stdout)
+                self.assertIn('a22x: missing firefox', out.stdout)
 
 
 if __name__ == '__main__':

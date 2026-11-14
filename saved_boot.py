@@ -181,12 +181,14 @@ def content_key(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def tidy_folder(folder):
+def tidy_folder(folder, checked=None):
     """2026-11-10: cache is 200 MiB and filled up with the same BOOT under several names (from the
     firmware, kept before a flash, once with the keep-recovery mark). Copies with the same content
     are removed but one: the one taken out of the firmware (stock-), else the oldest. Copies that
-    differ are all kept. Returns {name: content key} of what stays."""
-    entries, checked = [], set()
+    differ are all kept. Returns {name: content key} of what stays; CHECKED, a set, gets the names
+    whose key was read from their bytes here (2026-11-14 review: save_on_cache read them again)."""
+    entries = []
+    checked = set() if checked is None else checked
     listed = set(os.listdir(folder))
     for name in sorted(listed):
         if not name.endswith('.img') or name + '.json' not in listed:
@@ -538,10 +540,11 @@ def save_on_cache(context, name, image, meta, progress, keep_mounted=False, fold
                     # The same BOOT is not kept twice: the copy there is the way back already, when
                     # it really holds this BOOT (2026-11-14 review: a lone copy, damaged but with
                     # its description whole, was returned and the good one never saved).
-                    kept = tidy_folder(folder)
+                    read = set()
+                    kept = tidy_folder(folder, read)
                     mine = content_key(image)
                     twin = next((other for other, key in kept.items() if key == mine), None)
-                    if twin and image_key(folder, twin) == mine:
+                    if twin and (twin in read or image_key(folder, twin) == mine):
                         return '/' + folder_name + '/' + twin
                     room = os.fstatvfs(pin.fd)
                 if room.f_bavail * room.f_frsize <= end + (8 << 20):

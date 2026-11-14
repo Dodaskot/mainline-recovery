@@ -283,6 +283,10 @@ class FileArchive(unittest.TestCase):
                 fa.raise_cause(OSError(number, os.strerror(number)), RuntimeError('pipe'))
             self.assertEqual(caught.exception.code, code)
         fa.raise_cause(None, RuntimeError('pipe'))
+        # A failure zstd met at its final flush, after the stream was whole (2026-11-14 review).
+        self.assertEqual(fa.said_error('zstd: error 70 : Write error : ' + os.strerror(errno.ENOSPC)).code, 'INSUFFICIENT_SPACE')
+        self.assertEqual(fa.said_error('zstd: error 70 : Write error : ' + too_large).code, 'FILE_TOO_LARGE')
+        self.assertEqual(fa.said_error('zstd: error 1 : something else').details['said'], 'zstd: error 1 : something else')
 
     def test_many_folders_need_few_descriptors(self):
         # 2026-11-13 review: every folder walked stayed open; 1100 folders under a limit of 1024 failed.

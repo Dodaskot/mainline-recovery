@@ -400,8 +400,8 @@ class StopAndSignalTests(unittest.TestCase):
         old = [signal.getsignal(n) for n in (signal.SIGTERM, signal.SIGINT)]
         self.addCleanup(lambda: [signal.signal(n, h) for n, h in zip((signal.SIGTERM, signal.SIGINT), old)])
         with mock.patch.object(usb, 'process_start', started_then_signal), \
-                mock.patch.object(usb, 'child_stop', stop_with_another_signal):
-            os.environ.pop(usb.ENV_FD, None)
+                mock.patch.object(usb, 'child_stop', stop_with_another_signal), mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(usb.ENV_FD, None)  # restored when the patch ends (2026-11-14 review)
             self.assertEqual(usb.serve(self.context, args), 2)
         record = self.context.record()
         self.assertEqual((record['state'], record['clean']), ('failed', True))

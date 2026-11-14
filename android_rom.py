@@ -21,7 +21,6 @@ ROM's own recovery would replace this one.
 """
 import bz2
 import contextlib
-import fcntl
 import hashlib
 import json
 import lzma
@@ -31,6 +30,8 @@ import re
 import struct
 import sys
 import zipfile
+
+from lp_metadata import drop_cached  # noqa: F401  the one copy; android_rom.drop_cached for its callers
 
 # update_engine's payload: "CrAU", version 2.
 PAYLOAD_MAGIC = b'CrAU'
@@ -389,17 +390,6 @@ def block_stream(archive, name):
         member.close()
         require(code == 0, 'ROM_DATA_DAMAGED', 'The compressed image inside this ROM is damaged', member=name)
     return process.stdout.read, finish
-
-
-def drop_cached(fd):
-    """What was written is read back from the storage, not from the page cache (2026-11-13 review):
-    the block device's buffers are dropped, and a regular file's pages are let go."""
-    try:
-        fcntl.ioctl(fd, 0x1261)  # BLKFLSBUF
-    except OSError:
-        pass
-    with contextlib.suppress(OSError, AttributeError):
-        os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
 
 
 def write_block_image(archive, part, fd, size, progress=None):

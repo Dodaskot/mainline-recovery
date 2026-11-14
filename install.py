@@ -30,6 +30,7 @@ import zlib
 
 import bootimage
 import filesystem as fs
+from lp_metadata import drop_cached
 from operation_lock import operation_lock, ENV_FD, held as lease_held
 
 CHUNK = 1024 * 1024
@@ -1851,8 +1852,7 @@ def execute(context, plan, confirmation, progress=None, hook=None):
                                 and reader.input_hash.hexdigest() == entry['input_sha256'],
                                 'SOURCE_CHANGED', 'Complete stream differs from its preverified image')
                         os.fsync(writers[label])
-                        import android_rom  # its drop_cached, the one copy (2026-11-14 review)
-                        android_rom.drop_cached(writers[label])  # read back from the eMMC, not the page cache
+                        drop_cached(writers[label])  # read back from the eMMC, not the page cache (2026-11-14 review)
                         transaction = journal_update(store, plan['journal_path'], transaction, state='verifying')
                         require(hash_fd(writers[label], entry['target_bytes'], progress=progress, label=label, phase='readback') == entry['target_sha256'],
                                 'INSTALL_READBACK_MISMATCH', 'Complete target readback differs from the verified image', label=label)
