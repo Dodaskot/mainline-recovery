@@ -444,10 +444,11 @@ def _ready(context, label):
     is mounted is never remounted by a look at the settings, whoever mounted it and however (a
     read-only mount the user made of a damaged userdata to save its files would have had its
     journal replayed; a failure halfway left Flash without the mount it held: 2026-11-14 review).
-    The first look of a start comes before any such mount (ramdisk/init: handoff.py, then the
-    tidy of cache, which mounts it for writing itself). f2fs needs none: without its roll-forward
-    (norecovery) it shows its last checkpoint, which is whole and is what sync() writes before a
-    save is said done."""
+    Cache comes to every start with its journal replayed (ramdisk/init runs e2fsck -p on it before
+    anything mounts it), so this is for userdata, and for a userdata that something has mounted
+    read-only it does nothing: what is whole only in its journal then is a save that was never
+    said done. f2fs needs none: without its roll-forward (norecovery) it shows its last
+    checkpoint, which is whole and is what sync() writes before a save is said done."""
     volume = _volume(context, label)
     if (volume is None or volume.get('mounted') or not volume.get('needs_recovery')
             or volume.get('read_only_reason_code') in NEVER_WRITABLE):
