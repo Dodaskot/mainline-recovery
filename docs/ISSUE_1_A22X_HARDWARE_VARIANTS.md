@@ -12,6 +12,10 @@ Evidence:
   `7db22ea862aba94d93561f0aef18bb8df21cd888`.
 - Known-good baseline recovery v1.0.2 SHA-256:
   `86202777e38c5cf0ace0282f3defdd30832fae83d694edc6b2658a4cd7f28c7f`.
+- Physical Himax and native-display follow-up:
+  `docs/ISSUE_1_A22X_LIVE_TEST_20261119.md`.
+- Actual NT36675 firmware parser, QEMU ARM64, sanitizer and negative results:
+  `docs/ISSUE_1_NOVATEK_OFFLINE_AUDIT_20261119.md`.
 
 ## Hardware, not just firmware
 
@@ -98,8 +102,24 @@ use Tianma. The revised **kernel source** requires an explicit
 `nt36`/`NT36`/`novatek`/`NVT` chip-family marker and fills out SPI aliases.
 The first on-device 1.0.2.1 image predates these refinements. The rebuilt
 revision was subsequently flashed and booted as kernel `#3` on Himax JDI,
-with the missing-SPI-ID warnings gone. Real finger events and Novatek
-hardware qualification are still pending.
+with the missing-SPI-ID warnings gone. The owner reported real touch and
+short-Power blanking **failed** on that simpledrm DTB. A later DTB-only
+native-display prototype bound Himax after panel preparation; the owner
+confirmed real finger input and the display service blank/wake path succeeded.
+The correctly versioned 1.0.2.2 image is still an offline candidate, while
+Novatek hardware qualification is still pending.
+
+The NT36675 source then received four additional safeguards: fail closed
+when LK `/chosen/bootargs` is missing, preserve the devicetree's falling-edge
+touch IRQ rather than force rising-edge, and check DRM panel-follower
+registration, and require the complete seven-byte watchdog marker before
+firmware recovery. The patched ARM64 object compiled with W=1 and no warnings.
+A host Python model, x86
+ASan/UBSan and static AArch64 QEMU C model validated the owner's actual
+139,264-byte firmware plus 4096 deterministic corruptions. **These source
+changes are not yet in the physically tested kernel image.** The JDI-only
+native-display panel is a separate blocker on Novatek/Tianma hardware; a
+Novatek-compatible panel DTB or qualified LK simpledrm fallback is required.
 
 Himax's already-qualified JDI firmware stays the default. When LK bootargs
 explicitly identify a TXD HX83112F panel, the SPI glue selects
@@ -162,9 +182,10 @@ make -C ui input-rescan-test touch-input-test
 
 ## Release notes wording (when the hotfix has passed device tests)
 
-**Recovery 1.0.2.1 — compatibility hotfix (based on 1.0.2).** Better
+**Recovery 1.0.2.2 — experimental compatibility hotfix (based on 1.0.2).** Better
 touch-controller discovery for the Samsung Galaxy A22 5G, guarded handling
-of recovery reboot requests, and documented SPI hardware variants.
+of recovery reboot requests, correct native MediaTek DSI/Himax JDI panel
+timing, and documented SPI hardware variants.
 **Important:** only claim a particular controller is supported after it has
 passed a real-device probe and touch test. A much larger recovery update is
 planned, including full Android data decryption and improved backups/restores;

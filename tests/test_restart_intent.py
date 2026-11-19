@@ -206,7 +206,13 @@ class CheckCache(unittest.TestCase):
             r = subprocess.run(['sh', '-c', function + 'check_cache "$1" "$2"; echo rc=$?', 'sh', str(tmp / 'cache.img'), str(tmp / 'log4')],
                                capture_output=True, text=True, timeout=20,
                                env=dict(os.environ, E2FSCK=str(tool), CHECK_LIMIT='timeout -s KILL 1'))
-            self.assertEqual((r.stdout.strip(), (tmp / 'log4').read_text()), ('rc=0', 'exit=137\n'))
+            self.assertEqual(r.stdout.strip(), 'rc=0')
+            # Some /bin/sh implementations print a harmless "Killed" line
+            # when their timeout child dies from SIGKILL; the durable result
+            # still has to record the exact 137 exit code.
+            lines = (tmp / 'log4').read_text().splitlines()
+            self.assertEqual(lines[-1], 'exit=137')
+            self.assertTrue(all(line == 'Killed' for line in lines[:-1]), lines)
 
 
 class BusyWait(unittest.TestCase):
