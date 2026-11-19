@@ -115,6 +115,34 @@ the native Linux 7.2 image.
 5. Preserve the owner's original recovery backup; do not touch BOOT,
    userdata, modem or wipe requests. Test Android normal boot/BCB separately.
 
+## Follow-up gate: Linux BOOT and installer APK
+
+The owner also requested the driver in BOOT and an APK update **after**
+Novatek operation is dependable. These are **not included or flashed here**.
+The present `apk/build.sh` calls its `BOOT_IMG` the **Linux BOOT** image,
+currently pinned by `catalog.json` to `Dodaskot/a22x-mainline` `v147` with
+release `7.2.0-a22x+`. This is not permission to modify a stock Android BOOT.
+
+Before making a new Linux BOOT and APK pair:
+
+1. Pass the real NT36675 touchscreen, firmware, display/DSI and resume gates
+   above. Establish which display-panel DTB works for the Novatek unit.
+2. Port/enable the driver in the **matching Linux BOOT kernel source**, rebuild
+   that specific kernel/boot image, verify boot image size, hardware device
+   tree, Android/bootloader constraints and a safe recovery fallback. Do not
+   transplant a recovery kernel blob into an unrelated Android BOOT image.
+3. Update `catalog.json` only for a genuinely published Linux BOOT with a
+   verified URL, version/release, size and SHA-256. The app rejects a BOOT
+   image that does not match this catalog; its recovery download likewise
+   must match the hash of the tagged recovery release.
+4. Build the installer from **both exact verified images** using
+   `RECOVERY_IMG`, `BOOT_IMG`, `RECOVERY_VERSION` and `BOOT_VERSION`, preserve
+   the established APK signing key, and run its Java and Android smoke tests.
+   Test SHA-256-checked downloads, recovery-only installation, the separate
+   opt-in Linux BOOT path, backup/readback and recovery-to-Android reboot.
+5. Publish the paired images/APK only after those checks. Neither QEMU success
+   nor the owner's Himax JDI touch result meets the Novatek gate by itself.
+
 The future larger recovery release is planned to add Android data decryption,
 more complete backups and restore functionality; none of those features is
 claimed by this 1.0.2.x compatibility hotfix.
