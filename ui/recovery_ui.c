@@ -5096,7 +5096,7 @@ static bool write_ppm(const App*a,const char*path){
 #include "screenshot_ui.h"
 
 typedef struct {int id,x,y;bool have_x,have_y;} Slot;
-typedef struct {int fd,slot,primary_id,xmin,xmax,ymin,ymax,last_x,last_y;bool mt,down,dropped,need_release,clock_monotonic;Slot slots[MAX_SLOTS];char name[128];} Input;
+typedef struct {int fd,slot,primary_id,xmin,xmax,ymin,ymax,last_x,last_y;bool mt,down,dropped,need_release,clock_monotonic;Slot slots[MAX_SLOTS];char name[128],path[256];} Input;
 static int axis_to_pixel(int value,int low,int high,int count){if(high<=low||count<1)return -1;if(value<low)value=low;if(value>high)value=high;return(int)(((int64_t)value-low)*(count-1)/(high-low));}
 static void resync_input(Input*i){
     i->down=false;i->primary_id=-1;i->need_release=true;
@@ -5116,12 +5116,29 @@ static void resync_input(Input*i){
 }
 static bool setup_input(Input*i,const char*path){
     memset(i,0,sizeof(*i));i->fd=open(path,O_RDONLY|O_NONBLOCK|O_CLOEXEC);if(i->fd<0)return false;for(int n=0;n<MAX_SLOTS;n++)i->slots[n].id=-1;i->primary_id=-1;
+    copy(i->path,sizeof(i->path),path);
     int clock_id=CLOCK_MONOTONIC;i->clock_monotonic=ioctl(i->fd,EVIOCSCLOCKID,&clock_id)==0;
     (void)ioctl(i->fd,EVIOCGNAME(sizeof(i->name)),i->name);struct input_absinfo x,y,slot;
     if(ioctl(i->fd,EVIOCGABS(ABS_MT_POSITION_X),&x)==0&&ioctl(i->fd,EVIOCGABS(ABS_MT_POSITION_Y),&y)==0&&ioctl(i->fd,EVIOCGABS(ABS_MT_SLOT),&slot)==0&&slot.minimum==0&&slot.maximum>=0&&slot.maximum<MAX_SLOTS){i->mt=true;i->xmin=x.minimum;i->xmax=x.maximum;i->ymin=y.minimum;i->ymax=y.maximum;}
     else if(ioctl(i->fd,EVIOCGABS(ABS_X),&x)==0&&ioctl(i->fd,EVIOCGABS(ABS_Y),&y)==0){i->xmin=x.minimum;i->xmax=x.maximum;i->ymin=y.minimum;i->ymax=y.maximum;}
     else{i->xmin=i->xmax=i->ymin=i->ymax=0;}
     resync_input(i);return true;
+}
+/* Firmware-loaded SPI controllers may publish evdev after the UI starts. Detect
+ * both Himax and Novatek by the input interface, never by a fixed eventN. */
+static void scan_inputs(App*a,Input*inputs,int*count,const char*directory,const char*single){
+    for(int j=0;j<*count;){
+        if(access(inputs[j].path,F_OK)==0){j++;continue;}
+        if(a&&inputs[j].down)cancel_pointer(a);
+        close(inputs[j].fd);memmove(&inputs[j],&inputs[j+1],(size_t)(*count-j-1)*sizeof(*inputs));(*count)--;
+    }
+    for(int n=0;n<(single&&*single?1:64)&&*count<MAX_INPUTS;n++){
+        char path[256];int length=single&&*single?snprintf(path,sizeof(path),"%s",single):snprintf(path,sizeof(path),"%s/event%d",directory,n);
+        if(length<0||(size_t)length>=sizeof(path))continue;
+        bool seen=false;for(int k=0;k<*count;k++)if(!strcmp(inputs[k].path,path)){seen=true;break;}
+        if(seen||!setup_input(&inputs[*count],path))continue;
+        Input*i=&inputs[(*count)++];fprintf(stderr,"[recovery-ui] input=%s path=%s mt=%d x=%d..%d y=%d..%d\n",i->name,i->path,i->mt,i->xmin,i->xmax,i->ymin,i->ymax);
+    }
 }
 /* Blanks only from a known lit state; an uncertain panel is left alone. */
 static bool screen_timeout_tick(App*a){
@@ -6950,14 +6967,11 @@ int main(int argc,char**argv){
     }
     if(a->device){a->tr.from=malloc((size_t)NW*NH*sizeof(uint32_t));a->tr.to=malloc((size_t)NW*NH*sizeof(uint32_t));a->animate=a->tr.from&&a->tr.to;}
     fprintf(stderr,"[recovery-ui] framebuffer=%s visible=%ux%u bpp=%u stride=%u\n",a->fb_path,display.v.xres,display.v.yres,display.v.bits_per_pixel,display.f.line_length);
-    Input inputs[MAX_INPUTS];int count=0;
-    if(a->input_path[0]){if(setup_input(&inputs[0],a->input_path))count=1;}
-    else for(int n=0;n<64&&count<MAX_INPUTS;n++){char path[64];snprintf(path,sizeof(path),"/dev/input/event%d",n);if(setup_input(&inputs[count],path))count++;}
-    for(int n=0;n<count;n++)fprintf(stderr,"[recovery-ui] input=%s mt=%d x=%d..%d y=%d..%d\n",inputs[n].name,inputs[n].mt,inputs[n].xmin,inputs[n].xmax,inputs[n].ymin,inputs[n].ymax);
-    if(!count)fprintf(stderr,"[recovery-ui] no input devices; ensure evdev nodes are ready before startup\n");
+    Input inputs[MAX_INPUTS];int count=0;scan_inputs(a,inputs,&count,"/dev/input",a->input_path);
+    if(!count)fprintf(stderr,"[recovery-ui] no input devices yet; evdev is rescanned while running\n");
     signal(SIGINT,on_signal);signal(SIGTERM,on_signal);update_battery(a);start_job(a,J_INVENTORY);
     a->display_input_blocked=true;if(!start_display_control(a,DC_STATUS,0))a->display_input_blocked=false;
-    bool slept=false;uint64_t last_frame=0,last_battery=milliseconds(),splash_start=last_battery,splash_end=last_battery+1300;a->last_activity=last_battery;
+    bool slept=false;uint64_t last_frame=0,last_battery=milliseconds(),last_input_scan=last_battery,splash_start=last_battery,splash_end=last_battery+1300;a->last_activity=last_battery;
     if(a->device){prefer_fast_cores();settings_load(a);a->screen=SPLASH;render(a);(void)present(a,&display);a->dirty=true;}
     /* A stick already in the port produced its uevents before this loop started. */
     a->repository_base=a->repository_count;int hotplug=a->device?hotplug_open():-1;if(a->device&&access("/sys/block/sda",F_OK)==0){a->hotplug_pending=true;a->hotplug_at=milliseconds()+1500;}
@@ -6973,11 +6987,15 @@ int main(int argc,char**argv){
         bool dark=a->display_blank_known&&a->display_blanked,asleep=dark&&!a->job.pid&&!a->display_control.pid&&!a->settings_pid&&!a->shot_pid&&!a->pointer_down;
         if(dark!=slept){slept=dark;ui_cpu_floor(!dark);}
         if(a->now-last_battery>(asleep?60000u:10000u)){update_battery(a);last_battery=a->now;a->dirty=true;}
-        struct pollfd p[MAX_INPUTS+1];for(int n=0;n<count;n++)p[n]=(struct pollfd){inputs[n].fd,POLLIN,0};p[count]=(struct pollfd){hotplug,POLLIN,0};
+        if(a->now-last_input_scan>=1500){scan_inputs(a,inputs,&count,"/dev/input",a->input_path);last_input_scan=a->now;}
+        int polled_count=count;struct pollfd p[MAX_INPUTS+1];for(int n=0;n<count;n++)p[n]=(struct pollfd){inputs[n].fd,POLLIN,0};p[count]=(struct pollfd){hotplug,POLLIN,0};
         bool moving=a->pointer_down||a->kb_bubble_until||a->kinetic.active||a->tr.active||a->tr.armed||a->nav_settle_end||(a->job.pid&&job_long(a->job.kind));unsigned int frame_ms=moving?(display.drm>0?1u:(a->display_hz==90?11u:16u)):70u;
         int timeout=moving?(a->now-last_frame>=frame_ms?1:(int)(frame_ms-(a->now-last_frame))):(asleep?SLEEP_POLL_MS:40);
-        int ready=poll(p,(nfds_t)count+(hotplug>=0?1:0),timeout);if(ready>0)for(int n=0;n<count;n++)if(p[n].revents&POLLIN)handle_input(a,&inputs[n],&display);
-        if(ready>0&&hotplug>=0&&(p[count].revents&POLLIN))hotplug_read(a,hotplug);
+        int ready=poll(p,(nfds_t)count+(hotplug>=0?1:0),timeout);if(ready>0)for(int n=0;n<polled_count;n++)if(p[n].revents&POLLIN)handle_input(a,&inputs[n],&display);
+        if(ready>0&&hotplug>=0&&(p[polled_count].revents&POLLIN))hotplug_read(a,hotplug);
+        if(ready>0)for(int n=polled_count-1;n>=0;n--)if(p[n].revents&(POLLERR|POLLHUP|POLLNVAL)){
+            cancel_pointer(a);close(inputs[n].fd);memmove(&inputs[n],&inputs[n+1],(size_t)(count-n-1)*sizeof(*inputs));count--;
+        }
         a->now=milliseconds();tick_inertia(a,a->now);browser_maybe_load(a);terminal_pump(a);(void)screen_timeout_tick(a);
         if(a->pointer_down||a->screen==PROGRESS||(a->job.pid&&job_long(a->job.kind)))a->dirty=true;
         if(a->nav_settle_end){if(a->now>=a->nav_settle_end)a->nav_settle_end=0;a->dirty=true;}

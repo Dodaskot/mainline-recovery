@@ -48,6 +48,18 @@ torch_off() {
     done 2>/dev/null
     return 0
 }
+# The A226B stock DTBO advertises Novatek, Ilitek, FocalTech and Himax on SPI1.
+# Their evdev names differ; never wait exclusively for the Himax JDI variant.
+touch_input_ready() {
+    for node in "${1:-/sys/class/input}"/event*/device/name; do
+        [ -f "$node" ] || continue
+        IFS= read -r input_name < "$node" || continue
+        case "$input_name" in
+            himax-touchscreen|sec_touchscreen|novatek-touchscreen|fts_ts|ILITEK_TDDI_7807S|mtk-tpd) return 0 ;;
+        esac
+    done
+    return 1
+}
 # The recovery mounts cache many times in a session, and ext4 asks for a check after 39 mounts
 # (2026-11-12, on the phone: mount count 185, "maximal mount count reached" at every mount). As
 # Android's fs_mgr does at every start, cache is checked in preen mode before anything mounts it:
@@ -174,9 +186,10 @@ fi
 
 display_service_pid=
 while true; do
-    # The touch firmware probe can complete after /init has started.
+    # Touch firmware probes may complete after /init has started. UI also
+    # rescans evdev later if the controller appears after this bounded wait.
     for n in 1 2 3 4 5 6 7 8 9 10; do
-        if [ -c /dev/fb0 ] && grep -qs '^himax-touchscreen$' /sys/class/input/event*/device/name; then
+        if [ -c /dev/fb0 ] && touch_input_ready; then
             break
         fi
         sleep 1
@@ -297,6 +310,19 @@ while true; do
             if [ "$rc" = 200 ] && ! busy_wait /run/a22x-recovery/power-systems.json \
                 /usr/bin/python3 /opt/a22x-recovery/distro.py --device boot-check; then
                 power_refused "The phone stayed in recovery: there is no bootable system on userdata, or a system switch must be finished in Systems."
+                sleep 3
+                continue
+            fi
+            # The stock LK may honor an old request in the first 2 KiB of misc
+            # despite a normal restart reason. Clear only an ordinary, already
+            # fulfilled boot-recovery request; preserve wipe and other requests.
+            if [ "$rc" = 200 ] && ! busy_wait /run/a22x-recovery/power-bcb.json \
+                /usr/bin/python3 /opt/a22x-recovery/bcb.py --device prepare-normal; then
+                if grep -qs WIPE_REQUEST_PENDING /run/a22x-recovery/power-bcb.json; then
+                    power_refused "Android requested a data reset. Open Data for Android and choose Forget the request to retry without erasing data."
+                else
+                    power_refused "The boot request in misc could not be cleared safely. Check the power-bcb log before retrying Android."
+                fi
                 sleep 3
                 continue
             fi

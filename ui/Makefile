@@ -55,6 +55,10 @@ terminal-model-test: test_terminal_model.c terminal_model.h
 	$(CC) $(CFLAGS) test_terminal_model.c $(LDFLAGS) -o terminal-model-test $(LDLIBS)
 	./terminal-model-test
 
+input-rescan-test: test_input_rescan.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_input_rescan.c json_min.c $(LDFLAGS) -o input-rescan-test $(LDLIBS)
+	./input-rescan-test
+
 terminal-ui-test: test_terminal_ui.c recovery_ui.c json_min.c $(UI_HEADERS)
 	$(CC) $(CFLAGS) test_terminal_ui.c json_min.c $(LDFLAGS) -o terminal-ui-test $(LDLIBS)
 

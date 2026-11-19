@@ -5,6 +5,31 @@ The intended installation target is the separate **RECOVERY partition**,
 41,943,040 bytes. It has its own initramfs and stays in RAM; installed Android
 or Linux in `userdata` is not required to start the interface.
 
+## Experimental 1.0.2.2 compatibility hotfix (based on 1.0.2)
+
+- Corrects the recovery-image DTB selection: native MediaTek DSI and the JDI
+  HX83112F panel follower must be packaged instead of the basic simpledrm
+  fallback on the owner's Himax JDI A22x. This restored real finger input on
+  the physical device, and the UI logged working short-Power blank/wake.
+- Preserves the existing Linux 7.2 kernel and recovery-DTBO in the physically
+  tested DTB-only prototype. The versioned 1.0.2.2 build updates only the
+  same-length ramdisk version field in addition to selecting the native DTB;
+  it is offline verified, **not yet installed on the phone**.
+- Includes experimental NT36675 SPI driver source and firmware parser tests,
+  plus fail-closed controller selection, DT-controlled IRQ trigger and checked
+  panel-follower registration. The updated source cross-compiles, and the
+  actual firmware passes x86 and QEMU ARM64 models with sanitizer/fault tests.
+  **Novatek, Ilitek ILI7807S, FocalTech FT8722 and Himax TXD remain unverified
+  on physical hardware; the latter two controller drivers are not ported.**
+- The current native JDI panel DTB is **not** a universal Novatek/Tianma
+  display implementation. No normal Android reboot/BCB-loop fix is claimed.
+- A much larger recovery update is planned with Android data decryption,
+  fuller backup and restore capabilities, and additional recovery functions.
+  Those features are not part of this 1.0.2.x experimental hotfix.
+
+See `docs/ISSUE_1_A22X_LIVE_TEST_20261119.md` and
+`docs/ISSUE_1_NOVATEK_OFFLINE_AUDIT_20261119.md` for exact test gates.
+
 ## 0.6: installing other operating systems
 
 - **Operating systems** menu on the home screen: Linux distributions, Android and
