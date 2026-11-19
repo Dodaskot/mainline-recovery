@@ -52,8 +52,10 @@ It does not establish support for a different A22x touchscreen variant.
   `himax-touchscreen` appeared at event2. Its driver owned shared SPI0.0;
   the UI/display service ran; BCB remained empty and `wipe=false`.
 - The previous `has no spi_device_id` warnings were **absent**.
-- **Still no real finger-event pass**. IRQ 29 was at 1 on the revised boot
-  during the smoke check; a human touch/drag capture is still required.
+- **Still no real finger-event pass**. A second 35-second capture on the
+  refined kernel `#3` produced zero evdev events; IRQ 29 remained at 1
+  before and after. Physical screen contact was not confirmed in that window,
+  so this remains **inconclusive**, not an observed touch failure.
 
 ## Read-only Android BOOT versus Recovery check
 
