@@ -47,6 +47,45 @@ class Request(unittest.TestCase):
         self.assertEqual((code, found['command'], found['wipe'], found['cleared']), (0, 'boot-recovery', False, True))
         self.assertEqual(self.misc.read_bytes(), message())  # what lies after the message stays
 
+    def test_normal_boot_clears_only_the_stale_plain_request(self):
+        self.misc.write_bytes(message(b'boot-recovery', b'recovery\n'))
+        code, found = self.run_helper('prepare-normal')
+        self.assertEqual((code, found['reason'], found['cleared']), (0, 'NORMAL_BOOT_BCB_READY', True))
+        self.assertEqual(self.misc.read_bytes(), message())
+        code, found = self.run_helper('prepare-normal')
+        self.assertEqual((code, found['reason'], found['cleared']), (0, 'NORMAL_BOOT_BCB_READY', False))
+
+    def test_normal_boot_does_not_discard_a_wipe_request(self):
+        asked = message(b'boot-recovery', b'recovery\n--prompt_and_wipe_data\n--reason=fs_mgr_mount_all:M02R\n')
+        self.misc.write_bytes(asked)
+        code, found = self.run_helper('prepare-normal')
+        self.assertEqual((code, found['reason'], found['cleared']), (2, 'WIPE_REQUEST_PENDING', False))
+        self.assertEqual(self.misc.read_bytes(), asked)
+
+    def test_normal_boot_does_not_discard_another_boot_command(self):
+        asked = message(b'boot-fastboot', b'recovery\n--fastboot\n')
+        self.misc.write_bytes(asked)
+        code, found = self.run_helper('prepare-normal')
+        self.assertEqual((code, found['reason'], found['cleared']), (2, 'OTHER_BCB_COMMAND_PENDING', False))
+        self.assertEqual(self.misc.read_bytes(), asked)
+
+    def test_normal_boot_preserves_ota_or_cache_wipe_action(self):
+        for action in (b'--update_package=/cache/update.zip', b'--wipe_cache'):
+            with self.subTest(action=action):
+                asked = message(b'boot-recovery', b'recovery\n' + action + b'\n')
+                self.misc.write_bytes(asked)
+                code, found = self.run_helper('prepare-normal')
+                self.assertEqual((code, found['reason'], found['cleared']),
+                                 (2, 'OTHER_RECOVERY_ACTION_PENDING', False))
+                self.assertEqual(self.misc.read_bytes(), asked)
+
+    def test_normal_boot_refuses_unreadable_or_truncated_misc(self):
+        code, found = self.run_helper('prepare-normal')
+        self.assertEqual((code, found['reason']), (2, 'BCB_UNREADABLE_OR_UNWRITABLE'))
+        self.misc.write_bytes(b'boot-recovery')
+        code, found = self.run_helper('prepare-normal')
+        self.assertEqual((code, found['reason']), (2, 'BCB_UNREADABLE_OR_UNWRITABLE'))
+
     def test_a_reset_from_the_settings_stays_until_it_is_done_or_forgotten(self):
         """Android's Factory data reset: --wipe_data. Arriving here does not clear it."""
         asked = message(b'boot-recovery', b'recovery\n--wipe_data\n--reason=MasterClearConfirm\n--locale=uk_UA\n')

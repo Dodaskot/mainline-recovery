@@ -11,6 +11,7 @@ does not stay behind.
     bcb.py --device|--fixture DIR read
     bcb.py --device|--fixture DIR arrive    at the recovery's start: a plain "boot-recovery" is done and cleared
     bcb.py --device|--fixture DIR forget    the owner's word: a request to erase data is dropped, nothing is erased
+    bcb.py --device|--fixture DIR prepare-normal  refuse pending wipe/foreign requests; clear a stale plain request
 """
 import argparse
 import json
@@ -28,7 +29,7 @@ def misc_path(context):
     return context.root / 'misc' if context.mode == 'fixture' else MISC
 
 
-def read(path):
+def read(path, *, strict=False):
     """{'command', 'recovery': [lines], 'reason', 'wipe'}; an empty command when nothing is asked.
     A "misc" that is not the phone's own asks nothing: a card's could ask for a wipe."""
     try:
@@ -36,14 +37,18 @@ def read(path):
             raise OSError('misc is not on the internal storage')
         with open(path, 'rb') as f:
             data = f.read(SIZE)
+        if len(data) != SIZE:
+            raise OSError('the bootloader message was truncated')
     except OSError:
+        if strict:
+            raise
         return {'command': '', 'recovery': [], 'reason': '', 'wipe': False}
     def text(start, size):
         return data[start:start + size].split(b'\0', 1)[0].decode('utf-8', 'replace')
     command = text(0, 32)
     lines = [line for line in text(64, 768).splitlines() if line]
     reason = next((line.split('=', 1)[1] for line in lines if line.startswith('--reason=')), '')
-    return {'command': command[:32], 'recovery': lines[:16], 'reason': reason[:128],
+    return {'command': command[:32], 'recovery': lines, 'reason': reason[:128],
             'wipe': command == 'boot-recovery' and any(line in WIPE_ARGUMENTS for line in lines)}
 
 
@@ -81,14 +86,46 @@ def clear_wipe_request(context):
     return False
 
 
+def prepare_normal(path):
+    """Check the actual BCB immediately before a normal reboot. Never silently
+    erase Android's wipe request: only the owner may choose 'forget'. The
+    ordinary boot-recovery request has already been fulfilled on arrival.
+    """
+    found = read(path, strict=True)
+    if found['wipe']:
+        return {**found, 'ok': False, 'reason': 'WIPE_REQUEST_PENDING', 'cleared': False}
+    if found['command'] not in ('', 'boot-recovery'):
+        return {**found, 'ok': False, 'reason': 'OTHER_BCB_COMMAND_PENDING', 'cleared': False}
+    # A BCB may also contain OTA, fastboot or cache-wipe instructions. Even
+    # if its command is plain boot-recovery (or already empty), those actions
+    # are not permission to discard the request when selecting Android.
+    actions = [line for line in found['recovery'] if line.startswith('--')
+               and not line.startswith(('--reason=', '--locale='))]
+    if actions:
+        return {**found, 'ok': False, 'reason': 'OTHER_RECOVERY_ACTION_PENDING', 'cleared': False}
+    cleared = False
+    if found['command']:
+        cleared = clear(path)
+        if read(path, strict=True)['command']:
+            raise OSError('the normal boot request remains in misc')
+    return {**found, 'ok': True, 'reason': 'NORMAL_BOOT_BCB_READY', 'cleared': cleared}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser()
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--device', action='store_true')
     mode.add_argument('--fixture', type=Path)
-    parser.add_argument('command', choices=('read', 'arrive', 'forget'))
+    parser.add_argument('command', choices=('read', 'arrive', 'forget', 'prepare-normal'))
     args = parser.parse_args(argv)
     path = args.fixture / 'misc' if args.fixture else MISC
+    if args.command == 'prepare-normal':
+        try:
+            result = prepare_normal(path)
+        except OSError as exc:
+            result = {'ok': False, 'reason': 'BCB_UNREADABLE_OR_UNWRITABLE', 'error': str(exc)[:200], 'cleared': False}
+        print(json.dumps(result, separators=(',', ':')))
+        return 0 if result['ok'] else 2
     found = read(path)
     cleared = False
     if args.command == 'arrive' and found['command'] == 'boot-recovery' and not found['wipe']:

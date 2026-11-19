@@ -4,6 +4,22 @@ What changed in each version of A22x Mainline Recovery, newest first. Every item
 was checked on the phone unless it says otherwise. Before 0.6.124: [docs/CHANGELOG.md](docs/CHANGELOG.md);
 day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md).
 
+## 1.0.2.1 — experimental compatibility hotfix (2026-11-19)
+
+- Based strictly on **1.0.2**, without pulling in unqualified 1.1.0-dev features.
+- Staged an SPI **NT36675** port for issue #1, plus explicit Himax JDI/TXD
+  firmware selection from the bootloader panel name. Ilitek ILI7807S and
+  FocalTech FT8722 still need independent ports and device verification.
+- The init wait recognizes multiple touchscreen input names; the native UI
+  rescans late-appearing evdev devices. Normal reboot now checks BCB and
+  preserves pending Android wipes, updates and unrelated recovery actions.
+- **Experimental until on-device qualification**: ARM64 compilation and
+  offline regressions do not prove that another A22x hardware variant works.
+  See [hardware audit](docs/ISSUE_1_A22X_HARDWARE_VARIANTS.md).
+- A much larger update is planned with full Android data decryption and
+  improved backups/restores. Those features are not part of this hotfix and
+  are not promised as working without real-device tests.
+
 ## 1.0.2 (2026-11-14)
 
 - **The app writes into the recovery's settings in `misc`, and no password undoes another.**
