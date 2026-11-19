@@ -55,6 +55,19 @@ It does not establish support for a different A22x touchscreen variant.
 - **Still no real finger-event pass**. IRQ 29 was at 1 on the revised boot
   during the smoke check; a human touch/drag capture is still required.
 
+## Read-only Android BOOT versus Recovery check
+
+On this owner's device, BOOT is `/dev/mmcblk0p41` (32 MiB) and dedicated
+Recovery is `/dev/mmcblk0p42` (40 MiB). Their full SHA-256 hashes differ:
+
+- BOOT: `b16d551fbb23e8cf277c0a9cdc7e1a4fa7abf2b30e5d584911046dc451c27228`
+- Recovery: `1d02e43afb2498698400ded11bcd841d16cfb9f83026294bca883123d0eb7367`
+
+BOOT starts with the Android boot magic `ANDROID!`. This **rules out a literal
+copy** of the tested recovery image into BOOT on the owner's current phone,
+but does not prove the Android kernel/init are bootable or explain the
+reporter's separate recovery-return symptom. No BOOT or BCB data was altered.
+
 ## Unfinished gates
 
 1. Have the owner touch the live screen while logging `/dev/input/event2`
