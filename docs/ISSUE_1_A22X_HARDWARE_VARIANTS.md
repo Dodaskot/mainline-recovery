@@ -96,8 +96,10 @@ A follow-up review found that checking `tianma` alone is insufficient: this
 names a display *vendor*, not a Novatek chip, and an Ilitek variant may also
 use Tianma. The revised **kernel source** requires an explicit
 `nt36`/`NT36`/`novatek`/`NVT` chip-family marker and fills out SPI aliases.
-The first on-device 1.0.2.1 image predates these refinements; a revised image
-must be tested before release.
+The first on-device 1.0.2.1 image predates these refinements. The rebuilt
+revision was subsequently flashed and booted as kernel `#3` on Himax JDI,
+with the missing-SPI-ID warnings gone. Real finger events and Novatek
+hardware qualification are still pending.
 
 Himax's already-qualified JDI firmware stays the default. When LK bootargs
 explicitly identify a TXD HX83112F panel, the SPI glue selects

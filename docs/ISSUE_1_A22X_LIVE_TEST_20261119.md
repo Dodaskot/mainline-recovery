@@ -33,19 +33,39 @@ It does not establish support for a different A22x touchscreen variant.
   a touch pass nor evidence of a defect.
 - The kernel logged warnings about missing `spi_device_id` entries for
   shared-device compatibles; revised kernel source has added aliases. It also
-  refines the Novatek selector to avoid an Ilitek Tianma false-positive. The
-  first flashed image does not include those follow-up changes.
+  refines the Novatek selector to avoid an Ilitek Tianma false-positive.
+
+## Revised 1.0.2.1 SPI-selector image: second physical boot
+
+- The original 1.0.2.1 image was unpacked, rebuilt and AVB-refooted **byte for
+  byte identically** before any new packaging was attempted.
+- The refined Linux 7.2 `Image.gz` compiled successfully with the SPI aliases
+  and narrower Novatek hardware selection. Repacking changed **only** the
+  kernel boot payload; ramdisk, DTB and recovery-DTBO compared byte-identical.
+- AVB footer and recovery hash verified on the new 40 MiB image.
+- A second recovery flash was limited to `/dev/mmcblk0p42`; full readback
+  matched SHA-256:
+  `1d02e43afb2498698400ded11bcd841d16cfb9f83026294bca883123d0eb7367`.
+- The recovery's guarded helper rebooted into Linux
+  `7.2.0-a22x-recovery+ #3`, reporting top-level recovery version `1.0.2.1`.
+  The Himax driver again reported `HX83112F touch ready, irq 29`, and
+  `himax-touchscreen` appeared at event2. Its driver owned shared SPI0.0;
+  the UI/display service ran; BCB remained empty and `wipe=false`.
+- The previous `has no spi_device_id` warnings were **absent**.
+- **Still no real finger-event pass**. IRQ 29 was at 1 on the revised boot
+  during the smoke check; a human touch/drag capture is still required.
 
 ## Unfinished gates
 
 1. Have the owner touch the live screen while logging `/dev/input/event2`
    and IRQ 29; check tap, drag, corners and multitouch in the actual UI.
-2. Package/retest the refined SPI selector build before any 1.0.2.x release.
+2. Verify the refined SPI selector on Novatek and an Ilitek Tianma variant,
+   not only on the present Himax JDI device.
 3. Test a real **Novatek NT36675** A22x revision; check firmware load and
    `sec_touchscreen`/evdev input, coordinate geometry and multi-touch.
 4. Independently test Ilitek ILI7807S, FocalTech FT8722 and Himax TXD once
    their appropriate Linux 7.2 drivers and firmware are ready.
-5. Only after the first image meets the requested real-touch gate, install and
+5. Only after the refined 1.0.2.1 image meets the requested real-touch gate, install and
    smoke-test `1.1.0-dev-device-feedback.28`; do not equate the newest image
    with a stable release, and preserve the original `.25` backup.
 6. Do not claim normal Android boot/BCB loop fixed without an actual Android
