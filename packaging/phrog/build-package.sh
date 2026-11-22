@@ -20,6 +20,8 @@ TARGET=$2
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 PHROG_VERSION=0.53.0
+# The A22x revision: 2 = the back button of the keypad page (phrog-back-navigation.patch, 2026-10-18).
+PHROG_A22X=2
 PHROG_SHA256=42d3b9153d60cbfc130d19e3531776887755cba9ca5734c4c4e21ec6944d1197
 PHROG_URL=https://github.com/samcday/phrog/archive/refs/tags/$PHROG_VERSION.tar.gz
 RUST_TOOLCHAIN=${RUST_TOOLCHAIN:-stable}
@@ -66,7 +68,7 @@ deb)
     phosh_full=$(dpkg-query -W -f='${Version}' phosh)
     ;;
 rpm)
-    dnf -y -q install phosh dnf-plugins-core rpm-build meson ninja-build gcc curl gnupg2 xz file >/dev/null
+    dnf -y -q install phosh dnf-plugins-core rpm-build meson ninja-build gcc curl gnupg2 xz file patch >/dev/null
     dnf -y -q builddep phosh >/dev/null
     phosh_full=$(rpm -q --qf '%{VERSION}-%{RELEASE}' phosh)
     ;;
@@ -128,6 +130,9 @@ sed -i 's/^\([[:space:]]*\)char \*last_component;/\1const char *last_component;/
 sed -i 's/^if enable_introspection or bindings_lib$/if enable_introspection/' "$psrc/src/meson.build"
 sed -i 's/^    sessions\.values()\.cloned()\.collect()$/    let mut list: Vec<SessionObject> = sessions.values().cloned().collect();\n    list.sort_by_key(|s| s.name());\n    list/' "$rsrc/src/sessions.rs"
 grep -q 'list.sort_by_key' "$rsrc/src/sessions.rs" || log "sessions stay in Phrog's own order (no sort patch for this version)"
+# A way back from the keypad to the user and shell choice (the owner's, made and tested on the phone
+# 2026-10-18; it was missing from these packages until 2026-11-22).
+patch -p1 -d "$rsrc" < "$HERE/phrog-back-navigation.patch"
 api=$(sed -n "s/^libphosh_api_version = '\([0-9.]*\)'.*/\1/p" "$psrc/meson.build")
 [ -n "$api" ] || { log "no libphosh API version in Phosh $phosh"; exit 1; }
 # Only the options this Phosh version has (0.46 has no searchd, vapi or status-icon-plugins: 2026-11-22, CI).
@@ -168,7 +173,7 @@ sed 's#^Exec=phrog$#Exec=/usr/local/bin/phrog#' "$d/mobi.phosh.Phrog.desktop" > 
 sed 's#^ExecStart=phrog$#ExecStart=/usr/local/bin/phrog#' "$d/mobi.phosh.Phrog.service" > "$stage/usr/local/lib/systemd/user/mobi.phosh.Phrog.service"
 install -Dm644 "$d/mobi.phosh.Phrog.target" "$stage/usr/local/lib/systemd/user/mobi.phosh.Phrog.target"
 install -Dm644 "$d/systemd-session.conf" "$stage/usr/local/lib/systemd/user/gnome-session@phrog.target.d/session.conf"
-echo "phrog $PHROG_VERSION phosh $phosh" > "$stage$LIBDIR/built-for"
+echo "phrog $PHROG_VERSION-a22x$PHROG_A22X phosh $phosh" > "$stage$LIBDIR/built-for"
 LD_LIBRARY_PATH="$stage$LIBDIR" ldd "$stage/usr/local/bin/phrog" | grep 'not found' && { log "phrog lacks libraries"; exit 1; }
 "$stage/usr/local/bin/phrog" --version 2>/dev/null || log "phrog --version needs a session (not checked here)"
 
@@ -185,7 +190,7 @@ deb)
     arch=$(dpkg --print-architecture)
     cat > "$stage/DEBIAN/control" <<EOF
 Package: a22x-phrog
-Version: $version-1
+Version: $version-$PHROG_A22X
 Architecture: $arch
 Maintainer: A22x Mainline Recovery <noreply@github.com>
 Depends: phosh, greetd${deps:+, $deps}
@@ -198,7 +203,7 @@ EOF
     printf '#!/bin/sh\nset -e\nglib-compile-schemas /usr/local/share/glib-2.0/schemas || true\n' > "$stage/DEBIAN/postinst"
     printf '#!/bin/sh\nset -e\nglib-compile-schemas /usr/local/share/glib-2.0/schemas 2>/dev/null || true\n' > "$stage/DEBIAN/postrm"
     chmod 755 "$stage/DEBIAN/postinst" "$stage/DEBIAN/postrm"
-    name="a22x-phrog_${version}-1_${TARGET}_${arch}.deb"
+    name="a22x-phrog_${version}-${PHROG_A22X}_${TARGET}_${arch}.deb"
     dpkg-deb --root-owner-group -Zxz --build "$stage" "$OUT/$name" >/dev/null
     ;;
 rpm)
@@ -207,7 +212,7 @@ rpm)
     cat > "$work/rpm/SPECS/a22x-phrog.spec" <<EOF
 Name: a22x-phrog
 Version: $(echo "$version" | tr '+' '_')
-Release: 1%{?dist}
+Release: $PHROG_A22X%{?dist}
 Summary: $summary
 License: GPL-3.0-or-later
 Requires: phosh greetd
@@ -243,7 +248,7 @@ pacman)
     cat > "$work/pkg/PKGBUILD" <<EOF
 pkgname=a22x-phrog
 pkgver=$(echo "$version" | tr '+' '_')
-pkgrel=1
+pkgrel=$PHROG_A22X
 pkgdesc="$summary"
 arch=('aarch64')
 url='https://github.com/Dodaskot/mainline-recovery'
