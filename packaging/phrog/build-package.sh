@@ -85,7 +85,11 @@ pacman)
     pacman-key --init >/dev/null 2>&1 || true
     case "$ID" in arch|archarm) pacman-key --populate archlinuxarm >/dev/null 2>&1 || true ;;
     *) pacman-key --populate archlinuxarm manjaro manjaro-arm >/dev/null 2>&1 || true ;; esac
-    pacman -Syu --noconfirm --needed phosh base-devel meson ninja rust glib2-devel wayland-protocols curl xz file >/dev/null
+    pacman -Sy >/dev/null
+    # glib2-devel is split off on Arch Linux ARM; Manjaro's glib2 still carries the headers (CI 2026-11-22).
+    devel=; pacman -Si glib2-devel >/dev/null 2>&1 && devel=glib2-devel
+    # shellcheck disable=SC2086
+    pacman -Syu --noconfirm --needed phosh base-devel meson ninja rust $devel wayland-protocols curl xz file >/dev/null
     phosh_full=$(pacman -Q phosh | awk '{print $2}')
     ;;
 esac
