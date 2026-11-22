@@ -71,6 +71,10 @@ rpm)
     phosh_full=$(rpm -q --qf '%{VERSION}-%{RELEASE}' phosh)
     ;;
 pacman)
+    # The keyring first: Manjaro ARM's root filesystem has none set up ("keyring is not writable").
+    pacman-key --init >/dev/null 2>&1 || true
+    case "$ID" in arch|archarm) pacman-key --populate archlinuxarm >/dev/null 2>&1 || true ;;
+    *) pacman-key --populate archlinuxarm manjaro manjaro-arm >/dev/null 2>&1 || true ;; esac
     # Manjaro ARM's minimal root filesystem lacks even sed (2026-11-22, CI).
     command -v sed >/dev/null 2>&1 && command -v awk >/dev/null 2>&1 ||
         pacman -Sy --noconfirm --needed --disable-sandbox sed gawk grep >/dev/null 2>&1 ||
