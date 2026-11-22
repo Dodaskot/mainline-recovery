@@ -109,6 +109,10 @@ jobs:
                                       'sha256': hashlib.sha256(data).hexdigest()})
           json.dump({'schema': 'a22x.phrog-packages.v1', 'phrog': '0.53.0', 'packages': entries},
                     open('phrog-packages.json', 'w'), indent=1, sort_keys=True)
+          # One line per package for the phone's a22x-phrog-package.sh: target, Phosh, file, SHA-256.
+          with open('phrog-packages.txt', 'w') as index:
+              for e in entries:
+                  index.write('%s %s %s %s\n' % (e['target'], e['phosh'], e['file'], e['sha256']))
           print(json.dumps(entries, indent=1))
           EOF
       - name: Release
@@ -123,4 +127,4 @@ jobs:
               --title "Phrog 0.53.0 packages for A22x Linux systems (not a recovery release)" --notes "$notes"
           fi
           gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --clobber \
-            $(ls *.deb *.rpm *.pkg.tar.zst 2>/dev/null) SHA256SUMS phrog-packages.json
+            $(ls *.deb *.rpm *.pkg.tar.zst 2>/dev/null) SHA256SUMS phrog-packages.json phrog-packages.txt
