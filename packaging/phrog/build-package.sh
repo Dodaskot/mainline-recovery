@@ -71,6 +71,10 @@ rpm)
     phosh_full=$(rpm -q --qf '%{VERSION}-%{RELEASE}' phosh)
     ;;
 pacman)
+    # Manjaro ARM's minimal root filesystem lacks even sed (2026-11-22, CI).
+    command -v sed >/dev/null 2>&1 && command -v awk >/dev/null 2>&1 ||
+        pacman -Sy --noconfirm --needed --disable-sandbox sed gawk grep >/dev/null 2>&1 ||
+        pacman -Sy --noconfirm --needed sed gawk grep >/dev/null
     # In a container: no Landlock sandbox for downloads, no free-space check of the overlay.
     grep -q '^DisableSandbox' /etc/pacman.conf || sed -i 's/^\[options\]$/[options]\nDisableSandbox/' /etc/pacman.conf
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
@@ -112,10 +116,17 @@ sed -i 's/^    sessions\.values()\.cloned()\.collect()$/    let mut list: Vec<Se
 grep -q 'list.sort_by_key' "$rsrc/src/sessions.rs" || log "sessions stay in Phrog's own order (no sort patch for this version)"
 api=$(sed -n "s/^libphosh_api_version = '\([0-9.]*\)'.*/\1/p" "$psrc/meson.build")
 [ -n "$api" ] || { log "no libphosh API version in Phosh $phosh"; exit 1; }
-meson setup "$work/pbuild" "$psrc" --prefix=/usr --buildtype=release -Dwerror=false --wrap-mode=nodownload \
-    -Dbindings-lib=true -Dintrospection=false -Dvapi=false -Dtests=false -Dphoc_tests=disabled \
-    -Dgtk_doc=false -Dman=false -Dtools=false -Dsearchd=false -Dabi-check=false -Dcallui-i18n=false \
-    -Dlockscreen-plugins=false -Dquick-setting-plugins=false -Dstatus-icon-plugins=false
+# Only the options this Phosh version has (0.46 has no searchd, vapi or status-icon-plugins: 2026-11-22, CI).
+optfile=$psrc/meson.options; [ -f "$optfile" ] || optfile=$psrc/meson_options.txt
+opts=
+for o in bindings-lib=true introspection=false vapi=false tests=false phoc_tests=disabled gtk_doc=false man=false \
+         tools=false searchd=false abi-check=false callui-i18n=false lockscreen-plugins=false \
+         quick-setting-plugins=false status-icon-plugins=false; do
+    grep -q "option('${o%%=*}'" "$optfile" && opts="$opts -D$o"
+done
+case "$opts" in *bindings-lib*) ;; *) log "Phosh $phosh has no bindings-lib option (no libphosh)"; exit 1 ;; esac
+# shellcheck disable=SC2086
+meson setup "$work/pbuild" "$psrc" --prefix=/usr --buildtype=release -Dwerror=false --wrap-mode=nodownload $opts
 jobs=$(nproc 2>/dev/null || echo 4)
 ninja -C "$work/pbuild" -j "$jobs" "src/libphosh-$api.so.0"
 lib=$work/pbuild/src/libphosh-$api.so.0
@@ -212,6 +223,7 @@ EOF
     ;;
 pacman)
     useradd -m builder 2>/dev/null || true
+    chmod 755 "$work"  # mktemp made it 0700: the builder could not reach pkg/ (2026-11-22, CI)
     mkdir -p "$work/pkg"
     tar -C "$stage" -cf "$work/pkg/stage.tar" .
     cat > "$work/pkg/PKGBUILD" <<EOF

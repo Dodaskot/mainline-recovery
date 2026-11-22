@@ -31,7 +31,7 @@ jobs:
         include:
           - { target: debian-13, image: 'debian:trixie' }
           - { target: mobian-13, image: 'debian:trixie' }
-          - { target: ubuntu-24.04, image: 'ubuntu:24.04' }
+          # Ubuntu 24.04: its Phosh 0.38 has no libphosh, which Phrog 0.53 needs (CI 2026-11-22).
           - { target: ubuntu-26.04, image: 'ubuntu:26.04' }
           - { target: fedora-45, image: 'registry.fedoraproject.org/fedora:45' }
           - { target: archlinuxarm, rootfs: archlinuxarm }
