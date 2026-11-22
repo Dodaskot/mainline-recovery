@@ -71,12 +71,6 @@ rpm)
     phosh_full=$(rpm -q --qf '%{VERSION}-%{RELEASE}' phosh)
     ;;
 pacman)
-    # Manjaro ARM stable has Phosh 0.37, without libphosh; its Phosh images (manjaro-pinephone) follow
-    # the unstable branch, whose Phosh has it (CI 2026-11-22). The index still pins the exact version.
-    if [ "$TARGET" = manjaro-arm ] && [ -f /etc/pacman.d/mirrorlist ]; then
-        sed -i 's#/stable/#/unstable/#g; s#arm-stable#arm-unstable#g' /etc/pacman.d/mirrorlist
-        [ -f /etc/pacman-mirrors.conf ] && sed -i 's/^Branch *= *.*/Branch = arm-unstable/' /etc/pacman-mirrors.conf
-    fi
     # The keyring first: Manjaro ARM's root filesystem has none set up ("keyring is not writable").
     pacman-key --init >/dev/null 2>&1 || true
     case "$ID" in arch|archarm) pacman-key --populate archlinuxarm >/dev/null 2>&1 || true ;;
@@ -85,6 +79,12 @@ pacman)
     command -v sed >/dev/null 2>&1 && command -v awk >/dev/null 2>&1 ||
         pacman -Sy --noconfirm --needed --disable-sandbox sed gawk grep >/dev/null 2>&1 ||
         pacman -Sy --noconfirm --needed sed gawk grep >/dev/null
+    # Manjaro ARM stable has Phosh 0.37, without libphosh; its Phosh images (manjaro-pinephone) follow
+    # the unstable branch, whose Phosh has it (CI 2026-11-22). The index still pins the exact version.
+    if [ "$TARGET" = manjaro-arm ] && [ -f /etc/pacman.d/mirrorlist ]; then
+        sed -i 's#/stable/#/unstable/#g; s#arm-stable#arm-unstable#g' /etc/pacman.d/mirrorlist
+        [ -f /etc/pacman-mirrors.conf ] && sed -i 's/^Branch *= *.*/Branch = arm-unstable/' /etc/pacman-mirrors.conf
+    fi
     # In a container: no Landlock sandbox for downloads, no free-space check of the overlay.
     grep -q '^DisableSandbox' /etc/pacman.conf || sed -i 's/^\[options\]$/[options]\nDisableSandbox/' /etc/pacman.conf
     sed -i 's/^CheckSpace/#CheckSpace/' /etc/pacman.conf
