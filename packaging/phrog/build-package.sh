@@ -71,6 +71,12 @@ rpm)
     phosh_full=$(rpm -q --qf '%{VERSION}-%{RELEASE}' phosh)
     ;;
 pacman)
+    # Manjaro ARM stable has Phosh 0.37, without libphosh; its Phosh images (manjaro-pinephone) follow
+    # the unstable branch, whose Phosh has it (CI 2026-11-22). The index still pins the exact version.
+    if [ "$TARGET" = manjaro-arm ] && [ -f /etc/pacman.d/mirrorlist ]; then
+        sed -i 's#/stable/#/unstable/#g; s#arm-stable#arm-unstable#g' /etc/pacman.d/mirrorlist
+        [ -f /etc/pacman-mirrors.conf ] && sed -i 's/^Branch *= *.*/Branch = arm-unstable/' /etc/pacman-mirrors.conf
+    fi
     # The keyring first: Manjaro ARM's root filesystem has none set up ("keyring is not writable").
     pacman-key --init >/dev/null 2>&1 || true
     case "$ID" in arch|archarm) pacman-key --populate archlinuxarm >/dev/null 2>&1 || true ;;
