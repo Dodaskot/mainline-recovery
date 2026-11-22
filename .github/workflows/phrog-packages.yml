@@ -1,0 +1,126 @@
+# Phrog for every Linux distribution the A22x recovery installs, built once here on GitHub's arm64
+# machines instead of for 30-40 minutes on the phone (packaging/phrog/build-package.sh), and
+# published as one release of packages with their SHA-256 sums and a manifest the recovery reads.
+name: Phrog packages
+
+on:
+  push:
+    branches: [phrog-packages]
+    paths: ['packaging/phrog/**', '.github/workflows/phrog-packages.yml']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish the packages as a release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_TAG: phrog-0.53.0-a22x1
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: debian-13, image: 'debian:trixie' }
+          - { target: mobian-13, image: 'debian:trixie' }
+          - { target: ubuntu-24.04, image: 'ubuntu:24.04' }
+          - { target: ubuntu-26.04, image: 'ubuntu:26.04' }
+          - { target: fedora-45, image: 'registry.fedoraproject.org/fedora:45' }
+          - { target: archlinuxarm, rootfs: archlinuxarm }
+          - { target: manjaro-arm, rootfs: manjaro }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Root filesystem of Arch Linux ARM (signature checked)
+        if: matrix.rootfs == 'archlinuxarm'
+        run: |
+          set -eu
+          base=http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz
+          curl -fsSL --retry 5 -o rootfs.tar.gz "$base"
+          curl -fsSL --retry 5 -o rootfs.tar.gz.sig "$base.sig"
+          mkdir -p "$RUNNER_TEMP/gnupg" && chmod 700 "$RUNNER_TEMP/gnupg"
+          gpg --batch --homedir "$RUNNER_TEMP/gnupg" --import keys/archlinuxarm.asc
+          gpg --batch --homedir "$RUNNER_TEMP/gnupg" --verify rootfs.tar.gz.sig rootfs.tar.gz
+          docker import rootfs.tar.gz a22x-rootfs:latest
+
+      - name: Root filesystem of Manjaro ARM (checksum from its release)
+        if: matrix.rootfs == 'manjaro'
+        run: |
+          set -eu
+          base=https://github.com/manjaro-arm/rootfs/releases/latest/download/Manjaro-ARM-aarch64-latest.tar.gz
+          curl -fsSL --retry 5 -o rootfs.tar.gz "$base"
+          if curl -fsSL --retry 5 -o rootfs.tar.gz.sha256 "$base.sha256"; then
+            echo "$(awk '{print $1}' rootfs.tar.gz.sha256)  rootfs.tar.gz" | sha256sum -c -
+          fi
+          docker import rootfs.tar.gz a22x-rootfs:latest
+
+      - name: Build and pack
+        run: |
+          set -eu
+          image='${{ matrix.image }}'
+          [ -n "$image" ] || image=a22x-rootfs:latest
+          mkdir -p out
+          docker run --rm -v "$PWD:/src" -w /src "$image" sh packaging/phrog/build-package.sh /src/out '${{ matrix.target }}'
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phrog-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: ${{ always() && (github.event_name == 'push' || inputs.publish) }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: phrog-*
+          merge-multiple: true
+      - name: Sums and manifest
+        run: |
+          set -eu
+          cd artifacts
+          ls -l
+          sha256sum *.deb *.rpm *.pkg.tar.zst 2>/dev/null > SHA256SUMS || true
+          python3 - <<'EOF'
+          import glob, hashlib, json, os, re
+          entries = []
+          for marker in sorted(glob.glob('*.built-for')):
+              target = marker[:-len('.built-for')]
+              text = open(marker).read().split()
+              phosh = text[2] if len(text) > 2 else ''
+              for name in sorted(os.listdir('.')):
+                  if (target in name) and re.search(r'\.(deb|rpm|pkg\.tar\.zst)$', name):
+                      data = open(name, 'rb').read()
+                      entries.append({'target': target, 'phosh': phosh, 'file': name, 'size': len(data),
+                                      'sha256': hashlib.sha256(data).hexdigest()})
+          json.dump({'schema': 'a22x.phrog-packages.v1', 'phrog': '0.53.0', 'packages': entries},
+                    open('phrog-packages.json', 'w'), indent=1, sort_keys=True)
+          print(json.dumps(entries, indent=1))
+          EOF
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          cd artifacts
+          notes="Phrog 0.53.0 (the touch login screen made of Phosh) built for the Phosh of each Linux distribution the A22x recovery installs, so that a phone installs a package instead of building it for 30-40 minutes. Not a recovery release. Packages: see phrog-packages.json (target, Phosh version, SHA-256)."
+          if ! gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Phrog 0.53.0 packages for A22x Linux systems (not a recovery release)" --notes "$notes"
+          fi
+          gh release upload "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --clobber \
+            $(ls *.deb *.rpm *.pkg.tar.zst 2>/dev/null) SHA256SUMS phrog-packages.json
