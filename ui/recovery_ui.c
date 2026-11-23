@@ -449,7 +449,7 @@ typedef struct {
     /* A keyboard of its own (Bluetooth or USB, 2026-11-22): its modifiers, Caps Lock, and when to look for input nodes that came. */
     unsigned int hw_mods; bool hw_caps; uint64_t input_rescan_at;
     /* A mouse (2026-11-22, the owner: a Bluetooth mouse connected, and no pointer showed): where its pointer is, in layout pixels. */
-    int mouse_x,mouse_y; bool mouse_shown,mouse_down; uint64_t mouse_moved_at;
+    int mouse_x,mouse_y,mouse_fd; bool mouse_shown,mouse_down; uint64_t mouse_moved_at;
     Transition tr;TransitionStep tr_steps[TRANSITION_DEPTH];int tr_depth;bool animate;
     /* Back returns to the page this one was opened from (2026-11-10), not to a fixed parent:
        the pages passed on the way, Home first. nav_hold: a read ends for a page already left. */
@@ -7315,10 +7315,27 @@ static bool write_ppm(const App*a,const char*path){
 #undef lock_prompting
 
 typedef struct {int id,x,y;bool have_x,have_y;} Slot;
-typedef struct {int fd,slot,primary_id,xmin,xmax,ymin,ymax,last_x,last_y,number,rel_dx,rel_dy,wheel;bool mt,down,dropped,need_release,clock_monotonic,rel;Slot slots[MAX_SLOTS];char name[128];} Input;
+#define MOUSE_REPORT_BUTTONS 16u
+typedef struct {unsigned short code;int value;} MouseButton;
+typedef struct {
+    int fd,slot,primary_id,xmin,xmax,ymin,ymax,last_x,last_y,number,rel_dx,rel_dy,wheel;
+    bool mt,down,dropped,need_release,clock_monotonic,rel;
+    unsigned int mouse_button_count,mouse_blocked;
+    MouseButton mouse_buttons[MOUSE_REPORT_BUTTONS];
+    Slot slots[MAX_SLOTS];char name[128];
+} Input;
 static int axis_to_pixel(int value,int low,int high,int count){if(high<=low||count<1)return -1;if(value<low)value=low;if(value>high)value=high;return(int)(((int64_t)value-low)*(count-1)/(high-low));}
 static void resync_input(Input*i){
     i->down=false;i->primary_id=-1;i->need_release=true;
+    if(i->rel){
+        const size_t word_bits=sizeof(unsigned long)*8;
+        unsigned long keys[(BTN_JOYSTICK+sizeof(unsigned long)*8-1)/(sizeof(unsigned long)*8)]={0};
+        i->mouse_blocked=0;
+        if(ioctl(i->fd,EVIOCGKEY(sizeof(keys)),keys)>=0)
+            for(unsigned int code=BTN_MOUSE;code<BTN_JOYSTICK;code++)
+                if(keys[code/word_bits]&(1ul<<(code%word_bits)))i->mouse_blocked|=1u<<(code-BTN_MOUSE);
+        return;
+    }
     for(int s=0;s<MAX_SLOTS;s++){i->slots[s].id=-1;i->slots[s].have_x=i->slots[s].have_y=false;}
     if(i->mt){
         struct input_absinfo slot;int xs[MAX_SLOTS+1]={ABS_MT_POSITION_X},ys[MAX_SLOTS+1]={ABS_MT_POSITION_Y},ids[MAX_SLOTS+1]={ABS_MT_TRACKING_ID};
@@ -7566,6 +7583,7 @@ static void input_sync(App*a,Input*i,const Display*d){
     if(i->xmax<=i->xmin||i->ymax<=i->ymin)return;
     int count=0,which=-1;
     for(int n=0;n<(i->mt?MAX_SLOTS:1);n++)if(i->slots[n].id>=0){count++;which=n;}
+    if(a->mouse_down){i->down=false;i->need_release=count!=0;return;}
     if(count>1){cancel_pointer(a);i->need_release=true;i->down=false;return;}
     if(i->need_release){if(count==0){i->need_release=false;a->pointer_requires_release=false;}return;}
     if(count==0){if(i->down){pointer(a,false,i->last_x,i->last_y,a->now);i->down=false;i->primary_id=-1;}return;}
@@ -7588,12 +7606,26 @@ static void mouse_show(App*a){
     if(!a->mouse_shown&&!a->mouse_x&&!a->mouse_y){a->mouse_x=CW/2;a->mouse_y=CH/2;}
     a->mouse_shown=true;a->mouse_moved_at=a->now;a->last_activity=a->now;a->dirty=true;
 }
-static void mouse_button(App*a,unsigned code,int value){
-    if(mouse_ignored(a)){if(!value&&a->mouse_down){a->mouse_down=false;cancel_pointer(a);}return;}
+static void mouse_cancel(App*a,const Input*i){
+    if(!a->mouse_down||a->mouse_fd!=i->fd)return;
+    a->mouse_down=false;
+    cancel_pointer(a);
+    /* The current mouse is resynced separately. Its lost release must not block other inputs. */
+    a->pointer_requires_release=false;
+    a->status_down=false;a->status_tap_at=0;
+}
+static void mouse_button(App*a,Input*i,unsigned code,int value){
+    unsigned int bit=1u<<(code-BTN_MOUSE);
+    if(i->mouse_blocked&bit){if(!value)i->mouse_blocked&=~bit;return;}
+    if(a->mouse_down&&a->mouse_fd!=i->fd)return;
+    if(mouse_ignored(a)){if(code==BTN_LEFT&&!value)mouse_cancel(a,i);return;}
     mouse_show(a);
     if(code==BTN_LEFT){
-        if(value==1&&!a->mouse_down){a->mouse_down=true;pointer(a,true,a->mouse_x,a->mouse_y,a->now);}
-        else if(value==0&&a->mouse_down){a->mouse_down=false;pointer(a,false,a->mouse_x,a->mouse_y,a->now);}
+        if(value==1&&!a->mouse_down&&!a->pointer_down){
+            a->mouse_fd=i->fd;a->mouse_down=true;pointer(a,true,a->mouse_x,a->mouse_y,a->now);
+        }else if(value==0&&a->mouse_down){
+            a->mouse_down=false;pointer(a,false,a->mouse_x,a->mouse_y,a->now);
+        }
     }else if((code==BTN_RIGHT||code==BTN_SIDE)&&value==1&&!a->mouse_down&&!a->pointer_down)tap_action(a,A_NAV_BACK);
 }
 static void mouse_wheel(App*a,int notches){
@@ -7609,9 +7641,9 @@ static void mouse_wheel(App*a,int notches){
     apply_scroll(a,kind,scroll_offset(a,kind)-(int64_t)notches*MOUSE_WHEEL_PX);a->dirty=true;
 }
 static void mouse_sync(App*a,Input*i){
-    int dx=i->rel_dx,dy=i->rel_dy,wheel=i->wheel;i->rel_dx=i->rel_dy=i->wheel=0;
-    if(mouse_ignored(a))return;
-    if(dx||dy){
+    int dx=i->rel_dx,dy=i->rel_dy,wheel=i->wheel;
+    i->rel_dx=i->rel_dy=i->wheel=0;
+    if(!mouse_ignored(a)&&(!a->mouse_down||a->mouse_fd==i->fd)&&(dx||dy)){
         /* A little faster when moved fast: the panel is 720 layout pixels wide, a mouse counts its own. */
         int fast=abs(dx)+abs(dy);int gain=fast>24?3:(fast>8?2:1);
         mouse_show(a);
@@ -7622,7 +7654,12 @@ static void mouse_sync(App*a,Input*i){
         if(a->mouse_y>CH-1)a->mouse_y=CH-1;
         if(a->mouse_down)pointer(a,true,a->mouse_x,a->mouse_y,a->now);
     }
-    if(wheel){mouse_show(a);mouse_wheel(a,wheel);}
+    /* The axes and button edges describe the same evdev report. Update the coordinates first,
+     * then dispatch the edges in order, including a press and release in the same report. */
+    for(unsigned int n=0;n<i->mouse_button_count;n++)
+        mouse_button(a,i,i->mouse_buttons[n].code,i->mouse_buttons[n].value);
+    i->mouse_button_count=0;
+    if(wheel&&!mouse_ignored(a)&&(!a->mouse_down||a->mouse_fd==i->fd)){mouse_show(a);mouse_wheel(a,wheel);}
 }
 static void mouse_draw(App*a){
     if(!a->mouse_shown)return;
@@ -7632,16 +7669,27 @@ static void mouse_draw(App*a){
     Bounds b=canvas_bounds(a);
     canvas_triangle(a->pixels,b,p,3.5f,0x101010u);canvas_triangle(a->pixels,b,p,1.2f,0xffffffu);
 }
+static void input_drop(App*a,Input*i){
+    if(i->rel){
+        i->rel_dx=i->rel_dy=i->wheel=0;i->mouse_button_count=0;
+        mouse_cancel(a,i);
+    }else if(i->down&&!a->mouse_down)cancel_pointer(a);
+    i->dropped=true;i->need_release=true;i->down=false;
+}
 static void handle_input(App*a,Input*i,const Display*d){
     struct input_event e;
     while(read(i->fd,&e,sizeof(e))==(ssize_t)sizeof(e)){
-        if(e.type==EV_SYN&&e.code==SYN_DROPPED){cancel_pointer(a);i->dropped=true;i->need_release=true;i->down=false;continue;}
+        if(e.type==EV_SYN&&e.code==SYN_DROPPED){input_drop(a,i);continue;}
         if(i->dropped){if(e.type==EV_SYN&&e.code==SYN_REPORT){i->dropped=false;resync_input(i);}continue;}
         if(e.type==EV_KEY){
             /* BTN_TOUCH accompanies Type-B slots; it is not a navigation key.
              * Let SYN_REPORT stop inertia and suppress that same contact. */
             if(e.code==BTN_TOUCH){if(!i->mt)i->slots[0].id=e.value?0:-1;}
-            else if(i->rel&&e.code>=BTN_MOUSE&&e.code<BTN_JOYSTICK){a->now=milliseconds();mouse_button(a,e.code,e.value);}
+            else if(i->rel&&e.code>=BTN_MOUSE&&e.code<BTN_JOYSTICK){
+                if(i->mouse_button_count<MOUSE_REPORT_BUTTONS)
+                    i->mouse_buttons[i->mouse_button_count++]=(MouseButton){e.code,e.value};
+                else input_drop(a,i);
+            }
             else{a->now=i->clock_monotonic&&e.time.tv_sec>=0&&(e.time.tv_sec||e.time.tv_usec)?(uint64_t)e.time.tv_sec*1000u+(uint64_t)e.time.tv_usec/1000u:milliseconds();key_event(a,e.code,e.value);}
         }else if(e.type==EV_REL&&i->rel){
             if(e.code==REL_X)i->rel_dx+=e.value;else if(e.code==REL_Y)i->rel_dy+=e.value;else if(e.code==REL_WHEEL)i->wheel+=e.value;
@@ -8619,9 +8667,9 @@ static int test_mouse(void){
     m.rel_dx=-4000;m.rel_dy=-4000;mouse_sync(a,&m);assert(a->mouse_shown&&a->mouse_x==0&&a->mouse_y==0&&m.rel_dx==0);   /* held at the edges */
     m.rel_dx=190;m.rel_dy=500;mouse_sync(a,&m);assert(a->mouse_x==570&&a->mouse_y==1500);m.rel_dx=3;m.rel_dy=-2;mouse_sync(a,&m);assert(a->mouse_x==573&&a->mouse_y==1498);  /* fast moves go further */
     a->mouse_x=190;a->mouse_y=500;render(a);                                                                          /* over the Backup card */
-    mouse_button(a,BTN_LEFT,1);assert(a->mouse_down&&a->pointer_down);a->now+=60;mouse_button(a,BTN_LEFT,0);
+    mouse_button(a,&m,BTN_LEFT,1);assert(a->mouse_down&&a->pointer_down);a->now+=60;mouse_button(a,&m,BTN_LEFT,0);
     assert(!a->mouse_down&&a->screen==BACKUP);
-    render(a);mouse_button(a,BTN_RIGHT,1);mouse_button(a,BTN_RIGHT,0);assert(a->screen==HOME);
+    render(a);mouse_button(a,&m,BTN_RIGHT,1);mouse_button(a,&m,BTN_RIGHT,0);assert(a->screen==HOME);
     /* The wheel scrolls the page under the pointer, down and back up, and never past its ends. */
     screen(a,TOOLS);render(a);a->mouse_x=CW/2;a->mouse_y=700;int64_t limit=tools_max_scroll(a);
     m.wheel=-2;mouse_sync(a,&m);assert(a->tools_scroll==(limit<2*MOUSE_WHEEL_PX?limit:2*MOUSE_WHEEL_PX));
@@ -8629,9 +8677,77 @@ static int test_mouse(void){
     /* It goes after a while without a move; the screen dark, the mouse does nothing. */
     a->mouse_moved_at=a->now;render(a);assert(a->mouse_shown);
     a->display_blank_known=a->display_blanked=true;int x=a->mouse_x;m.rel_dx=50;mouse_sync(a,&m);assert(a->mouse_x==x);
-    mouse_button(a,BTN_LEFT,1);assert(!a->mouse_down);
+    mouse_button(a,&m,BTN_LEFT,1);assert(!a->mouse_down);
     free(a->pixels);free(a);return 1;
 }
+static void test_mouse_input(App*a,Input*i,int sender,const struct input_event*events,size_t count){
+    size_t bytes=count*sizeof(*events);
+    assert(write(sender,events,bytes)==(ssize_t)bytes);
+    handle_input(a,i,NULL);
+}
+
+static int test_mouse_reports(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->preview=true;a->inventory_ok=true;
+    screen(a,HOME);render(a);a->mouse_x=190;a->mouse_y=770;
+    int fd[2];assert(pipe2(fd,O_NONBLOCK|O_CLOEXEC)==0);
+    Input mouse={.rel=true,.fd=fd[0]};
+    const struct input_event press[]={{.type=EV_KEY,.code=BTN_LEFT,.value=1},{.type=EV_SYN,.code=SYN_REPORT}};
+    const struct input_event release[]={{.type=EV_KEY,.code=BTN_LEFT},{.type=EV_SYN,.code=SYN_REPORT}};
+    const struct input_event move[]={{.type=EV_REL,.code=REL_Y,.value=-90},{.type=EV_SYN,.code=SYN_REPORT}};
+
+    /* A button event is part of its report, even when read before its axes and SYN_REPORT. */
+    test_mouse_input(a,&mouse,fd[1],press,1);
+    assert(!a->mouse_down&&!a->pointer_down&&a->mouse_y==770);
+    test_mouse_input(a,&mouse,fd[1],move,2);
+    assert(a->mouse_y==500&&a->mouse_down&&a->pressed_action==A_BACKUP);
+    test_mouse_input(a,&mouse,fd[1],release,2);
+    assert(a->screen==BACKUP&&!a->mouse_down);
+
+    screen(a,HOME);render(a);test_mouse_input(a,&mouse,fd[1],press,2);
+    assert(a->mouse_down&&a->pressed_action==A_BACKUP);
+    const struct input_event lost[]={
+        {.type=EV_REL,.code=REL_X,.value=900},{.type=EV_REL,.code=REL_WHEEL,.value=4},
+        {.type=EV_SYN,.code=SYN_DROPPED},{.type=EV_KEY,.code=BTN_LEFT},
+        {.type=EV_REL,.code=REL_Y,.value=500},{.type=EV_SYN,.code=SYN_REPORT},
+    };
+    test_mouse_input(a,&mouse,fd[1],lost,6);
+    assert(a->screen==HOME&&!a->mouse_down&&!a->pointer_down&&a->mouse_x==190&&a->mouse_y==500);
+    assert(!mouse.rel_dx&&!mouse.rel_dy&&!mouse.wheel);
+    const struct input_event tap[]={
+        {.type=EV_REL,.code=REL_X,.value=1},{.type=EV_KEY,.code=BTN_LEFT,.value=1},
+        {.type=EV_KEY,.code=BTN_LEFT},{.type=EV_SYN,.code=SYN_REPORT},
+    };
+    test_mouse_input(a,&mouse,fd[1],tap,4);
+    assert(a->mouse_x==191&&a->screen==BACKUP&&!a->mouse_down);
+
+    screen(a,HOME);render(a);
+    /* A pipe has no EVIOCGKEY. Model its held-left bit after a successful resync. */
+    mouse.mouse_blocked=1u<<(BTN_LEFT-BTN_MOUSE);
+    test_mouse_input(a,&mouse,fd[1],press,2);
+    assert(!a->mouse_down&&!a->pointer_down);
+    test_mouse_input(a,&mouse,fd[1],release,2);
+    assert(!mouse.mouse_blocked&&a->screen==HOME);
+    test_mouse_input(a,&mouse,fd[1],press,2);
+    assert(a->mouse_down&&a->pressed_action==A_BACKUP);
+
+    int other_fd[2];assert(pipe2(other_fd,O_NONBLOCK|O_CLOEXEC)==0);
+    Input other={.rel=true,.fd=other_fd[0]};
+    test_mouse_input(a,&other,other_fd[1],lost,6);
+    test_mouse_input(a,&other,other_fd[1],release,2);
+    assert(a->mouse_down&&a->pointer_down&&a->pressed_action==A_BACKUP);
+    test_mouse_input(a,&mouse,fd[1],release,2);
+    assert(a->screen==BACKUP&&!a->mouse_down);
+
+    screen(a,HOME);render(a);
+    pointer(a,true,190,500,1000); /* A touchscreen owns this contact. */
+    test_mouse_input(a,&other,other_fd[1],lost,6);
+    test_mouse_input(a,&other,other_fd[1],tap,4);
+    assert(!a->mouse_down&&a->pointer_down&&a->pressed_action==A_BACKUP);
+    pointer(a,false,190,500,1060);assert(a->screen==BACKUP);
+    close(other_fd[0]);close(other_fd[1]);
+    close(fd[0]);close(fd[1]);free(a->pixels);free(a);return 1;
+}
+
 /* 2026-11-22: a keyboard of its own types into the shell and into text fields, in either language. */
 static bool hw_test_press(App*a,unsigned code){key_event(a,code,1);key_event(a,code,0);return true;}
 static bool hw_test_typed(App*a,const char*want){
@@ -10309,7 +10425,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_hidden_poll();tests+=test_flash_file_return();tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_hw_keyboard();tests+=test_mouse();tests+=test_flash_payload();tests+=test_status_sleep_and_amoled();tests+=test_busy_offer();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_web_activity();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_switch_and_kinds();tests+=test_review_fixes();tests+=test_first_boot_progress();tests+=test_file_details();tests+=test_android_variants();tests+=test_gsi_keep_data();tests+=test_zip_root_app();tests+=test_linux_stages();tests+=test_nofbe_choice();tests+=test_system_live();tests+=test_display_without_blanking();tests+=test_media_parts();tests+=test_shell();tests+=test_web_overlays();tests+=test_recents_keep_browser();tests+=test_operation_exit();tests+=test_files_beside();tests+=test_web_float();tests+=test_shade_over_video();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_hidden_poll();tests+=test_flash_file_return();tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_hw_keyboard();tests+=test_mouse();tests+=test_mouse_reports();tests+=test_flash_payload();tests+=test_status_sleep_and_amoled();tests+=test_busy_offer();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_web_activity();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_switch_and_kinds();tests+=test_review_fixes();tests+=test_first_boot_progress();tests+=test_file_details();tests+=test_android_variants();tests+=test_gsi_keep_data();tests+=test_zip_root_app();tests+=test_linux_stages();tests+=test_nofbe_choice();tests+=test_system_live();tests+=test_display_without_blanking();tests+=test_media_parts();tests+=test_shell();tests+=test_web_overlays();tests+=test_recents_keep_browser();tests+=test_operation_exit();tests+=test_files_beside();tests+=test_web_float();tests+=test_shade_over_video();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;
@@ -10776,8 +10892,11 @@ int main(int argc,char**argv){
         /* A node that went (a keyboard switched off): closed, or poll would wake at once forever. */
         if(ready>0)for(int n=count-1;n>=0;n--)if(p[n].revents&(POLLERR|POLLHUP|POLLNVAL)){
             fprintf(stderr,"[recovery-ui] input gone=%s\n",inputs[n].name);
-            if(inputs[n].down)cancel_pointer(a);
-            if(inputs[n].rel){if(a->mouse_down){a->mouse_down=false;cancel_pointer(a);}a->mouse_shown=false;a->dirty=true;}
+            if(inputs[n].down&&!a->mouse_down)cancel_pointer(a);
+            if(inputs[n].rel){
+                mouse_cancel(a,&inputs[n]);
+                if(!a->mouse_down){a->mouse_shown=false;a->dirty=true;}
+            }
             close(inputs[n].fd);memmove(&inputs[n],&inputs[n+1],(size_t)(count-n-1)*sizeof(inputs[0]));count--;a->hw_mods=0;
         }
         if(a->input_rescan_at&&milliseconds()>=a->input_rescan_at&&!a->input_path[0]){
