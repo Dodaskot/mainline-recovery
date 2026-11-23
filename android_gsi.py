@@ -117,6 +117,7 @@ def gsi_source(context, volume, token, path):
             compression = flash.container(fd)
             members['system'] = (None, st.st_size if compression == 'none' else (xz_size(fd) if compression == 'xz' else
                                                                             (gz_size(fd) if compression == 'gzip' else 0)))
+        require(flash.identity(fd) == identity, 'IMAGE_CHANGED', 'The image file changed while it was reviewed')
         return {'identity': identity, 'size': st.st_size, 'members': members, 'props': props}
 
 
@@ -297,16 +298,14 @@ def system_digest(context, progress=quiet):
         return digest.hexdigest()
 
 
-def file_digest(context, volume, token, path, progress=quiet):
+def file_digest(context, volume, token, path, progress=quiet, expected_identity=None):
     with flash.source_file(context, volume, token, path) as fd:
-        digest, at, size = hashlib.sha256(), 0, os.fstat(fd).st_size
-        while True:
-            data = os.pread(fd, 4 << 20, at)
-            if not data:
-                return digest.hexdigest(), at
-            digest.update(data)
-            at += len(data)
-            progress('Checking the image file', {'label': path.rsplit('/', 1)[-1], 'size_bytes': size}, at)
+        identity = flash.identity(fd)
+        require(expected_identity is None or identity == expected_identity, 'IMAGE_CHANGED',
+                'The image file changed while it was reviewed')
+        facts = flash.source_digest(fd, Path(path).name, progress)
+        require(flash.identity(fd) == identity, 'IMAGE_CHANGED', 'The image file changed while it was reviewed')
+        return facts
 
 
 def image_matches_system(context, volume, path, progress=None):
@@ -423,7 +422,7 @@ def platform_facts(context, progress=quiet):
     return facts, partition_sha256
 
 
-def keep_data_facts(context, volume, token, path, size, boot, qualification_run, rollback_volume, rollback_image=None, progress=quiet):
+def keep_data_facts(context, volume, token, path, source, boot, qualification_run, rollback_volume, rollback_image=None, progress=quiet):
     """(facts, blockers) of an update that keeps the data: the pair, and its way back."""
     blockers = []
     if boot != 'android':
@@ -432,8 +431,8 @@ def keep_data_facts(context, volume, token, path, size, boot, qualification_run,
     facts = {'qualified': False, 'pair': None, 'source_system_sha256': None, 'target_sha256': None,
              'rollback_volume': rollback_volume, 'rollback_image': rollback_image,
              'rollback_labels': ROLLBACK_LABELS.split(',') if rollback_volume else []}
-    if size in sizes or qualification_run:
-        facts['target_sha256'], _ = file_digest(context, volume, token, path, progress)
+    if source['size'] in sizes or qualification_run:
+        facts['target_sha256'], _ = file_digest(context, volume, token, path, progress, source['identity'])
         facts['source_system_sha256'] = system_digest(context, progress)
         pair = android_transitions.lookup(facts['source_system_sha256'], facts['target_sha256'])
         facts['qualified'], facts['pair'] = pair is not None, pair
@@ -574,7 +573,7 @@ def inspect(context, volume, token, path, keep_data=False, rollback_volume=None,
             except fs.FilesystemError as error:
                 blockers.append(error.code)
     if keep_data:
-        keep, more = keep_data_facts(context, volume, token, relative, source['size'], boot, qualification_run, rollback_volume,
+        keep, more = keep_data_facts(context, volume, token, relative, source, boot, qualification_run, rollback_volume,
                                      rollback_image, progress)
         blockers += more
         if not verification_disabled:
@@ -630,29 +629,23 @@ def inspect(context, volume, token, path, keep_data=False, rollback_volume=None,
             'patch': props.get('ro.build.version.security_patch', ''), 'fits': fits, 'boot': boot or 'unknown', 'boot_release': release,
             'files': [{'name': name, 'path': relative, 'kind': 'GSI', 'build': build, 'size': source['size'], 'md5': None}],
             'rows': rows, 'writes': writes, 'erase': plan['erase'], 'warnings': warnings, 'blockers': sorted(set(blockers)),
-            'plan_sha256': digest, 'write_bytes': sum(w['size'] for w in writes), 'keep_data': keep,
+            'plan_sha256': digest, 'source_identity': source['identity'],
+            'write_bytes': sum(w['size'] for w in writes), 'keep_data': keep,
             'keep_data_offer': (not keep_data and boot == 'android' and android_transitions.offered(source['size'])),
             'no_fbe': bool(no_fbe)}
 
 
-def flash_gsi(context, volume, token, write, progress):
+def flash_gsi(context, volume, token, write, progress, source_identity=None, source_sha256=None):
     args = type('Args', (), {})()
     if write.get('volume') and write['volume'] != volume:
         # Samsung's BOOT kept on cache: its own volume, mounted read-only by saved_boots.
         volume, token = write['volume'], context.fs.volume(write['volume'])['volume_token']
     args.target, args.volume, args.volume_token, args.path, args.member = write['target'], volume, token, write['path'], write['member']
     args.image_bytes, args.confirm = None, True
-    if write.get('sha256'):
-        # A file the plan named by its content (Samsung's BOOT or the empty vbmeta on cache).
-        with flash.source_file(context, volume, token, write['path']) as fd:
-            digest, at = hashlib.sha256(), 0
-            while True:
-                data = os.pread(fd, 1 << 20, at)
-                if not data:
-                    break
-                digest.update(data)
-                at += len(data)
-        require(digest.hexdigest() == write['sha256'], 'IMAGE_CHANGED', 'The image kept on cache changed. Review again')
+    # The reviewed package and cache images have a digest of the encoded source.
+    # Check it using the same file descriptor as the decoder.
+    args.expected_source_sha256 = write.get('sha256') or source_sha256
+    args.expected_source_identity = None if write.get('volume') else source_identity
     checked = flash.check(context, args, progress)
     args.expected_sha256, args.expected_identity = checked['image']['sha256'], checked['image']['identity']
     if write['target'].startswith('super/'):
@@ -708,10 +701,15 @@ def install_gsi(context, volume, token, path, expected_plan, confirmed, progress
                     "This image is missing or differs from the system on the phone. Nothing was written")
             copy = {'volume': card, 'path': earlier, 'image': True}
         token = context.fs.volume(volume)['volume_token']
+        source_sha256 = plan['keep_data']['target_sha256'] if keep_data else None
         if any(w.get('generate') == 'vbmeta-disabled' for w in plan['writes']):
+            with flash.source_file(context, volume, token, plan['path']) as fd:
+                require(flash.identity(fd) == plan['source_identity'], 'IMAGE_CHANGED',
+                        'The image file changed since the review')
             saved_boot.save_on_cache(context, VBMETA_NAME, disabled_vbmeta(), {'kind': 'vbmeta', 'flags': AVB_VERIFICATION_DISABLED},
                                      progress, keep_mounted=True, folder_name=VBMETA_DIR)
-        written = [flash_gsi(context, volume, token, write, progress) for write in plan['writes']]
+        written = [flash_gsi(context, volume, token, write, progress, plan['source_identity'], source_sha256)
+                   for write in plan['writes']]
         if keep_data:
             return {'build': plan['build'], 'android': plan['android'], 'written': written, 'kept_data': True,
                     'pair': plan['keep_data']['pair'], 'qualification_run': qualification_run, 'rollback_copy': copy,

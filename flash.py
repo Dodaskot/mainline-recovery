@@ -690,6 +690,30 @@ def source_file(context, volume, token, path, expected_entry=None):
             os.close(fd)
 
 
+def source_digest(fd, label, progress):
+    """Hash the complete encoded file, distinct from the image decoded from it."""
+    size = os.fstat(fd).st_size
+    shown = {'label': label, 'size_bytes': size}
+    digest = install.hash_fd(fd, size, label=label,
+                             progress=lambda event: progress('Checking the image file', shown, event['bytes_done']))
+    return digest, size
+
+
+@contextlib.contextmanager
+def checked_source_file(context, args, progress):
+    with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd:
+        observed = identity(fd)
+        expected_sha = getattr(args, 'expected_source_sha256', None)
+        expected_identity = getattr(args, 'expected_source_identity', None)
+        if expected_identity is not None:
+            require(observed == expected_identity, 'IMAGE_CHANGED', 'The image file changed since the review')
+        if expected_sha is not None:
+            digest, _ = source_digest(fd, Path(args.path).name, progress)
+            require(digest == expected_sha, 'IMAGE_CHANGED', 'The image file changed since the review')
+        yield fd, observed
+        require(identity(fd) == observed, 'IMAGE_CHANGED', 'The image file changed while it was checked')
+
+
 ROLLBACKS_ON_CARDS = 3
 
 
@@ -981,7 +1005,7 @@ def image_kind(prefix):
 def check_logical(context, args, progress, name):
     """An image for a logical partition: it may be smaller than the partition (the rest is
     zeroed) or larger, when super and the partition's group have room for it to grow."""
-    with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd:
+    with checked_source_file(context, args, progress) as (fd, source_identity):
         size = os.fstat(fd).st_size
         compression = container(fd, getattr(args, 'member', None))
         super_target, sfd, found = open_super(context)
@@ -1037,7 +1061,7 @@ def check_logical(context, args, progress, name):
         return {'target': {'label': args.target, 'size_bytes': current, 'new_size_bytes': grown, 'offline': offline, 'logical': True},
                 'image': {'name': Path(args.path).name[:200], 'kind': image_kind(prefix), 'compression': compression,
                           'format': image_format, 'file_bytes': size, 'payload_bytes': count, 'sha256': digest.hexdigest(),
-                          'identity': identity(fd), 'checksum_file': None},
+                          'identity': source_identity, 'checksum_file': None},
                 'identical': identical, 'warnings': warnings, 'contents': None,
                 'rollback_volume': (volume.get('label') or volume['id']) if volume else None}
 
@@ -1152,7 +1176,7 @@ def check(context, args, progress):
     name = logical_name(args.target)
     if name:
         return check_logical(context, args, progress, name)
-    with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd:
+    with checked_source_file(context, args, progress) as (fd, source_identity):
         size = os.fstat(fd).st_size
         compression = container(fd, getattr(args, 'member', None))
         label = detect(fd, compression) if args.target == 'auto' else args.target
@@ -1196,7 +1220,7 @@ def check(context, args, progress):
                             'This partition is too large to save first')
         return {'target': {'label': label, 'size_bytes': target['size_bytes'], 'offline': offline},
                 'image': {'name': Path(args.path).name[:200], 'kind': kind, 'compression': compression, 'format': image_format,
-                          'file_bytes': size, 'payload_bytes': reader.payload_bytes, 'sha256': value, 'identity': identity(fd),
+                          'file_bytes': size, 'payload_bytes': reader.payload_bytes, 'sha256': value, 'identity': source_identity,
                           'checksum_file': checksum},
                 'identical': identical, 'warnings': warnings, 'contents': contents,
                 'rollback_volume': (volume.get('label') or volume['id']) if volume else ('cache' if kept else None)}

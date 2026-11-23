@@ -1,5 +1,6 @@
 """A GSI installed from the recovery (android_gsi.py, 2026-11-10): system.img from Google's GSI ZIP
 into super/system, its vbmeta.img into vbmeta, userdata reset for Android; refused on a Linux BOOT."""
+import argparse
 import contextlib
 import hashlib
 import io
@@ -77,6 +78,25 @@ class Gsi(unittest.TestCase):
     def install(self, plan):
         return self.run_helper('install', '--volume', 'userdata', '--volume-token', self.token(), '--path',
                                '/.a22x-images/' + self.gsi.name, '--expected-plan', plan, '--confirm')
+
+    def test_flash_check_distinguishes_the_package_digest_from_its_system_member(self):
+        context = ag.install.FixtureContext(self.root)
+        member_digest = hashlib.sha256(self.system).hexdigest()
+        package_digest = hashlib.sha256(self.gsi.read_bytes()).hexdigest()
+        args = argparse.Namespace(target='super/system', volume='userdata', volume_token=self.token(),
+                                  path='/.a22x-images/' + self.gsi.name, member='system.img',
+                                  expected_source_sha256=package_digest)
+        checked = ag.flash.check(context, args, ag.quiet)
+        self.assertEqual(checked['image']['sha256'], member_digest)
+        args.expected_source_sha256 = member_digest
+        with self.assertRaises(ag.fs.FilesystemError) as error:
+            ag.flash.check(context, args, ag.quiet)
+        self.assertEqual(error.exception.code, 'IMAGE_CHANGED')
+        args.expected_source_sha256 = package_digest
+        args.expected_source_identity = '0' * 64
+        with self.assertRaises(ag.fs.FilesystemError) as error:
+            ag.flash.check(context, args, ag.quiet)
+        self.assertEqual(error.exception.code, 'IMAGE_CHANGED')
 
     def test_a_google_gsi_goes_into_system_and_vbmeta(self):
         code, plan, _ = self.inspect()
@@ -351,9 +371,13 @@ class KeepData(Gsi):
         self.assertEqual(plan['blockers'], [])
         self.assertTrue(plan['keep_data']['qualified'])
         self.assertEqual([write['target'] for write in plan['writes']], ['super/system'])
-        code, done, _ = self.run_helper('install', '--volume', 'userdata', '--volume-token', self.token(), '--path',
-                                        '/.a22x-images/' + self.gsi.name, '--expected-plan', plan['plan_sha256'], '--confirm',
-                                        '--keep-data', '--rollback-volume', 'sdcard-p1')
+        with unittest.mock.patch.object(ag.flash, 'check', wraps=ag.flash.check) as check:
+            code, done, _ = self.run_helper('install', '--volume', 'userdata', '--volume-token', self.token(), '--path',
+                                            '/.a22x-images/' + self.gsi.name, '--expected-plan', plan['plan_sha256'], '--confirm',
+                                            '--keep-data', '--rollback-volume', 'sdcard-p1')
+        self.assertEqual(check.call_count, 1)
+        self.assertEqual(check.call_args.args[1].expected_source_sha256, plan['keep_data']['target_sha256'])
+        self.assertEqual(check.call_args.args[1].expected_source_identity, plan['source_identity'])
         self.assertEqual(code, 0, done)
         self.assertTrue(done['kept_data'])
         self.assertEqual(self.copies, ['sdcard-p1'])
