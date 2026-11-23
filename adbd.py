@@ -13,6 +13,7 @@ legacy shell). Nothing here runs a program sent by the computer except the shell
 import argparse
 import base64
 import contextlib
+import errno
 import hashlib
 import json
 import os
@@ -497,6 +498,16 @@ class FastClock:
 fast_clock = FastClock(os.environ.get('A22X_ADB_SYSFS_ROOT', '/'))
 
 
+def write_file_data(fd, data):
+    """Write all of a received block, including after a short write."""
+    pending = memoryview(data)
+    while pending:
+        written = os.write(fd, pending)
+        if not written:
+            raise OSError(errno.EIO, os.strerror(errno.EIO))
+        pending = pending[written:]
+
+
 def sync_reply(stream, ident, payload=b''):
     stream.write(ident + struct.pack('<I', len(payload)) + payload)
 
@@ -588,7 +599,7 @@ def service_sync(stream, service):
                         data, pending = stream.read_exact(length, pending)
                         if fd is not None and problem is None:
                             try:
-                                os.write(fd, data)
+                                write_file_data(fd, data)
                             except OSError as exc:
                                 problem = f'{target}: {exc.strerror}'
                     elif ident == b'DONE':
@@ -773,7 +784,7 @@ def receive_sideload(stream, folder, size, block):
             for number in range((size + block - 1) // block):
                 stream.write(b'%08d' % number)
                 data, pending = stream.read_exact(min(block, size - number * block), pending)
-                os.write(fd, data)
+                write_file_data(fd, data)
         os.fsync(fd)
         os.close(fd)
         fd = None

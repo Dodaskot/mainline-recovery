@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """The recovery's ADB daemon: keys, signatures, and the real adb client over TCP (2026-11-10)."""
 import base64
+import contextlib
+import errno
 import os
 from pathlib import Path
 import shutil
@@ -183,6 +185,80 @@ class TestUsbFunction(unittest.TestCase):
             os.close(host_to_phone[1])
             thread.join(5)
             self.assertFalse(thread.is_alive())
+
+
+class TestSyncSend(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='a22x-adb-sync-')
+        self.addCleanup(self.tmp.cleanup)
+        self.target = Path(self.tmp.name) / 'upload.bin'
+        self.partial = self.target.with_name(self.target.name + '.adb-part')
+        self.payload = b'complete upload contents'
+
+    def send(self, fail_after_short_write=False):
+        path = os.fsencode(f'{self.target},420')
+        stream = adbd.Stream(mock.Mock(), 1, 2)
+        stream.incoming(b'SEND' + struct.pack('<I', len(path)) + path
+                        + b'DATA' + struct.pack('<I', len(self.payload)) + self.payload
+                        + struct.pack('<4sI4sI', b'DONE', 0, b'QUIT', 0))
+        write = os.write
+        first = True
+
+        def write_with_short_result(fd, data):
+            nonlocal first
+            if first:
+                first = False
+                return write(fd, data[:5])
+            if fail_after_short_write:
+                raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+            return write(fd, data)
+
+        with mock.patch.object(adbd.os, 'write', side_effect=write_with_short_result), \
+                mock.patch.object(adbd, 'fast_clock', contextlib.nullcontext), \
+                mock.patch.object(stream, 'write') as reply:
+            adbd.service_sync(stream, 'sync:')
+        reply.assert_called_once()
+        return reply.call_args.args[0]
+
+    def test_send_finishes_a_short_write_before_publishing(self):
+        self.assertEqual(self.send(), b'OKAY' + bytes(4))
+        self.assertEqual(self.target.read_bytes(), self.payload)
+        self.assertFalse(self.partial.exists())
+
+    def test_send_error_after_a_short_write_keeps_the_existing_file(self):
+        original = b'previous complete file'
+        self.target.write_bytes(original)
+        reply = self.send(fail_after_short_write=True)
+        self.assertEqual(reply[:4], b'FAIL')
+        self.assertEqual(struct.unpack_from('<I', reply, 4)[0], len(reply[8:]))
+        self.assertIn(os.strerror(errno.ENOSPC).encode(), reply[8:])
+        self.assertEqual(self.target.read_bytes(), original)
+        self.assertFalse(self.partial.exists())
+
+
+class TestSideloadReceive(unittest.TestCase):
+    def test_sideload_finishes_a_short_write_before_publishing(self):
+        image = b'AVB0' + bytes(range(256)) * 16
+        stream = adbd.Stream(mock.Mock(), 1, 2)
+        stream.incoming(image)
+        write = os.write
+
+        def write_first_five_bytes(fd, data):
+            if not os.lseek(fd, 0, os.SEEK_CUR):
+                return write(fd, data[:5])
+            return write(fd, data)
+
+        with tempfile.TemporaryDirectory(prefix='a22x-adb-sideload-') as temporary:
+            folder = Path(temporary)
+            with mock.patch.object(adbd.os, 'write', side_effect=write_first_five_bytes), \
+                    mock.patch.object(adbd, 'fast_clock', contextlib.nullcontext), \
+                    mock.patch.object(stream, 'write') as reply:
+                name = adbd.receive_sideload(stream, folder, len(image), 8192)
+            self.assertTrue(name.endswith('-vbmeta.img'))
+            self.assertEqual(reply.call_args_list, [mock.call(b'00000000'), mock.call(b'DONEDONE')])
+            self.assertEqual((folder / name).stat().st_size, len(image))
+            self.assertEqual((folder / name).read_bytes(), image)
+            self.assertFalse((folder / '.sideload-part').exists())
 
 
 @unittest.skipUnless(shutil.which('adb'), 'the adb client is needed')
