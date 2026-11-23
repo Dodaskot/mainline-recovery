@@ -357,6 +357,7 @@ def run(executable=None, downloads='/downloads'):
     incoming = bytearray()
     waiting_frame = None
     staged_frame = None
+    visible = True
     queue = deque()
     active_tab = None
     selection = None
@@ -639,7 +640,8 @@ def run(executable=None, downloads='/downloads'):
         call('Target.getTargets', tab=False, reply=initial_window)
 
     def start_screencast():
-        call('Page.startScreencast', dict(format='png', maxWidth=WIDTH, maxHeight=HEIGHT))
+        if visible:
+            call('Page.startScreencast', dict(format='png', maxWidth=WIDTH, maxHeight=HEIGHT))
 
     def ack_screencast(frame_session, stamp):
         call('Page.screencastFrameAck', dict(sessionId=stamp), target_session=frame_session)
@@ -902,7 +904,20 @@ def run(executable=None, downloads='/downloads'):
             packet = control.recv(4096)
             if not packet or packet == b'Q':
                 return
-            if compositor and packet in (b'A', b'A0', b'A1'):
+            if packet in (b'V0', b'V1'):
+                shown = packet == b'V1'
+                if visible != shown:
+                    visible = shown
+                    if compositor:
+                        compositor.send(packet)
+                    elif tab_ready and session:
+                        if visible:
+                            start_screencast()
+                        else:
+                            # The UI still owns any frame already sent. Its A can arrive after V1.
+                            drop_staged_frame()
+                            call('Page.stopScreencast')
+            elif compositor and packet in (b'A', b'A0', b'A1'):
                 compositor.send(packet)
             elif packet == b'A':
                 if waiting_frame:
@@ -995,7 +1010,7 @@ def run(executable=None, downloads='/downloads'):
                   and (main_frame is None or data.get('frameId') == main_frame)):
                 set_loading(event == 'Page.frameStartedLoading')
             elif event == 'Page.loadEventFired' and tab_ready and msg.get('sessionId') == session:
-                if not direct:
+                if not direct and visible:
                     # The capture can otherwise stay with the old render
                     # surface when a navigation replaces it with a static page.
                     call('Page.stopScreencast')
@@ -1005,7 +1020,7 @@ def run(executable=None, downloads='/downloads'):
                 refresh_history()
             elif event == 'Page.screencastFrame':
                 frame_session = msg['sessionId']
-                if not tab_ready or frame_session != session:
+                if not visible or not tab_ready or frame_session != session:
                     ack_screencast(frame_session, data['sessionId'])
                 elif waiting_frame:
                     # Native has the shared buffer until it acknowledges F.

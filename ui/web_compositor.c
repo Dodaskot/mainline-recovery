@@ -26,7 +26,8 @@
 /* The page's size (WIDTH x HEIGHT) unless the session asks for another (S<w> <h>: a video in full screen,
  * 1080 x 2400 upright or 2400 x 1080 on its side, 2026-11-20). A slot holds the largest. */
 enum { WIDTH = 1080, HEIGHT = 2058, SCALE = 3, RATE = 90, MAX_PIXELS = 1080 * 2400, BYTES = MAX_PIXELS * 4 };
-static const uint64_t frame_period = 1000000000 / RATE;  /* also the refresh presentation feedback reports */
+static const uint64_t visible_period = 1000000000 / RATE;
+static const uint64_t hidden_period = 1000000000 / 5;
 
 struct compositor {
     struct wl_display *display;
@@ -35,9 +36,9 @@ struct compositor {
     struct surface *current;
     struct wl_list surfaces;
     uint32_t *frame;
-    int control, frames;   /* frames: where F/A travel (the UI's own socket, or control) */
+    int control, frames, timer;   /* frames: where F/A travel (the UI's own socket, or control) */
     unsigned slots, busy;
-    uint64_t next_publish, presented;
+    uint64_t period, next_publish, presented, timer_deadline, callback_deadline, next_callback;
     int width, height;   /* the size the session asked for */
 };
 
@@ -46,7 +47,7 @@ struct surface {
     struct wl_resource *resource, *xdg, *role, *buffer;
     struct wl_event_source *fence;   /* waits for the GPU to finish the attached buffer */
     struct wl_listener buffer_destroy;
-    struct wl_list link, callbacks;
+    struct wl_list link, callbacks, callbacks_pending;
     /* wp_presentation (2026-11-21): asked for the next commit, and for the commit waiting to be shown. */
     struct wl_list feedback_pending, feedback_queued;
     bool configured, attached, queued, popup;
@@ -82,13 +83,14 @@ static void feedback_destroy(struct wl_resource *res) {
 static uint64_t monotonic_ns(void);
 
 /* Each feedback of LIST answered and gone: presented as frame SEQ now, or discarded. */
-static void feedback_finish(struct wl_list *list, bool shown, uint64_t seq) {
+static void feedback_finish(struct compositor *server, struct wl_list *list, bool shown) {
     uint64_t now = monotonic_ns(), seconds = now / 1000000000;
+    uint64_t seq = server->presented;
     struct feedback *feedback, *next;
     wl_list_for_each_safe(feedback, next, list, link) {
         if (shown)
             wp_presentation_feedback_send_presented(feedback->resource, (uint32_t)(seconds >> 32), (uint32_t)seconds,
-                                                    (uint32_t)(now % 1000000000), (uint32_t)frame_period,
+                                                    (uint32_t)(now % 1000000000), (uint32_t)server->period,
                                                     (uint32_t)(seq >> 32), (uint32_t)seq,
                                                     WP_PRESENTATION_FEEDBACK_KIND_VSYNC);
         else wp_presentation_feedback_send_discarded(feedback->resource);
@@ -130,6 +132,17 @@ static uint64_t monotonic_ns(void) {
     return (uint64_t)time.tv_sec * 1000000000 + time.tv_nsec;
 }
 
+/* The timer stays disarmed while there is no frame work. A GPU fence or slot ACK can arrive sooner. */
+static void schedule_tick(struct compositor *server, uint64_t deadline) {
+    if (server->timer_deadline && server->timer_deadline <= deadline) return;
+    struct itimerspec timer = { .it_value = {
+        .tv_sec = deadline / 1000000000, .tv_nsec = deadline % 1000000000,
+    }};
+    if (timerfd_settime(server->timer, TFD_TIMER_ABSTIME, &timer, NULL))
+        wl_display_terminate(server->display);
+    else server->timer_deadline = deadline;
+}
+
 static void destroy(struct wl_client *, struct wl_resource *);
 #include "web_dmabuf.h"
 
@@ -146,8 +159,12 @@ static int fence_signalled(int fd, uint32_t mask, void *data) {
 
 static void publish_frame(struct compositor *server, struct surface *surface) {
     unsigned free_slots = ((1U << server->slots) - 1U) & ~server->busy;
+    if (!surface->queued || !free_slots) return;
     uint64_t now = monotonic_ns();
-    if (!surface->queued || !free_slots || now + 500000 < server->next_publish) return;
+    if (now + 500000 < server->next_publish) {
+        schedule_tick(server, server->next_publish);
+        return;
+    }
     unsigned slot = free_slots & 1U ? 0 : 1;
     struct wl_shm_buffer *buffer = wl_shm_buffer_get(surface->buffer);
     int width = 0, height = 0, stride = 0;
@@ -165,10 +182,11 @@ static void publish_frame(struct compositor *server, struct surface *surface) {
         source = dma_read(surface->buffer, &width, &height, &stride);
         if (!source) {
             /* Still being rendered: wake up when its fence signals (a dma-buf polls
-             * readable then). The tick retries anyway if this cannot be watched. */
+             * readable then). Retry on the timer when the fence cannot be watched. */
             int fd = dma_pending_fd(surface->buffer);
             if (fd >= 0 && !surface->fence)
                 surface->fence = wl_event_loop_add_fd(server->loop, fd, WL_EVENT_READABLE, fence_signalled, surface);
+            if (!surface->fence) schedule_tick(server, now + server->period);
             return;
         }
     }
@@ -186,41 +204,51 @@ static void publish_frame(struct compositor *server, struct surface *surface) {
                                         : snprintf(message, sizeof(message), "F:%dx%d", fw, fh);
         if (send(server->frames, message, (size_t)length, MSG_DONTWAIT | MSG_NOSIGNAL) == length) {
             server->busy |= 1U << slot;
-            feedback_finish(&surface->feedback_queued, true, ++server->presented);
+            server->presented++;
+            feedback_finish(server, &surface->feedback_queued, true);
             /* Keep the phase across small scheduling slips. A slow frame
              * cannot make the next one wait for an entire extra period. */
-            if (server->next_publish && now < server->next_publish + frame_period)
-                server->next_publish += frame_period;
+            if (server->next_publish && now < server->next_publish + server->period)
+                server->next_publish += server->period;
             else
-                server->next_publish = now + frame_period;
+                server->next_publish = now + server->period;
         } else wl_display_terminate(server->display);
     } else if (source) {
         /* A frame of the size before a resize (full screen, 2026-11-21): the picture stays as it was,
          * and the frame counts as shown. Told "discarded" during the resize, Chromium left a page's full
          * screen 1.5 s after entering it (#6, YouTube); with no presentation feedback it stayed. */
-        feedback_finish(&surface->feedback_queued, true, ++server->presented);
+        server->presented++;
+        feedback_finish(server, &surface->feedback_queued, true);
     }
     if (source) {
         if (buffer) wl_shm_buffer_end_access(buffer);
         else dma_read_end(surface->buffer);
     }
-    feedback_finish(&surface->feedback_queued, false, 0);  /* what was not shown above */
+    feedback_finish(server, &surface->feedback_queued, false);  /* what was not shown above */
     release_buffer(surface, true);
 }
 
 static int tick(int fd, uint32_t mask, void *data) {
     (void)mask;
-    uint64_t ticks;
-    if (read(fd, &ticks, sizeof(ticks)) != sizeof(ticks)) return 0;
+    uint64_t expirations;
+    if (read(fd, &expirations, sizeof(expirations)) != sizeof(expirations)) return 0;
     struct compositor *server = data;
-    uint32_t now = (uint32_t)(monotonic_ns() / 1000000);
+    server->timer_deadline = 0;
+    if (server->current) publish_frame(server, server->current);
+    if (!server->callback_deadline) return 0;
+    uint64_t now = monotonic_ns();
+    if (now < server->callback_deadline) {
+        schedule_tick(server, server->callback_deadline);
+        return 0;
+    }
+    server->next_callback = now < server->callback_deadline + server->period
+                          ? server->callback_deadline + server->period : now + server->period;
+    server->callback_deadline = 0;
     struct surface *surface;
     wl_list_for_each(surface, &server->surfaces, link) {
-        if (surface == server->current) publish_frame(server, surface);
-        else if (surface->queued) release_buffer(surface, true);
         struct frame_callback *callback, *next;
         wl_list_for_each_safe(callback, next, &surface->callbacks, link) {
-            wl_callback_send_done(callback->resource, now);
+            wl_callback_send_done(callback->resource, (uint32_t)(now / 1000000));
             wl_resource_destroy(callback->resource);
         }
     }
@@ -242,16 +270,35 @@ static bool resize(struct compositor *server, const char *message, ssize_t size)
     struct surface *surface;
     wl_list_for_each(surface, &server->surfaces, link)
         if (surface->role && surface->xdg && !surface->popup && surface->configured) configure(surface);
+    if (server->current) publish_frame(server, server->current);
     return true;
 }
 
-/* The session's control socket, when frames travel on the UI's own socket: its end, and sizes. */
+static bool control_message(struct compositor *server, const char *message, ssize_t size) {
+    if (size != 2 || message[0] != 'V' || (message[1] != '0' && message[1] != '1'))
+        return resize(server, message, size);
+    bool shown = message[1] == '1';
+    uint64_t period = shown ? visible_period : hidden_period;
+    if (server->period == period) return true;
+    server->period = period;
+    /* Rearm pending work at the new pace. Returning to the page need not wait out a hidden interval. */
+    uint64_t deadline = monotonic_ns() + (shown ? 0 : period);
+    server->next_publish = server->next_callback = deadline;
+    if (server->callback_deadline) {
+        server->callback_deadline = deadline;
+        schedule_tick(server, deadline);
+    }
+    if (server->current) publish_frame(server, server->current);
+    return true;
+}
+
+/* The session's control socket when frames travel on the UI's own socket. */
 static int control_event(int fd, uint32_t mask, void *data) {
     struct compositor *server = data;
     char message[32];
     ssize_t size = recv(fd, message, sizeof(message), MSG_DONTWAIT);
     if ((mask & (WL_EVENT_HANGUP | WL_EVENT_ERROR)) || size == 0 ||
-        (size < 0 && errno != EAGAIN && errno != EINTR) || (size > 0 && !resize(server, message, size)))
+        (size < 0 && errno != EAGAIN && errno != EINTR) || (size > 0 && !control_message(server, message, size)))
         wl_display_terminate(server->display);
     return 0;
 }
@@ -260,8 +307,8 @@ static int acknowledge(int fd, uint32_t mask, void *data) {
     struct compositor *server = data;
     char message[32] = {0};
     ssize_t size = recv(fd, message, sizeof(message), MSG_DONTWAIT);
-    if (size > 0 && message[0] == 'S') {   /* a size from the session, on the one socket of relay mode */
-        if (!resize(server, message, size)) wl_display_terminate(server->display);
+    if (server->frames == server->control && size > 0 && message[0] != 'A') {  /* relay uses one socket */
+        if (!control_message(server, message, size)) wl_display_terminate(server->display);
         return 0;
     }
     int slot = server->slots == 1 ? 0 : message[1] - '0';
@@ -329,21 +376,31 @@ static void frame(struct wl_client *client, struct wl_resource *res, uint32_t id
         return;
     }
     wl_resource_set_implementation(callback->resource, NULL, callback, frame_callback_destroy);
-    wl_list_insert(surface->callbacks.prev, &callback->link);
+    wl_list_insert(surface->callbacks_pending.prev, &callback->link);
 }
 
 static void commit(struct wl_client *client, struct wl_resource *res) {
     struct surface *surface = wl_resource_get_user_data(res);
+    struct compositor *server = surface->server;
+    if (!wl_list_empty(&surface->callbacks_pending)) {
+        wl_list_insert_list(surface->callbacks.prev, &surface->callbacks_pending);
+        wl_list_init(&surface->callbacks_pending);
+        if (!server->callback_deadline) {
+            uint64_t now = monotonic_ns();
+            server->callback_deadline = server->next_callback > now ? server->next_callback : now;
+            schedule_tick(server, server->callback_deadline);
+        }
+    }
     if (!surface->role || !surface->xdg) {
         /* Subsurfaces (Chromium bubbles) are never drawn: hand their buffers back. Their frames count as
          * shown: told "discarded" for its full screen notice, Chromium left a page's full screen 1.5 s
          * after entering it (2026-11-21, #6, YouTube), as it must when the notice cannot be seen. */
-        feedback_finish(&surface->feedback_pending, true, surface->server->presented);
+        feedback_finish(server, &surface->feedback_pending, true);
         if (surface->attached) release_buffer(surface, true);
         return;
     }
     if (surface->popup) {
-        feedback_finish(&surface->feedback_pending, true, surface->server->presented);
+        feedback_finish(server, &surface->feedback_pending, true);
         if (!surface->configured) {
             surface->configured = true;
             xdg_popup_send_configure(surface->role, 0, 0, surface->popup_width, surface->popup_height);
@@ -361,14 +418,18 @@ static void commit(struct wl_client *client, struct wl_resource *res) {
             wl_surface_send_enter(res, surface->server->output);
     }
     /* A newer commit replaces the one still waiting: its feedback is discarded. */
-    if (surface->attached) feedback_finish(&surface->feedback_queued, false, 0);
+    if (surface->attached) feedback_finish(server, &surface->feedback_queued, false);
     wl_list_insert_list(surface->feedback_queued.prev, &surface->feedback_pending);
     wl_list_init(&surface->feedback_pending);
     if (surface->attached) {
         surface->queued = true;
         surface->attached = false;
-        surface->server->current = surface;
-        publish_frame(surface->server, surface);
+        if (server->current && server->current != surface && server->current->queued) {
+            feedback_finish(server, &server->current->feedback_queued, false);
+            release_buffer(server->current, true);
+        }
+        server->current = surface;
+        publish_frame(server, surface);
     }
 }
 
@@ -385,10 +446,12 @@ static void finalize_surface(struct wl_resource *res) {
     if (surface->role) wl_resource_set_user_data(surface->role, NULL);
     if (surface->xdg) wl_resource_set_user_data(surface->xdg, NULL);
     release_buffer(surface, false);
-    feedback_finish(&surface->feedback_pending, false, 0);
-    feedback_finish(&surface->feedback_queued, false, 0);
+    feedback_finish(surface->server, &surface->feedback_pending, false);
+    feedback_finish(surface->server, &surface->feedback_queued, false);
     struct frame_callback *callback, *next;
     wl_list_for_each_safe(callback, next, &surface->callbacks, link)
+        wl_resource_destroy(callback->resource);
+    wl_list_for_each_safe(callback, next, &surface->callbacks_pending, link)
         wl_resource_destroy(callback->resource);
     free(surface);
 }
@@ -402,6 +465,7 @@ static void new_surface(struct wl_client *client, struct wl_resource *res, uint3
     surface->server = wl_resource_get_user_data(res);
     wl_list_insert(&surface->server->surfaces, &surface->link);
     wl_list_init(&surface->callbacks);
+    wl_list_init(&surface->callbacks_pending);
     wl_list_init(&surface->feedback_pending);
     wl_list_init(&surface->feedback_queued);
     wl_resource_set_implementation(surface->resource, &surface_requests, surface, finalize_surface);
@@ -725,7 +789,7 @@ static void bind_shell(struct wl_client *client, void *data, uint32_t version, u
 
 int main(int argc, char **argv) {
     if (argc != 2 && argc != 3) return 64;
-    struct compositor server = { .control = atoi(argv[1]), .width = WIDTH, .height = HEIGHT };
+    struct compositor server = { .control = atoi(argv[1]), .period = visible_period, .width = WIDTH, .height = HEIGHT };
     server.frames = argc == 3 ? atoi(argv[2]) : server.control;
     wl_list_init(&server.surfaces);
     struct stat st;
@@ -746,10 +810,9 @@ int main(int argc, char **argv) {
         (getenv("A22X_WEB_GPU") && !wl_global_create(server.display, &zwp_linux_dmabuf_v1_interface, 3, &server, dma_bind)) ||
         wl_display_add_socket(server.display, "recovery-wayland")) return 67;
     struct wl_event_loop *loop = server.loop = wl_display_get_event_loop(server.display);
-    int timer = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
-    struct itimerspec period = { .it_interval.tv_nsec = frame_period, .it_value.tv_nsec = frame_period };
-    if (timer < 0 || timerfd_settime(timer, 0, &period, NULL) ||
-        !wl_event_loop_add_fd(loop, timer, WL_EVENT_READABLE, tick, &server) ||
+    server.timer = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC | TFD_NONBLOCK);
+    if (server.timer < 0 ||
+        !wl_event_loop_add_fd(loop, server.timer, WL_EVENT_READABLE, tick, &server) ||
         !wl_event_loop_add_fd(loop, server.frames, WL_EVENT_READABLE, acknowledge, &server) ||
         (server.frames != server.control &&
          !wl_event_loop_add_fd(loop, server.control, WL_EVENT_READABLE, control_event, &server))) return 68;
@@ -757,7 +820,7 @@ int main(int argc, char **argv) {
     wl_display_run(server.display);
     wl_display_destroy_clients(server.display);
     wl_display_destroy(server.display);
-    close(timer);
+    close(server.timer);
     munmap(server.frame, st.st_size);
     return 0;
 }

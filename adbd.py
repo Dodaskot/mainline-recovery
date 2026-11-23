@@ -580,65 +580,52 @@ def service_sync(stream, service):
                 mode = int(mode) & 0o7777 if mode else 0o644
             except ValueError:
                 target, mode = path, 0o644
-            temporary = target + '.adb-part'
-            problem, fd = None, None
-            try:
-                fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_CLOEXEC | os.O_NOFOLLOW, mode)
-            except OSError as exc:
-                problem = f'{target}: {exc.strerror}'
+            # Each SEND owns its temporary file even when another stream uploads to the same path.
+            temporary = os.path.join(os.path.dirname(target), '.adb-part-' + os.urandom(8).hex())
+            problem, fd, owns_temporary = None, None, False
             mtime = 0
-            clock = contextlib.ExitStack()
-            clock.enter_context(fast_clock())
             try:
-                while True:
-                    header, pending = stream.read_exact(8, pending)
-                    ident, length = header[:4], struct.unpack('<I', header[4:])[0]
-                    if ident == b'DATA':
-                        if length > SYNC_DATA_MAX:
-                            raise Closed('sync data too large')
-                        data, pending = stream.read_exact(length, pending)
-                        if fd is not None and problem is None:
-                            try:
-                                write_file_data(fd, data)
-                            except OSError as exc:
-                                problem = f'{target}: {exc.strerror}'
-                    elif ident == b'DONE':
-                        mtime = length
-                        break
-                    else:
-                        raise Closed('unexpected sync message')
-            except BaseException:
-                # 2026-11-12 review: a push cut short (Ctrl-C, cable) left the file open in this
-                # long-lived daemon and the part file on the volume, which then could not be unmounted.
-                if fd is not None:
-                    os.close(fd)
-                    with contextlib.suppress(OSError):
-                        os.unlink(temporary)
-                raise
-            finally:
-                clock.close()
-            if fd is not None:
-                # 2026-11-12, on the owner's phone: a pushed recovery image read back with 16 MiB of
-                # zeros in its middle after the volume was mounted again, though adb had said "pushed"
-                # and the file hashed right from memory. What cannot be written must be said here.
-                if problem is None:
-                    try:
-                        os.fsync(fd)
-                    except OSError as exc:
-                        problem = f'{target}: {exc.strerror}'
-                os.close(fd)
-            if problem is None:
                 try:
-                    os.replace(temporary, target)
-                    if mtime:
-                        os.utime(target, (mtime, mtime))
+                    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC | os.O_NOFOLLOW, mode)
+                    owns_temporary = True
                 except OSError as exc:
                     problem = f'{target}: {exc.strerror}'
+                with fast_clock():
+                    while True:
+                        header, pending = stream.read_exact(8, pending)
+                        ident, length = header[:4], struct.unpack('<I', header[4:])[0]
+                        if ident == b'DATA':
+                            if length > SYNC_DATA_MAX:
+                                raise Closed('sync data too large')
+                            data, pending = stream.read_exact(length, pending)
+                            if fd is not None and problem is None:
+                                try:
+                                    write_file_data(fd, data)
+                                except OSError as exc:
+                                    problem = f'{target}: {exc.strerror}'
+                        elif ident == b'DONE':
+                            mtime = length
+                            break
+                        else:
+                            raise Closed('unexpected sync message')
+                if problem is None:
+                    try:
+                        if mtime:
+                            os.utime(fd, (mtime, mtime))
+                        # Report delayed write errors before replacing the previous copy.
+                        os.fsync(fd)
+                        os.replace(temporary, target)
+                        owns_temporary = False
+                    except OSError as exc:
+                        problem = f'{target}: {exc.strerror}'
+            finally:
+                if fd is not None:
+                    with contextlib.suppress(OSError):
+                        os.close(fd)
+                if owns_temporary:
+                    with contextlib.suppress(OSError):
+                        os.unlink(temporary)
             if problem is not None:
-                try:
-                    os.unlink(temporary)
-                except OSError:
-                    pass
                 sync_fail(stream, problem)
             else:
                 stream.write(b'OKAY' + bytes(4))

@@ -192,14 +192,17 @@ class TestSyncSend(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='a22x-adb-sync-')
         self.addCleanup(self.tmp.cleanup)
         self.target = Path(self.tmp.name) / 'upload.bin'
-        self.partial = self.target.with_name(self.target.name + '.adb-part')
         self.payload = b'complete upload contents'
+        self.enterContext(mock.patch.object(adbd, 'fast_clock', contextlib.nullcontext))
+
+    def send_data(self, payload):
+        path = os.fsencode(f'{self.target},420')
+        return (b'SEND' + struct.pack('<I', len(path)) + path
+                + b'DATA' + struct.pack('<I', len(payload)) + payload)
 
     def send(self, fail_after_short_write=False):
-        path = os.fsencode(f'{self.target},420')
         stream = adbd.Stream(mock.Mock(), 1, 2)
-        stream.incoming(b'SEND' + struct.pack('<I', len(path)) + path
-                        + b'DATA' + struct.pack('<I', len(self.payload)) + self.payload
+        stream.incoming(self.send_data(self.payload)
                         + struct.pack('<4sI4sI', b'DONE', 0, b'QUIT', 0))
         write = os.write
         first = True
@@ -214,16 +217,51 @@ class TestSyncSend(unittest.TestCase):
             return write(fd, data)
 
         with mock.patch.object(adbd.os, 'write', side_effect=write_with_short_result), \
-                mock.patch.object(adbd, 'fast_clock', contextlib.nullcontext), \
                 mock.patch.object(stream, 'write') as reply:
             adbd.service_sync(stream, 'sync:')
         reply.assert_called_once()
         return reply.call_args.args[0]
 
+    def begin_send(self, payload):
+        stream = adbd.Stream(mock.Mock(), 1, 2)
+        awaiting_done = threading.Event()
+        read = stream.read
+        read_count = 0
+
+        def read_incoming():
+            nonlocal read_count
+            read_count += 1
+            if read_count == 2:
+                awaiting_done.set()
+            return read()
+
+        stream.read = read_incoming
+        stream.write = mock.Mock()
+        stream.incoming(self.send_data(payload))
+        worker = threading.Thread(target=stream.run, args=(adbd.service_sync, 'sync:'), daemon=True)
+
+        def close_stream():
+            stream.closed_by_host()
+            worker.join(5)
+            self.assertFalse(worker.is_alive())
+
+        worker.start()
+        self.addCleanup(close_stream)
+        # The first read supplies SEND and DATA together. The next read starts after DATA was stored.
+        self.assertTrue(awaiting_done.wait(5))
+        return stream, worker
+
+    def finish_send(self, upload, mtime=0):
+        stream, worker = upload
+        stream.incoming(struct.pack('<4sI4sI', b'DONE', mtime, b'QUIT', 0))
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        stream.write.assert_called_once_with(b'OKAY' + bytes(4))
+
     def test_send_finishes_a_short_write_before_publishing(self):
         self.assertEqual(self.send(), b'OKAY' + bytes(4))
         self.assertEqual(self.target.read_bytes(), self.payload)
-        self.assertFalse(self.partial.exists())
+        self.assertFalse(list(self.target.parent.glob('.adb-part-*')))
 
     def test_send_error_after_a_short_write_keeps_the_existing_file(self):
         original = b'previous complete file'
@@ -233,7 +271,41 @@ class TestSyncSend(unittest.TestCase):
         self.assertEqual(struct.unpack_from('<I', reply, 4)[0], len(reply[8:]))
         self.assertIn(os.strerror(errno.ENOSPC).encode(), reply[8:])
         self.assertEqual(self.target.read_bytes(), original)
-        self.assertFalse(self.partial.exists())
+        self.assertFalse(list(self.target.parent.glob('.adb-part-*')))
+
+    def test_concurrent_sends_publish_complete_files_at_the_same_destination(self):
+        original = b'previous complete file'
+        first = b'first complete concurrent upload'
+        second = b'second complete concurrent upload with a different length'
+        first_mtime, second_mtime = 1_700_000_000, 1_700_000_001
+        self.target.write_bytes(original)
+        first_upload = self.begin_send(first)
+        second_upload = self.begin_send(second)
+        self.assertEqual(self.target.read_bytes(), original)
+
+        self.finish_send(first_upload, mtime=first_mtime)
+        self.assertEqual(self.target.read_bytes(), first)
+        self.assertEqual(self.target.stat().st_mtime_ns, first_mtime * 1_000_000_000)
+        self.finish_send(second_upload, mtime=second_mtime)
+        self.assertEqual(self.target.read_bytes(), second)
+        self.assertEqual(self.target.stat().st_mtime_ns, second_mtime * 1_000_000_000)
+        self.assertFalse(list(self.target.parent.glob('.adb-part-*')))
+
+    def test_cancelled_send_keeps_another_upload_to_the_same_destination(self):
+        original = b'previous complete file'
+        second = b'second concurrent upload survives the first closing'
+        self.target.write_bytes(original)
+        cancelled, worker = self.begin_send(b'part of the first upload')
+        second_upload = self.begin_send(second)
+
+        cancelled.closed_by_host()
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        cancelled.write.assert_not_called()
+        self.assertEqual(self.target.read_bytes(), original)
+        self.finish_send(second_upload)
+        self.assertEqual(self.target.read_bytes(), second)
+        self.assertFalse(list(self.target.parent.glob('.adb-part-*')))
 
 
 class TestSideloadReceive(unittest.TestCase):
@@ -322,7 +394,8 @@ class TestWithTheAdbClient(unittest.TestCase):
             failed = self.adb('push', str(source), str(lost))
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn('No space left on device', failed.stdout + failed.stderr)
-        self.assertFalse(lost.exists() or Path(str(lost) + '.adb-part').exists())
+        self.assertFalse(lost.exists())
+        self.assertFalse(list(lost.parent.glob('.adb-part-*')))
         listing = self.adb('shell', 'ls ' + self.tmp.name).stdout
         self.assertIn('remote.bin', listing)
         self.assertEqual(self.adb('exec-out', 'printf raw').stdout, 'raw')

@@ -34,13 +34,14 @@ static int button_at(App*a,int x,int y);
 static void tap_action(App*a,int id);static void media_choose(App*a);static enum Screen came_from(const App*a,enum Screen parent);
 static bool page_sheet_open(const App*a);
 static bool web_page_shown(const App*a);
+static bool web_float_visible(const App*a);
 static void web_close(App *a){
     if(a->web_fd>=0){close(a->web_fd);a->web_fd=-1;}
     if(a->web_frames_fd>=0){close(a->web_frames_fd);a->web_frames_fd=-1;}
     if(a->web_map){munmap(a->web_map,WEB_BYTES*WEB_SLOTS);a->web_map=NULL;}
     free(a->web_frame);a->web_frame=NULL;
     if(a->web_drag)a->pointer_down=false;
-    a->web_visible=a->web_drag=a->web_frame_changed=a->web_pixels_stale=false;
+    a->web_visible=a->web_drag=a->web_frame_changed=a->web_pixels_stale=false;a->web_view_sent=false;
     a->web_can_back=a->web_can_forward=false;
     a->web_loading=false;a->web_download=-2;
     a->web_frame_slot=a->web_frame_source=-1;a->web_fullscreen=0;
@@ -363,7 +364,19 @@ static void web_entry_text(App*a,int x,int y,int avail,int font,int caret_y,int 
     text(a,x,y,font,TEXT,s);int w=text_width(s,font);raw_text(false);
     if(web_caret_on(a))rectangle(a,(Rect){x+w+2,caret_y,3,caret_h},ORANGE);
 }
+/* Tell the browser when Recovery stops presenting its surface. The session stays alive for
+ * audio, downloads and tab state. A newly connected session always gets an initial value. */
+static void web_update_visibility(App*a){
+    if(a->web_fd<0)return;
+    bool awake=!a->soft_blanked&&!(a->display_blank_known&&a->display_blanked);
+    bool page=a->screen==WEB_BROWSER&&(a->web_fullscreen||web_page_shown(a));
+    bool visible=awake&&!a->locked&&!a->qs.visible&&!a->mu.full&&!a->recents_capturing&&(page||web_float_visible(a));
+    if((!a->web_view_sent||visible!=a->web_view_visible)&&web_send(a,visible?"V1":"V0")){
+        a->web_view_sent=true;a->web_view_visible=visible;
+    }
+}
 static void web_tick(App*a){
+    web_update_visibility(a);
     if(a->web_menu&&a->web_menu_out_at&&a->now>=a->web_menu_out_at+WEB_MENU_OUT_MS){a->web_menu=false;a->web_menu_out_at=0;a->dirty=true;}
     static bool caret;if(a->screen==WEB_BROWSER&&web_caret_on(a)!=caret){caret=!caret;a->dirty=true;}
     static uint64_t scanned;

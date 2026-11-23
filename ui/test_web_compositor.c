@@ -1,10 +1,10 @@
 /* Host test of the browser compositor (2026-11-20): a Wayland client that draws numbered frames
  * into shared-memory buffers, and a stand-in for the native UI that takes the compositor's frame
  * messages like web_ui.h does (F0/F1, the previous slot given back with A0/A1). It checks that
- * every shown slot holds a frame that was really committed, that frames keep coming at the
- * compositor's 90 Hz, and that with a frame socket of its own nothing travels on the control
- * socket. Usage: test-web-compositor COMPOSITOR (direct|relay) */
+ * every shown slot holds a committed frame, the pace changes with visibility, and the direct
+ * mode keeps frames off the control socket. Usage: test-web-compositor COMPOSITOR (direct|relay) */
 #define _GNU_SOURCE
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -33,9 +33,10 @@ struct client {
     struct wl_buffer *buffers[BUFFERS];
     uint32_t *pixels[BUFFERS];
     bool busy[BUFFERS], configured, callback_done;
+    int width, height;
     uint32_t committed;   /* number of the last committed frame */
     struct wp_presentation *presentation;
-    int presented, discarded, bad_refresh;
+    int presented, slow_presented, discarded, bad_refresh;
 };
 
 /* Presentation feedback (2026-11-21): every frame is answered once, presented at 90 Hz or discarded. */
@@ -45,7 +46,8 @@ static void fb_presented(void *data, struct wp_presentation_feedback *f, uint32_
     struct client *c = data;
     (void)sh; (void)sl; (void)ns; (void)qh; (void)ql; (void)flags;
     c->presented++;
-    if (refresh != 1000000000u / 90u) c->bad_refresh++;
+    if (refresh == 1000000000u / 5u) c->slow_presented++;
+    else if (refresh != 1000000000u / 90u) c->bad_refresh++;
     wp_presentation_feedback_destroy(f);
 }
 static void fb_discarded(void *data, struct wp_presentation_feedback *f) {
@@ -64,6 +66,41 @@ static uint64_t now_ns(void) {
 
 static void fail(const char *what) { fprintf(stderr, "FAIL: %s\n", what); exit(1); }
 
+static void check_idle_timer(pid_t pid) {
+    char directory[48];
+    snprintf(directory, sizeof(directory), "/proc/%ld/fdinfo", (long)pid);
+    DIR *fds = opendir(directory);
+    if (!fds) fail("timer fdinfo directory");
+    int timers = 0;
+    for (struct dirent *entry; (entry = readdir(fds));) {
+        if (entry->d_name[0] == '.') continue;
+        char path[sizeof(directory) + sizeof(entry->d_name) + 1];
+        snprintf(path, sizeof(path), "%s/%s", directory, entry->d_name);
+        FILE *info = fopen(path, "r");
+        if (!info) fail("timer fdinfo");
+        for (char line[128]; fgets(line, sizeof(line), info);) {
+            unsigned long sec, ns;
+            if (sscanf(line, "it_value: (%lu, %lu)", &sec, &ns) == 2 ||
+                sscanf(line, "it_interval: (%lu, %lu)", &sec, &ns) == 2) {
+                if (sec || ns) fail("idle timer still armed");
+                timers++;
+            }
+        }
+        fclose(info);
+    }
+    closedir(fds);
+    if (!timers) fail("idle timer missing");
+}
+
+static void wait_event(struct wl_display *display, const bool *ready) {
+    while (!*ready) {
+        if (wl_display_dispatch_pending(display) < 0 || wl_display_flush(display) < 0) fail("Wayland event");
+        if (*ready) return;
+        struct pollfd wait = { .fd = wl_display_get_fd(display), .events = POLLIN };
+        if (poll(&wait, 1, 1000) != 1 || wl_display_dispatch(display) < 0) fail("Wayland event timeout");
+    }
+}
+
 static void buffer_release(void *data, struct wl_buffer *buffer) {
     struct client *c = data;
     for (int i = 0; i < BUFFERS; i++) if (c->buffers[i] == buffer) c->busy[i] = false;
@@ -80,7 +117,12 @@ static void xdg_configure(void *data, struct xdg_surface *xdg, uint32_t serial) 
 }
 static const struct xdg_surface_listener xdg_listener = { .configure = xdg_configure };
 
-static void top_configure(void *d, struct xdg_toplevel *t, int32_t w, int32_t h, struct wl_array *s) { (void)d; (void)t; (void)w; (void)h; (void)s; }
+static void top_configure(void *data, struct xdg_toplevel *t, int32_t w, int32_t h, struct wl_array *s) {
+    (void)t; (void)s;
+    struct client *c = data;
+    c->width = w;
+    c->height = h;
+}
 static void top_close(void *d, struct xdg_toplevel *t) { (void)d; (void)t; }
 static void top_bounds(void *d, struct xdg_toplevel *t, int32_t w, int32_t h) { (void)d; (void)t; (void)w; (void)h; }
 static void top_caps(void *d, struct xdg_toplevel *t, struct wl_array *a) { (void)d; (void)t; (void)a; }
@@ -168,6 +210,7 @@ int main(int argc, char **argv) {
     char started = 0;
     struct pollfd wait_start = { .fd = control[0], .events = POLLIN };
     if (poll(&wait_start, 1, 5000) != 1 || recv(control[0], &started, 1, 0) != 1 || started != 'S') fail("compositor did not start");
+    check_idle_timer(pid);
 
     struct ui u = { .frames_fd = direct ? frames[0] : control[0], .control_fd = control[0], .slot = -1 };
     u.map = mmap(NULL, 2 * (size_t)SLOT * 4, PROT_READ, MAP_SHARED, frame, 0);
@@ -196,58 +239,89 @@ int main(int argc, char **argv) {
     struct xdg_toplevel *top = xdg_surface_get_toplevel(xdg);
     xdg_toplevel_add_listener(top, &top_listener, &c);
     wl_surface_commit(c.surface);
-    while (!c.configured) if (wl_display_dispatch(display) < 0) fail("configure");
+    wait_event(display, &c.configured);
 
-    c.callback_done = true;
-    uint64_t start = now_ns(), end = start + (uint64_t)SECONDS * 1000000000u;
-    int committed = 0;
-    while (now_ns() < end) {
-        if (c.callback_done) {
-            int free_buffer = -1;
-            for (int i = 0; i < BUFFERS; i++) if (!c.busy[i]) { free_buffer = i; break; }
-            if (free_buffer >= 0) {
-                uint32_t number = c.committed + 1;
-                uint32_t *p = c.pixels[free_buffer];
-                for (size_t k = 0; k < (size_t)WIDTH * HEIGHT; k += 997) p[k] = 0x00336699u;
-                p[0] = number;
-                p[(size_t)(HEIGHT - 1) * WIDTH + WIDTH - 1] = number;
-                c.busy[free_buffer] = true;
-                c.callback_done = false;
-                wl_surface_attach(c.surface, c.buffers[free_buffer], 0, 0);
-                wl_surface_damage_buffer(c.surface, 0, 0, WIDTH, HEIGHT);
-                struct wl_callback *callback = wl_surface_frame(c.surface);
-                wl_callback_add_listener(callback, &frame_listener, &c);
-                if (c.presentation)
-                    wp_presentation_feedback_add_listener(wp_presentation_feedback(c.presentation, c.surface), &feedback_listener, &c);
-                c.committed = number;
-                wl_surface_commit(c.surface);
-                committed++;
-            }
-        }
-        wl_display_flush(display);
-        struct pollfd p[3] = {
-            { .fd = wl_display_get_fd(display), .events = POLLIN },
-            { .fd = u.frames_fd, .events = POLLIN },
-            { .fd = control[0], .events = POLLIN },
-        };
-        if (wl_display_prepare_read(display) != 0) { wl_display_dispatch_pending(display); continue; }
-        if (poll(p, direct ? 3 : 2, 20) < 0 && errno != EINTR) fail("poll");
-        if (p[0].revents & POLLIN) wl_display_read_events(display); else wl_display_cancel_read(display);
-        wl_display_dispatch_pending(display);
-        if (p[1].revents & POLLIN) ui_take(&u, u.frames_fd, &c);
-        if (direct && (p[2].revents & POLLIN)) ui_take(&u, control[0], &c);
-        if ((p[1].revents | p[2].revents) & (POLLHUP | POLLERR)) fail("hangup");
+    /* A callback-only commit must wake an idle compositor, then let it sleep again. */
+    struct wl_callback *callback = wl_surface_frame(c.surface);
+    wl_callback_add_listener(callback, &frame_listener, &c);
+    if (wl_display_roundtrip(display) < 0 || c.callback_done) fail("callback before commit");
+    check_idle_timer(pid);
+    wl_surface_commit(c.surface);
+    wait_event(display, &c.callback_done);
+    check_idle_timer(pid);
+
+    for (int i = 0; i < 2; i++) {
+        int height = i == 0 ? 2400 : HEIGHT;
+        char resize[32];
+        int length = snprintf(resize, sizeof(resize), "S%d %d", WIDTH, height);
+        c.configured = false;
+        if (send(control[0], resize, (size_t)length, MSG_NOSIGNAL) != length) fail("resize request");
+        wait_event(display, &c.configured);
+        if (c.width != WIDTH / 3 || c.height != height / 3) fail("resize configure");
+        check_idle_timer(pid);
     }
-    double seconds = (double)(now_ns() - start) / 1e9;
-    printf("{\"mode\":\"%s\",\"committed\":%d,\"shown\":%d,\"fps\":%.1f,\"wrong\":%d,\"stray_on_control\":%d,"
-           "\"presented\":%d,\"discarded\":%d}\n",
-           argv[2], committed, u.frames, u.frames / seconds, u.wrong, u.stray, c.presented, c.discarded);
-    if (!c.presentation || c.bad_refresh || c.presented < 60 * SECONDS || c.presented + c.discarded + 2 < committed)
+
+    const int seconds[] = { SECONDS, SECONDS, 1 };
+    int shown[3] = {0}, committed[3] = {0};
+    uint64_t resume_ns = 0;
+    for (unsigned phase = 0; phase < sizeof(seconds) / sizeof(seconds[0]); phase++) {
+        uint64_t start = now_ns(), end = start + (uint64_t)seconds[phase] * 1000000000u;
+        int before_frames = u.frames, before_committed = c.committed;
+        int before_visible_feedback = c.presented - c.slow_presented;
+        if (phase && send(control[0], phase == 1 ? "V0" : "V1", 2, MSG_NOSIGNAL) != 2) fail("visibility command");
+        while (now_ns() < end) {
+            if (c.callback_done) {
+                int free_buffer = -1;
+                for (int i = 0; i < BUFFERS; i++) if (!c.busy[i]) { free_buffer = i; break; }
+                if (free_buffer >= 0) {
+                    uint32_t number = c.committed + 1;
+                    uint32_t *p = c.pixels[free_buffer];
+                    for (size_t k = 0; k < (size_t)WIDTH * HEIGHT; k += 997) p[k] = 0x00336699u;
+                    p[0] = number;
+                    p[(size_t)(HEIGHT - 1) * WIDTH + WIDTH - 1] = number;
+                    c.busy[free_buffer] = true;
+                    c.callback_done = false;
+                    wl_surface_attach(c.surface, c.buffers[free_buffer], 0, 0);
+                    wl_surface_damage_buffer(c.surface, 0, 0, WIDTH, HEIGHT);
+                    struct wl_callback *callback = wl_surface_frame(c.surface);
+                    wl_callback_add_listener(callback, &frame_listener, &c);
+                    if (c.presentation)
+                        wp_presentation_feedback_add_listener(wp_presentation_feedback(c.presentation, c.surface), &feedback_listener, &c);
+                    c.committed = number;
+                    wl_surface_commit(c.surface);
+                }
+            }
+            wl_display_flush(display);
+            struct pollfd p[3] = {
+                { .fd = wl_display_get_fd(display), .events = POLLIN },
+                { .fd = u.frames_fd, .events = POLLIN },
+                { .fd = control[0], .events = POLLIN },
+            };
+            if (wl_display_prepare_read(display) != 0) { wl_display_dispatch_pending(display); continue; }
+            if (poll(p, direct ? 3 : 2, 20) < 0 && errno != EINTR) fail("poll");
+            if (p[0].revents & POLLIN) wl_display_read_events(display); else wl_display_cancel_read(display);
+            wl_display_dispatch_pending(display);
+            if (p[1].revents & POLLIN) ui_take(&u, u.frames_fd, &c);
+            if (direct && (p[2].revents & POLLIN)) ui_take(&u, control[0], &c);
+            if ((p[1].revents | p[2].revents) & (POLLHUP | POLLERR)) fail("hangup");
+            if (phase == 2 && !resume_ns && c.presented - c.slow_presented > before_visible_feedback)
+                resume_ns = now_ns() - start;
+        }
+        shown[phase] = u.frames - before_frames;
+        committed[phase] = c.committed - before_committed;
+    }
+    printf("{\"mode\":\"%s\",\"initial_frames\":%d,\"hidden_frames\":%d,\"hidden_commits\":%d,\"restored_frames\":%d,"
+           "\"restored_ms\":%.1f,\"wrong\":%d,\"stray_on_control\":%d,\"presented\":%d,\"discarded\":%d}\n",
+           argv[2], shown[0], shown[1], committed[1], shown[2], (double)resume_ns / 1e6, u.wrong, u.stray, c.presented, c.discarded);
+    if (!c.presentation || c.bad_refresh || c.slow_presented < 3 * SECONDS || c.presented + c.discarded + 2 < (int)c.committed)
         fail("presentation feedback");
     wl_display_disconnect(display);
     kill(pid, SIGTERM);
     waitpid(pid, NULL, 0);
     rmdir(runtime);
-    if (u.wrong || u.stray || u.frames < 60 * SECONDS) fail("frames");
+    if (u.wrong || u.stray || shown[0] < 60 * SECONDS || shown[2] < 60) fail("visible frames");
+    if (shown[1] < 3 * SECONDS || shown[1] > 5 * SECONDS + 1 || committed[1] > 5 * SECONDS + 1)
+        fail("hidden frame or callback rate");
+    if (!resume_ns || resume_ns >= 150000000u) fail("visible presentation did not resume promptly");
     return 0;
 }

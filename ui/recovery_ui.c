@@ -310,6 +310,7 @@ typedef struct {
     uint32_t *pixels,*backdrop;
 
     int web_fd,web_mode,web_x,web_y,web_frame_slot,web_fw,web_fh,web_fullscreen;pid_t web_pid;bool web_visible,web_drag,web_catalog_pending,web_frame_changed,web_can_back,web_can_forward;
+    bool web_view_sent,web_view_visible;
     /* 2026-11-20: frames straight from the compositor (web_frames_fd), and page frames shown
      * from the shared slot without a copy in pixels (web_pixels_stale until a full render). */
     int web_frames_fd,web_frame_source;bool web_pixels_stale;
@@ -2482,8 +2483,9 @@ static void path_tail(const char*path,int width,char*out,size_t size){
     copy(out,size,"…");
 }
 static void files_note(App*a,int y){if(a->fs_status[0])ellipsis(a,36,y,648,0,MUTED,a->fs_status);}
-static Rect volume_viewport(void){return(Rect){28,VOLUME_LIST_TOP,664,VOLUME_LIST_BOTTOM-VOLUME_LIST_TOP};}
-static int64_t volume_max_scroll(const App*a){int64_t extent=(int64_t)a->volume_count*VOLUME_ROW_HEIGHT-16-(VOLUME_LIST_BOTTOM-VOLUME_LIST_TOP);return extent>0?extent:0;}
+static int volume_shift(const App*a){int shift=1414-shell_bottom(a);return shift>0?shift:0;}
+static Rect volume_viewport(const App*a){return(Rect){28,VOLUME_LIST_TOP,664,VOLUME_LIST_BOTTOM-volume_shift(a)-VOLUME_LIST_TOP};}
+static int64_t volume_max_scroll(const App*a){int64_t extent=(int64_t)a->volume_count*VOLUME_ROW_HEIGHT-16-(volume_viewport(a).h);return extent>0?extent:0;}
 static void volume_scroll_to(App*a,int64_t value){a->volume_scroll=(int64_t)scroll_clamp((double)value,(double)volume_max_scroll(a));a->focus=-1;a->dirty=true;}
 static void scroll_indicator(App*a,Rect track,int64_t offset,int64_t total,uint32_t color){
     int64_t maximum=total-track.h;if(maximum<=0)return;
@@ -2553,15 +2555,16 @@ static void files_beside_refused(App*a,const char*message){
     a->fs_beside_busy=!message;copy(a->fs_status,sizeof(a->fs_status),message?message:T(BESIDE_BUSY_SHORT));a->dirty=true;
 }
 static void render_file_volumes(App*a){
+    int shift=volume_shift(a),list_bottom=VOLUME_LIST_BOTTOM-shift;
     heading(a,a->theme_pick?"Theme file":a->install.pick_source?"Image source":(a->flash_pick?(a->zip_pick?"ZIP with an installer":(a->samsung_pick?(a->stock_boot_pick?"Stock BOOT":"Samsung firmware"):"Image source")):(a->systems_pick_manifest?(a->systems_pick_script?"Setup script source":"System image source"):"Files")),a->theme_pick?"Choose where the theme file is stored.":a->flash_pick?(a->zip_pick?"Choose where the ZIP is stored.":"Choose where the image is stored."):a->install.pick_source?"Select writable ext4 microSD. The source remains unchanged.":(a->systems_pick_manifest?(a->systems_pick_script?"Choose where the script is stored.":"Choose the microSD card or USB stick with the image; one that is not mounted opens read-only."):"Swipe to browse volumes. Open read-only by default."),true);a->volume_scroll=(int64_t)scroll_clamp((double)a->volume_scroll,(double)volume_max_scroll(a));
-    int first=(int)(a->volume_scroll/VOLUME_ROW_HEIGHT);a->clip_active=true;a->clip=volume_viewport();
+    int first=(int)(a->volume_scroll/VOLUME_ROW_HEIGHT);a->clip_active=true;a->clip=volume_viewport(a);
     /* the group's panel, once: a glass theme's panel drawn twice would show where it overlaps */
     if(a->volume_count){int y0=VOLUME_LIST_TOP-(int)a->volume_scroll,y1=y0+a->volume_count*VOLUME_ROW_HEIGHT;
         if(y0<VOLUME_LIST_TOP-40)y0=VOLUME_LIST_TOP-40;
-        if(y1>VOLUME_LIST_BOTTOM+40)y1=VOLUME_LIST_BOTTOM+40;
+        if(y1>list_bottom+40)y1=list_bottom+40;
         rounded(a,(Rect){28,y0,664,y1-y0},26,PANEL);}
     for(int i=first;i<a->volume_count;i++){
-        int y=VOLUME_LIST_TOP+(int)((int64_t)i*VOLUME_ROW_HEIGHT-a->volume_scroll);if(y>=VOLUME_LIST_BOTTOM)break;FileVolume*v=&a->volumes[i];
+        int y=VOLUME_LIST_TOP+(int)((int64_t)i*VOLUME_ROW_HEIGHT-a->volume_scroll);if(y>=list_bottom)break;FileVolume*v=&a->volumes[i];
         /* One list of full-width rows (2026-11-22, the owner's mock-ups: the service lists of variant 03):
            the group rounded at its ends, a hairline between the rows. */
         Rect r={28,y,664,VOLUME_ROW_HEIGHT};bool top=i==0,end=i==a->volume_count-1;
@@ -2575,20 +2578,20 @@ static void render_file_volumes(App*a){
         ellipsis(a,116,r.y+106,550,0,v->mounted?GREEN:(v->mountable?MUTED:ORANGE),v->mounted?(v->read_only||!v->write_supported?"Mounted read-only":"Mounted with write access"):(v->mountable?"Not mounted":(v->reason[0]?v->reason:"File browsing unavailable")));
         register_button(a,r,A_FS_VOLUME_ITEM+i,files_browse(a)&&(!a->systems_pick_manifest||systems_source_listed(v)||(a->systems_pick_script&&(script_store_volume(v)||android_script_volume(v))))&&(!a->install.pick_source||install_source_allowed(v))&&(!a->flash_pick||flash_source_allowed(v))&&(!a->theme_pick||flash_source_allowed(v)),0);
     }
-    a->clip_active=false;scroll_indicator(a,(Rect){684,VOLUME_LIST_TOP,6,VOLUME_LIST_BOTTOM-VOLUME_LIST_TOP},a->volume_scroll,(int64_t)a->volume_count*VOLUME_ROW_HEIGHT-16,ORANGE);
+    a->clip_active=false;scroll_indicator(a,(Rect){684,VOLUME_LIST_TOP,6,list_bottom-VOLUME_LIST_TOP},a->volume_scroll,(int64_t)a->volume_count*VOLUME_ROW_HEIGHT-16,ORANGE);
     if(!a->volume_count)wrapped(a,48,300,624,1,MUTED,files_reading(a,J_FS_INVENTORY)?"Reading storage volumes...":(a->fs_beside_busy?BESIDE_BUSY_LONG:"No volume inventory received. Tap Refresh to try again."),5);
-    button(a,(Rect){28,1220,200,74},"↑",A_FS_PREV,files_browse(a)&&a->volume_scroll>0,false,0);
-    int last=(int)((a->volume_scroll+VOLUME_LIST_BOTTOM-VOLUME_LIST_TOP+VOLUME_ROW_HEIGHT-1)/VOLUME_ROW_HEIGHT);if(last>a->volume_count)last=a->volume_count;
-    char count[64];if(a->volume_count)snprintf(count,sizeof(count),"%d–%d / %d",first+1,last,a->volume_count);else copy(count,sizeof(count),"No volumes");centered(a,(Rect){240,1220,240,74},0,MUTED,count);
-    button(a,(Rect){492,1220,200,74},"↓",A_FS_NEXT,files_browse(a)&&a->volume_scroll<volume_max_scroll(a),false,0);
+    button(a,(Rect){28,1220-shift,200,74},"↑",A_FS_PREV,files_browse(a)&&a->volume_scroll>0,false,0);
+    int last=(int)((a->volume_scroll+list_bottom-VOLUME_LIST_TOP+VOLUME_ROW_HEIGHT-1)/VOLUME_ROW_HEIGHT);if(last>a->volume_count)last=a->volume_count;
+    char count[64];if(a->volume_count)snprintf(count,sizeof(count),"%d–%d / %d",first+1,last,a->volume_count);else copy(count,sizeof(count),"No volumes");centered(a,(Rect){240,1220-shift,240,74},0,MUTED,count);
+    button(a,(Rect){492,1220-shift,200,74},"↓",A_FS_NEXT,files_browse(a)&&a->volume_scroll<volume_max_scroll(a),false,0);
     /* 2026-11-20 (a tester: internal storage should be easier to reach): Android's own shared storage,
        /data/media/0, one tap away; the volume list keeps Refresh beside it. */
     int data=-1;for(int i=0;i<a->volume_count;i++)if(!strcmp(a->volumes[i].id,"userdata")){data=i;break;}
     if(data>=0&&(!files_picking(a)||a->flash_pick)){
         bool allowed=!a->flash_pick||flash_source_allowed(&a->volumes[data]);
-        button(a,(Rect){28,1330,320,84},"Internal storage",A_FS_INTERNAL,allowed&&(ui_free(a)||(files_beside(a)&&a->volumes[data].mounted)),true,0);
-        button(a,(Rect){372,1330,320,84},"Refresh",A_FS_REFRESH,files_browse(a),false,0);
-    }else button(a,(Rect){28,1330,664,84},"Refresh volumes",A_FS_REFRESH,files_browse(a),false,0);
+        button(a,(Rect){28,1330-shift,320,84},"Internal storage",A_FS_INTERNAL,allowed&&(ui_free(a)||(files_beside(a)&&a->volumes[data].mounted)),true,0);
+        button(a,(Rect){372,1330-shift,320,84},"Refresh",A_FS_REFRESH,files_browse(a),false,0);
+    }else button(a,(Rect){28,1330-shift,664,84},"Refresh volumes",A_FS_REFRESH,files_browse(a),false,0);
     files_note(a,1444);
 }
 static void render_file_volume(App*a){
@@ -4116,7 +4119,7 @@ static enum ScrollSurface scroll_candidate(const App*a,int x,int y){
     if(a->screen==TERMINAL&&terminal_session_open(a)&&inside(terminal_viewport(),x,y)&&(!a->job.pid||terminal_background_job(a->job.kind)))return SCROLL_TERMINAL;
     if(a->screen==SYSTEMS_CATALOG)return !a->systems_mount_sheet&&inside(page_viewport(a),x,y)?SCROLL_PAGE:SCROLL_NONE;
     if(a->job.pid)return SCROLL_NONE;
-    if(a->screen==FILE_VOLUMES&&inside(volume_viewport(),x,y))return SCROLL_VOLUMES;
+    if(a->screen==FILE_VOLUMES&&inside(volume_viewport(a),x,y))return SCROLL_VOLUMES;
     if(a->screen==SYSTEMS&&!a->systems_transaction[0]&&inside(systems_viewport(a),x,y))return SCROLL_SYSTEMS;
     if(a->screen==TOOLS&&inside(tools_viewport(a),x,y))return SCROLL_TOOLS;
     if(page_scrolls(a)&&inside(page_viewport(a),x,y))return SCROLL_PAGE;
@@ -4177,7 +4180,7 @@ static void parse_progress(App*a,const char*line_text){
     JsonToken t[128];Json j;if(json_parse(&j,line_text,t,128)<1||t[0].type!=J_OBJECT)return;char event[64];jstring(&j,0,"event",event,sizeof(event));if(strcmp(event,"progress"))return;
     a->progress_events++;
     {char phase[128]={0};jstring(&j,0,"phase",phase,sizeof(phase));if(strcmp(phase,a->progress_mark_phase)){copy(a->progress_mark_phase,sizeof(a->progress_mark_phase),phase);a->progress_mark_at=milliseconds();a->progress_mark_done=json_uint(&j,json_get(&j,0,"bytes_done"),0);}}
-    jstring(&j,0,"phase",a->progress_phase,sizeof(a->progress_phase));jstring(&j,0,"partition",a->progress_part,sizeof(a->progress_part));a->progress_done=json_uint(&j,json_get(&j,0,"bytes_done"),0);a->progress_total=json_uint(&j,json_get(&j,0,"bytes_total"),0);a->dirty=true;
+    jstring(&j,0,"phase",a->progress_phase,sizeof(a->progress_phase));jstring(&j,0,"partition",a->progress_part,sizeof(a->progress_part));a->progress_done=json_uint(&j,json_get(&j,0,"bytes_done"),0);a->progress_total=json_uint(&j,json_get(&j,0,"bytes_total"),0);
 }
 static void parse_list(App*a,const Json*j){
     a->backup_count=0;a->list_page=0;int array=json_get(j,0,"backups");if(array<0||j->tokens[array].type!=J_ARRAY)return;
@@ -5701,11 +5704,11 @@ static bool files_action(App*a,int id){
     switch(id){
     case A_FILES:a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
     case A_FS_PREV:
-        if(a->screen==FILE_VOLUMES)volume_scroll_to(a,a->volume_scroll-(VOLUME_LIST_BOTTOM-VOLUME_LIST_TOP)/2);
+        if(a->screen==FILE_VOLUMES)volume_scroll_to(a,a->volume_scroll-volume_viewport(a).h/2);
         else if(a->screen==FILE_BROWSER)browser_scroll_to(a,a->browser_scroll-(FILE_LIST_BOTTOM-FILE_LIST_TOP)/2);
         return true;
     case A_FS_NEXT:
-        if(a->screen==FILE_VOLUMES)volume_scroll_to(a,a->volume_scroll+(VOLUME_LIST_BOTTOM-VOLUME_LIST_TOP)/2);
+        if(a->screen==FILE_VOLUMES)volume_scroll_to(a,a->volume_scroll+volume_viewport(a).h/2);
         else if(a->screen==FILE_BROWSER)browser_scroll_to(a,a->browser_scroll+(FILE_LIST_BOTTOM-FILE_LIST_TOP)/2);
         return true;
     case A_FS_VOLUME:screen(a,FILE_VOLUME);return true;
@@ -7392,6 +7395,15 @@ static void animation_tick(App*a){
  * while a child, input hold or a scheduled operation still needs polling; the
  * event fds remain in poll so input and media wake it immediately. */
 static bool loop_can_present(const App*a,bool soft_presented){return !(a->display_blank_known&&a->display_blanked)&&(!a->soft_blanked||!soft_presented);}
+/* Keep elapsed time and the progress indicator fresh without repainting the page at display rate.
+ * Input, page transitions and received media frames retain their usual presentation cadence. */
+#define PROGRESS_FRAME_MS 80u
+static bool loop_progress_due(const App*a,uint64_t last_frame){
+    if(!a->job.pid||a->soft_blanked||(a->display_blank_known&&a->display_blanked)||a->now-last_frame<PROGRESS_FRAME_MS)return false;
+    if(a->screen==LOCKSCREEN)return a->progress_total>0;
+    if(a->qs.visible)return shade_job(a)&&(a->qs.expanded||a->qs.height>qs_compact_height(a)+8);
+    return a->screen==PROGRESS||task_shown(a);
+}
 /* terminal_pump has no event fd: it must drain an active or exited session
  * on its short cadence even when the panel is hidden. */
 static bool terminal_needs_service(const App*a){
@@ -7412,7 +7424,7 @@ static int loop_poll_timeout(const App*a,bool dark,bool soft_presented,uint64_t 
     }
     bool moving=a->pointer_down||a->kb_bubble_until||a->kinetic.active||a->tr.active||a->tr.armed||a->nav_settle_end||
                 sound_animating(a)||web_animating(a)||recents_animating(a)||(a->qs.visible&&a->qs.settle_at)||
-                (a->job.pid&&job_long(a->job.kind))||web_frame_wanted(a);
+                (a->dirty&&a->job.pid&&job_long(a->job.kind))||web_frame_wanted(a);
     unsigned int frame=moving?(drm?1u:(a->display_hz==90?11u:16u)):70u;
     return moving?(a->now-last_frame>=frame?1:(int)(frame-(a->now-last_frame))):40;
 }
@@ -9075,9 +9087,16 @@ static int test_web_activity(void){
     WEB_SAY("L2");assert(!a->web_loading);
     web_ring_draw(a);assert(!memcmp(a->pixels,idle,bytes));   /* the header is back as it was */
     render(a);assert(!memcmp(a->pixels,idle,bytes));
-    WEB_SAY("L1");close(pair[1]);web_poll(a);assert(a->web_fd<0&&!a->web_loading&&a->web_download==-2&&!web_ring_active(a));
+    char visibility[2];
+    a->screen=HOME;web_update_visibility(a);assert(recv(pair[1],visibility,2,MSG_DONTWAIT)==2&&!memcmp(visibility,"V0",2));
+    web_update_visibility(a);assert(recv(pair[1],visibility,2,MSG_DONTWAIT)<0&&errno==EAGAIN);
+    a->screen=WEB_BROWSER;copy(a->web_url,sizeof(a->web_url),"http://127.0.0.1/");web_update_visibility(a);
+    assert(recv(pair[1],visibility,2,MSG_DONTWAIT)==2&&!memcmp(visibility,"V1",2));
+    a->soft_blanked=true;web_update_visibility(a);assert(recv(pair[1],visibility,2,MSG_DONTWAIT)==2&&!memcmp(visibility,"V0",2));
+    a->soft_blanked=false;web_update_visibility(a);assert(recv(pair[1],visibility,2,MSG_DONTWAIT)==2&&!memcmp(visibility,"V1",2));
+    WEB_SAY("L1");close(pair[1]);web_poll(a);assert(a->web_fd<0&&!a->web_view_sent&&!a->web_loading&&a->web_download==-2&&!web_ring_active(a));
     #undef WEB_SAY
-    free(idle);free(a->pixels);free(a);return 9;
+    free(idle);free(a->pixels);free(a);return 10;
 }
 
 /* What the interface shows over the browser's page (2026-11-22, the owner's video of the shade over a
@@ -10329,6 +10348,24 @@ static int test_hidden_poll(void){
     assert(!socketpair(AF_UNIX,SOCK_STREAM,0,pair));a->web_frames_fd=pair[0];close(pair[1]);web_poll(a);assert(a->web_frames_fd==-1);
     free(a->pixels);free(a);return 1;
 }
+static int test_progress_pacing(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);
+    a->screen=HOME;a->now=10000;a->job.pid=1;a->job.kind=J_COPY_VERIFY;a->dirty=false;
+    assert(loop_poll_timeout(a,false,false,9990,true)==40);
+    assert(!loop_progress_due(a,9921)&&loop_progress_due(a,9920));
+    parse_progress(a,"{\"event\":\"progress\",\"phase\":\"Reading\",\"bytes_done\":1,\"bytes_total\":10}");
+    parse_progress(a,"{\"event\":\"progress\",\"phase\":\"Verifying\",\"bytes_done\":2,\"bytes_total\":10}");
+    assert(!a->dirty&&a->progress_events==2&&a->progress_done==2&&!strcmp(a->progress_phase,"Verifying"));
+    a->pointer_down=true;assert(loop_poll_timeout(a,false,false,9990,true)==1);a->pointer_down=false;
+    a->qs.visible=true;a->qs.height=(float)qs_compact_height(a);
+    assert(!loop_progress_due(a,9920));a->qs.expanded=true;assert(loop_progress_due(a,9920));
+    a->qs.visible=false;a->screen=LOCKSCREEN;a->locked=true;assert(loop_progress_due(a,9920));
+    a->display_blank_known=a->display_blanked=true;assert(!loop_progress_due(a,9920));
+    assert(loop_poll_timeout(a,true,true,9920,true)==40);
+    a->display_blanked=a->locked=false;a->screen=PROGRESS;a->job.kind=J_INVENTORY;
+    assert(loop_progress_due(a,9920));a->job.pid=0;assert(!loop_progress_due(a,9920));
+    free(a->pixels);free(a);return 1;
+}
 static int self_test(void){
     App*a=calloc(1,sizeof(*a));assert(a);initialize(a);int tests=0;
     JsonToken tokens[64];Json j;assert(json_parse(&j,"{\"ok\":true,\"nested\":{\"x\":7},\"name\":\"quote\\\"\",\"arr\":[1,2]}",tokens,64)>0);assert(json_bool(&j,json_get(&j,0,"ok"),0)==1);char s[64];assert(json_string(&j,json_get(&j,0,"name"),s,sizeof(s))>=0&&!strcmp(s,"quote\""));assert(json_uint(&j,json_get(&j,json_get(&j,0,"nested"),"x"),0)==7);tests++;
@@ -10396,6 +10433,19 @@ static int self_test(void){
     assert(!kinetic_begin(&one,10,80,1000,1000));assert(kinetic_begin(&one,500,3500,1000,1000));assert(kinetic_advance(&one,2000,1000)&&one.position==1000&&!one.active);assert(kinetic_begin(&one,500,-3500,1000,2000));assert(kinetic_advance(&one,3000,1000)&&!one.position&&!one.active);tests++;
     a->preview=true;a->volume_count=MAX_VOLUMES;a->volume_index=-1;a->volume_id[0]=0;a->volume_scroll=0;
     for(int n=0;n<a->volume_count;n++){FileVolume*v=&a->volumes[n];memset(v,0,sizeof(*v));snprintf(v->id,sizeof(v->id),"volume-%02d",n);copy(v->fs_type,sizeof(v->fs_type),"ext4");v->mountable=v->write_supported=v->read_only=true;}
+    /* The folded operation and tab bar must not cover the Files controls in either navigation mode. */
+    screen(a,FILE_VOLUMES);copy(a->volumes[0].id,sizeof(a->volumes[0].id),"userdata");
+    for(int nav=NAV_GESTURES;nav<=NAV_BUTTONS;nav++)for(int state=0;state<3;state++){
+        a->nav_mode=nav;a->shell.result_waiting=state==2;a->job.pid=state==1?1:0;a->job.kind=J_BACKUP;a->shell.collapsed=state==1;
+        render(a);Button*refresh=test_button(a,A_FS_REFRESH);Button*internal=test_button(a,A_FS_INTERNAL);Button*next=test_button(a,A_FS_NEXT);
+        assert(refresh&&internal&&next&&refresh->r.y+refresh->r.h<=shell_bottom(a));
+        assert(next->r.y>=volume_viewport(a).y+volume_viewport(a).h&&next->r.y+next->r.h<=refresh->r.y);
+        volume_scroll_to(a,INT64_MAX);render(a);assert(a->volume_scroll==volume_max_scroll(a));
+        assert(test_button(a,A_FS_VOLUME_ITEM+MAX_VOLUMES-1));volume_scroll_to(a,0);
+    }
+    a->nav_mode=NAV_GESTURES;a->shell.result_waiting=false;a->shell.collapsed=false;a->job.pid=0;copy(a->volumes[0].id,sizeof(a->volumes[0].id),"volume-00");
+    render(a);assert(test_button(a,A_FS_REFRESH)&&!test_button(a,A_FS_INTERNAL));
+    a->theme_pick=true;render(a);assert(test_button(a,A_FS_REFRESH)&&!test_button(a,A_FS_INTERNAL)&&volume_shift(a)==0);a->theme_pick=false;tests++;
     screen(a,FILE_VOLUMES);render(a);pointer(a,true,300,1000,40000);pointer(a,true,300,969,40030);assert(a->volume_scroll==31&&a->scroll_dragging);pointer(a,true,300,500,40060);pointer(a,false,300,500,40080);assert(a->volume_scroll==500&&a->kinetic.active&&a->volume_index==-1);tick_inertia(a,40120);assert(a->volume_scroll>500&&a->volume_scroll%VOLUME_ROW_HEIGHT&&a->screen==FILE_VOLUMES);tests++;
     int64_t volume_at=a->volume_scroll;render(a);pointer(a,true,300,500,40130);pointer(a,false,300,500,40160);assert(!a->kinetic.active&&a->volume_scroll==volume_at&&a->volume_index==-1&&a->screen==FILE_VOLUMES);tests++;
     volume_scroll_to(a,INT64_MAX);render(a);assert(a->volume_scroll==volume_max_scroll(a)&&test_press(a,A_FS_VOLUME_ITEM+MAX_VOLUMES-1,50)&&a->screen==FILE_VOLUME&&!strcmp(a->volume_id,"volume-79"));tests++;
@@ -10425,7 +10475,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_hidden_poll();tests+=test_flash_file_return();tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_hw_keyboard();tests+=test_mouse();tests+=test_mouse_reports();tests+=test_flash_payload();tests+=test_status_sleep_and_amoled();tests+=test_busy_offer();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_web_activity();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_switch_and_kinds();tests+=test_review_fixes();tests+=test_first_boot_progress();tests+=test_file_details();tests+=test_android_variants();tests+=test_gsi_keep_data();tests+=test_zip_root_app();tests+=test_linux_stages();tests+=test_nofbe_choice();tests+=test_system_live();tests+=test_display_without_blanking();tests+=test_media_parts();tests+=test_shell();tests+=test_web_overlays();tests+=test_recents_keep_browser();tests+=test_operation_exit();tests+=test_files_beside();tests+=test_web_float();tests+=test_shade_over_video();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_hidden_poll();tests+=test_progress_pacing();tests+=test_flash_file_return();tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_hw_keyboard();tests+=test_mouse();tests+=test_mouse_reports();tests+=test_flash_payload();tests+=test_status_sleep_and_amoled();tests+=test_busy_offer();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_web_activity();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_switch_and_kinds();tests+=test_review_fixes();tests+=test_first_boot_progress();tests+=test_file_details();tests+=test_android_variants();tests+=test_gsi_keep_data();tests+=test_zip_root_app();tests+=test_linux_stages();tests+=test_nofbe_choice();tests+=test_system_live();tests+=test_display_without_blanking();tests+=test_media_parts();tests+=test_shell();tests+=test_web_overlays();tests+=test_recents_keep_browser();tests+=test_operation_exit();tests+=test_files_beside();tests+=test_web_float();tests+=test_shade_over_video();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;
@@ -10914,7 +10964,7 @@ int main(int argc,char**argv){
         tick_inertia(a,a->now);browser_maybe_load(a);terminal_pump(a);(void)screen_timeout_tick(a);(void)qs_tick(a);media_pump(a);media_tick(a);overview_tick(a);
         /* An operation that ended: what is installed may have changed; nothing stays folded. */
         {static pid_t running;if(running&&!a->job.pid){overview_stale(a);a->shell.collapsed=false;}running=a->job.pid;}
-        if((a->pointer_down&&!a->web_drag)||a->screen==PROGRESS||(a->job.pid&&job_long(a->job.kind)))a->dirty=true;
+        if(a->pointer_down&&!a->web_drag)a->dirty=true;
         if(a->nav_settle_end){if(a->now>=a->nav_settle_end)a->nav_settle_end=0;a->dirty=true;}
         if(a->kb_bubble_until){if(a->now>=a->kb_bubble_until){a->kb_bubble_until=0;a->kb_bubble_cp=0;}a->dirty=true;}
         if(a->mouse_shown&&!a->mouse_down&&a->now>=a->mouse_moved_at+MOUSE_HIDE_MS){a->mouse_shown=false;a->dirty=true;}
@@ -10934,12 +10984,13 @@ int main(int argc,char**argv){
         bool web_frame=web_frame_wanted(a)&&!a->soft_blanked;
         /* Under something of the interface the ring turns in the whole picture, not on its own rows. */
         if(web_ring_due(a)&&web_page_covered(a))a->dirty=true;
-        frame_ms=web_frame||a->pointer_down||(a->qs.visible&&a->qs.settle_at)||sound_animating(a)||web_animating(a)||recents_animating(a)||a->kinetic.active||a->tr.active||a->tr.armed||(a->screen==FILE_PROMPT&&secret_animating(a))||(a->job.pid&&job_long(a->job.kind))?(display.drm>0?1u:(a->display_hz==90?11u:16u)):70u;
-        if((a->dirty||web_frame)&&loop_can_present(a,soft_presented)&&a->now-last_frame>=frame_ms){
+        bool progress_frame=loop_progress_due(a,last_frame);
+        frame_ms=web_frame||a->pointer_down||(a->qs.visible&&a->qs.settle_at)||sound_animating(a)||web_animating(a)||recents_animating(a)||a->kinetic.active||a->tr.active||a->tr.armed||(a->screen==FILE_PROMPT&&secret_animating(a))||(a->dirty&&a->job.pid&&job_long(a->job.kind))?(display.drm>0?1u:(a->display_hz==90?11u:16u)):70u;
+        if((a->dirty||web_frame||progress_frame)&&loop_can_present(a,soft_presented)&&a->now-last_frame>=frame_ms){
             bool fp_enabled=frame_pacing_live.enabled;
             uint64_t fp_before=fp_enabled?frame_pacing_clock_ns():0;
             uint64_t before=milliseconds();
-            bool page_only=web_frame&&!a->dirty&&!a->mouse_shown&&!a->tr.armed&&!a->tr.active&&!a->gesture&&!a->nav_settle_end&&!sound_overlay_active(a)&&web_page_direct(a)&&!web_page_covered(a);
+            bool page_only=web_frame&&!a->dirty&&!progress_frame&&!a->mouse_shown&&!a->tr.armed&&!a->tr.active&&!a->gesture&&!a->nav_settle_end&&!sound_overlay_active(a)&&web_page_direct(a)&&!web_page_covered(a);
             if(!page_only){if(a->tr.armed)transition_start(a);if(!a->tr.active||!transition_frame(a,milliseconds()))render(a);}
             uint64_t fp_render_done=fp_enabled?frame_pacing_clock_ns():0;
             frame_pacing_live.current_wait_us=0;

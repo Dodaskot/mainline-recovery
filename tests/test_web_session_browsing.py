@@ -1,12 +1,13 @@
 """What the browser does with an address, its last page and YouTube's bot check (2026-11-20, a
 tester, #6: no Google search, no session after a short exit, videos stopped after one minute)."""
 from collections import deque
+import json
 import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -15,6 +16,96 @@ try:
 except ImportError as error:  # PIL is missing on this host
     web_session = None
     MISSING = str(error)
+
+
+@unittest.skipIf(web_session is None, 'web_session needs PIL')
+class Visibility(unittest.TestCase):
+    def exercise(self, steps, mode):
+        ui, compositor = Mock(), Mock()
+        reader, writer = 13, 14
+        inputs, reads, replies, commands = deque(), deque(), deque(), []
+        results = {
+            'Browser.getVersion': {'product': 'Chrome/140.0.0.0'},
+            'Target.getTargets': {'targetInfos': [{'type': 'page', 'targetId': 'page'}]},
+            'Target.attachToTarget': {'sessionId': 'tab'},
+            'Target.activateTarget': {},
+            'Emulation.setUserAgentOverride': {},
+            'Page.getFrameTree': {'frameTree': {'frame': {'id': 'page', 'url': 'about:blank'}}},
+        }
+
+        def encoded(message):
+            return json.dumps(message).encode() + b'\0'
+
+        def write(fd, data):
+            self.assertEqual(fd, writer)
+            command = json.loads(bytes(data)[:-1])
+            commands.append((command['method'], command['params']))
+            if command['method'] in results:
+                replies.append(encoded({'id': command['id'], 'result': results[command['method']]}))
+            return len(data)
+
+        def select_ready(*_args):
+            while steps[0] is None and not replies:
+                steps.popleft()
+            if steps[0] is None:
+                reads.append(replies.popleft())
+            else:
+                item = steps.popleft()
+                if isinstance(item, bytes):
+                    inputs.append(item)
+                    return [ui], [], []
+                reads.append(encoded(item))
+            return [reader], [], []
+
+        ui.recv.side_effect = lambda *_: inputs.popleft()
+        frame = Mock(size=(web_session.WIDTH, web_session.HEIGHT))
+        frame.convert.return_value.tobytes.return_value = b'pixels'
+        image = Mock()
+        image.__enter__ = Mock(return_value=frame)
+        image.__exit__ = Mock(return_value=False)
+        environment = {'HOME': '/tmp', 'A22X_WEB_WAYLAND': str(int(mode != 'headless')),
+                       'A22X_WEB_FRAMES': str(int(mode == 'direct'))}
+        with (patch.dict(os.environ, environment), patch.object(web_session.socket, 'socket', return_value=ui),
+              patch.object(web_session, 'start_engine', return_value=(reader, writer)),
+              patch.object(web_session, 'start_compositor', return_value=(compositor, mode == 'direct')) as launch,
+              patch.object(web_session, 'open_links', return_value=None), patch.object(web_session.os, 'close'),
+              patch.object(web_session.os, 'write', side_effect=write),
+              patch.object(web_session.os, 'read', side_effect=lambda *_: reads.popleft()),
+              patch.object(web_session.select, 'select', side_effect=select_ready),
+              patch.object(web_session.mmap, 'mmap', return_value=bytearray()),
+              patch.object(web_session.Image, 'open', return_value=image)):
+            web_session.run('/chromium')
+            if mode != 'headless':
+                launch.assert_called_once_with(mode == 'direct')
+        ui_packets = [call.args[0] for call in ui.send.call_args_list]
+        compositor_packets = [call.args[0] for call in compositor.send.call_args_list]
+        return commands, ui_packets, compositor_packets
+
+    def test_wayland_visibility_bypasses_the_startup_queue_in_both_modes(self):
+        for mode in ('direct', 'relay'):
+            with self.subTest(mode=mode):
+                _, _, packets = self.exercise(deque([b'V0', b'V0', b'V1', b'Q']), mode)
+                self.assertEqual(packets, [b'V0', b'V1'])
+
+    def test_headless_visibility_does_not_start_capture_before_tab_attachment(self):
+        commands, _, _ = self.exercise(deque([None, b'V0', b'V1', b'Q']), 'headless')
+        self.assertNotIn('Page.startScreencast', [method for method, _ in commands])
+        self.assertNotIn('Page.stopScreencast', [method for method, _ in commands])
+
+    def test_headless_skips_hidden_capture_and_keeps_outstanding_frame_ownership(self):
+        def frame(stamp):
+            return {'method': 'Page.screencastFrame', 'sessionId': 'tab', 'params': {'sessionId': stamp, 'data': 'AA=='}}
+
+        hidden_navigation = {'method': 'Page.loadEventFired', 'sessionId': 'tab'}
+        steps = deque([b'V0', b'I1 1 ', None, hidden_navigation, b'V1', frame(1), frame(2), b'V0',
+                       frame(3), b'V1', frame(4), b'A', b'A', b'Q'])
+        commands, packets, _ = self.exercise(steps, 'headless')
+        methods = ('Page.startScreencast', 'Page.stopScreencast', 'Page.screencastFrameAck')
+        capture = [(method.split('.')[1], params.get('sessionId')) for method, params in commands if method in methods]
+        self.assertEqual(capture, [('startScreencast', None), ('screencastFrameAck', 2), ('stopScreencast', None),
+                                   ('screencastFrameAck', 3), ('startScreencast', None),
+                                   ('screencastFrameAck', 1), ('screencastFrameAck', 4)])
+        self.assertEqual(packets.count(b'F'), 2)
 
 
 @unittest.skipIf(web_session is None, 'web_session needs PIL')
