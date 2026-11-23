@@ -416,20 +416,36 @@ def service_exec(stream, service):
         process.wait()
 
 
+class FastClockTransfer:
+    def __init__(self, clock):
+        self.clock = clock
+
+    def progress(self):
+        self.clock.progress(self)
+
+    def stop(self):
+        self.clock.stop(self)
+
+
 class FastClock:
     """While a file moves over USB, the cluster that takes the USB interrupt runs at its top clock
     (2026-11-21, on the phone: a push went at 2.4-6 MB/s under schedutil and at 12 MB/s with the little
     cluster, CPU0's, at its top; a pull at 4.4 and 8.7 MB/s; the big cluster's clock changed nothing).
-    Its scaling_min_freq is raised while any transfer runs and put back when the last one ends. It is
-    not read back to decide that: the kernel applies the floor later (a frequency QoS request), so a read
-    right after the write still shows the old one. Nothing else sets this cluster's floor; the fastest
-    cluster's belongs to the interface (touch), and that cluster is never touched here."""
+    Boost while a transfer is moving useful bytes. Release the floor when the last active transfer
+    ends or all transfers stall. The fastest cluster is never touched here."""
+
+    idle_seconds = 0.300
+    restore_retry_seconds = 1.0
+    watcher_idle_seconds = 1.0
 
     def __init__(self, root='/'):
         self.root = Path(root)
-        self.lock = threading.Lock()
-        self.users = 0
+        self.changed = threading.Condition(threading.Lock())
+        self.deadlines = {}
+        self.watcher = None
         self.saved = None
+        self.last_restored = None
+        self.boost_retry_at = self.restore_retry_at = 0.0
 
     def read(self, path):
         try:
@@ -477,22 +493,86 @@ class FastClock:
 
     @contextlib.contextmanager
     def __call__(self):
-        with self.lock:
-            self.users += 1
-            if self.users == 1:
-                relative, top = self.policy()
-                floor = relative / 'scaling_min_freq' if relative else None
-                before = self.read(floor) if floor else ''
-                self.saved = (floor, before, top) if floor and before.isdigit() and self.write(floor, top) else None
+        transfer = FastClockTransfer(self)
         try:
-            yield
+            yield transfer
         finally:
-            with self.lock:
-                self.users -= 1
-                if self.users == 0 and self.saved:
-                    floor, before, _ = self.saved
-                    self.write(floor, before)
-                    self.saved = None
+            transfer.stop()
+
+    def _boost(self):
+        relative, top = self.policy()
+        if relative is None:
+            return False
+        floor = relative / 'scaling_min_freq'
+        before = self.read(floor)
+        if not before.isdigit():
+            return False
+        # The kernel can still report the boosted floor after accepting a restore. Preserve
+        # the original value if another block arrives before that frequency QoS update lands.
+        if self.last_restored and (floor, before) == (self.last_restored[0], self.last_restored[2]):
+            before = self.last_restored[1]
+        if self.watcher is None:
+            watcher = threading.Thread(target=self._watch, name='adb-fast-clock', daemon=True)
+            try:
+                watcher.start()
+            except RuntimeError:
+                return False
+            self.watcher = watcher
+        if not self.write(floor, top):
+            return False
+        self.saved = floor, before, top
+        self.restore_retry_at = 0.0
+        return True
+
+    def progress(self, transfer):
+        with self.changed:
+            if self.saved is None:
+                if time.monotonic() < self.boost_retry_at:
+                    return
+                if not self._boost():
+                    self.boost_retry_at = time.monotonic() + self.idle_seconds
+                    return
+                self.changed.notify()
+            # The watcher can wake at the previous deadline and then see the extension.
+            self.deadlines[transfer] = time.monotonic() + self.idle_seconds
+
+    def _restore(self):
+        floor, before, _ = self.saved
+        if self.write(floor, before):
+            self.last_restored = self.saved
+            self.saved = None
+        else:
+            self.restore_retry_at = time.monotonic() + self.restore_retry_seconds
+
+    def stop(self, transfer):
+        with self.changed:
+            if self.deadlines.pop(transfer, None) is None:
+                return
+            now = time.monotonic()
+            if max(self.deadlines.values(), default=0.0) <= now and self.restore_retry_at <= now:
+                self.deadlines.clear()
+                self._restore()
+            self.changed.notify()
+
+    def _watch(self):
+        with self.changed:
+            while True:
+                # A recursive push or pull can start its next file just after this one closes.
+                if self.saved is None:
+                    self.changed.wait(self.watcher_idle_seconds)
+                    if self.saved is None:
+                        break
+                now = time.monotonic()
+                deadline = max(self.deadlines.values(), default=0.0)
+                if deadline <= now:
+                    self.deadlines.clear()
+                    if self.restore_retry_at <= now:
+                        self._restore()
+                        continue
+                    deadline = self.restore_retry_at
+                self.changed.wait(deadline - now)
+            self.last_restored = None
+            self.watcher = None
 
 
 fast_clock = FastClock(os.environ.get('A22X_ADB_SYSFS_ROOT', '/'))
@@ -562,11 +642,12 @@ def service_sync(stream, service):
             # the computer's OKAY, and one per 64 KiB record cost a round trip each.
             out = bytearray()
             try:
-                with fast_clock():
+                with fast_clock() as boost:
                     while True:
                         data = os.read(fd, SYNC_DATA_MAX)
                         if not data:
                             break
+                        boost.progress()
                         out += b'DATA' + struct.pack('<I', len(data)) + data
                         if len(out) >= stream.c.max_payload:
                             stream.write(out)
@@ -590,7 +671,7 @@ def service_sync(stream, service):
                     owns_temporary = True
                 except OSError as exc:
                     problem = f'{target}: {exc.strerror}'
-                with fast_clock():
+                with fast_clock() as boost:
                     while True:
                         header, pending = stream.read_exact(8, pending)
                         ident, length = header[:4], struct.unpack('<I', header[4:])[0]
@@ -598,11 +679,14 @@ def service_sync(stream, service):
                             if length > SYNC_DATA_MAX:
                                 raise Closed('sync data too large')
                             data, pending = stream.read_exact(length, pending)
-                            if fd is not None and problem is None:
+                            if data and fd is not None and problem is None:
                                 try:
                                     write_file_data(fd, data)
                                 except OSError as exc:
                                     problem = f'{target}: {exc.strerror}'
+                                    boost.stop()
+                                else:
+                                    boost.progress()
                         elif ident == b'DONE':
                             mtime = length
                             break
@@ -767,11 +851,12 @@ def receive_sideload(stream, folder, size, block):
     done = False
     try:
         pending = b''
-        with fast_clock():
+        with fast_clock() as boost:
             for number in range((size + block - 1) // block):
                 stream.write(b'%08d' % number)
                 data, pending = stream.read_exact(min(block, size - number * block), pending)
                 write_file_data(fd, data)
+                boost.progress()
         os.fsync(fd)
         os.close(fd)
         fd = None

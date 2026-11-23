@@ -5,6 +5,7 @@ import contextlib
 import errno
 import os
 from pathlib import Path
+import queue
 import shutil
 import struct
 import subprocess
@@ -193,7 +194,7 @@ class TestSyncSend(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.target = Path(self.tmp.name) / 'upload.bin'
         self.payload = b'complete upload contents'
-        self.enterContext(mock.patch.object(adbd, 'fast_clock', contextlib.nullcontext))
+        self.enterContext(mock.patch.object(adbd, 'fast_clock', return_value=contextlib.nullcontext(mock.Mock())))
 
     def send_data(self, payload):
         path = os.fsencode(f'{self.target},420')
@@ -323,7 +324,7 @@ class TestSideloadReceive(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='a22x-adb-sideload-') as temporary:
             folder = Path(temporary)
             with mock.patch.object(adbd.os, 'write', side_effect=write_first_five_bytes), \
-                    mock.patch.object(adbd, 'fast_clock', contextlib.nullcontext), \
+                    mock.patch.object(adbd, 'fast_clock', return_value=contextlib.nullcontext(mock.Mock())), \
                     mock.patch.object(stream, 'write') as reply:
                 name = adbd.receive_sideload(stream, folder, len(image), 8192)
             self.assertTrue(name.endswith('-vbmeta.img'))
@@ -454,7 +455,7 @@ if __name__ == '__main__':
 
 
 class FastClockTest(unittest.TestCase):
-    """2026-11-21: a file moving over USB runs the cluster of the USB interrupt at its top clock."""
+    """Exercise the USB IRQ policy with a temporary sysfs and real transfer handlers."""
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
@@ -469,6 +470,57 @@ class FastClockTest(unittest.TestCase):
         (self.root / 'proc/interrupts').write_text('           CPU0       CPU1\n 148:   16098854          0  GICv3 128 Level     musb-hdrc.2.auto\n')
         self.irq('0')
         self.clock = adbd.FastClock(self.root)
+        self.floors = queue.Queue()
+        write = self.clock.write
+
+        def watch_floor(path, value):
+            result = write(path, value)
+            self.floors.put(value)
+            return result
+
+        self.clock.write = watch_floor
+        self.enterContext(mock.patch.object(adbd, 'fast_clock', self.clock))
+
+    def start_stream(self, handler, *args):
+        replies, reads = queue.Queue(), queue.Queue()
+        connection = mock.Mock(max_payload=adbd.SYNC_DATA_MAX + 8)
+
+        def send(command, _local, _remote, data=b''):
+            if command == adbd.A_WRTE:
+                replies.put(data)
+
+        connection.send.side_effect = send
+        stream = adbd.Stream(connection, 1, 2)
+        read = stream.read
+
+        def read_incoming():
+            reads.put(None)
+            return read()
+
+        def handle(active_stream, _service):
+            handler(active_stream, *args)
+
+        stream.read = read_incoming
+        worker = threading.Thread(target=stream.run, args=(handle, ''), daemon=True)
+        worker.start()
+
+        def close_stream():
+            stream.closed_by_host()
+            worker.join(5)
+            self.assertFalse(worker.is_alive())
+
+        self.addCleanup(close_stream)
+        return stream, worker, reads, replies
+
+    def sync_request(self, ident, path):
+        raw = os.fsencode(path)
+        return self.record(ident, raw)
+
+    def record(self, ident, data):
+        return struct.pack('<4sI', ident, len(data)) + data
+
+    def assert_floor_write(self, value):
+        self.assertEqual(self.floors.get(timeout=5), value)
 
     def irq(self, cpus):
         (self.root / 'proc/irq/148/effective_affinity_list').write_text(cpus + '\n')
@@ -477,33 +529,178 @@ class FastClockTest(unittest.TestCase):
         return (self.root / 'sys/devices/system/cpu/cpufreq' / policy / 'scaling_min_freq').read_text().strip()
 
     def test_the_little_cluster_runs_at_its_top_while_a_file_moves(self):
-        with self.clock():
-            self.assertEqual(self.floor('policy0'), '2000000')
-            with self.clock():  # a second transfer at the same time
-                pass
-            self.assertEqual(self.floor('policy0'), '2000000')
+        with self.clock() as first, self.clock() as second:
+            self.assertTrue(self.floors.empty())
+            first.progress()
+            self.assert_floor_write('2000000')
+            second.progress()
+            first.stop()
+            self.assertTrue(self.floors.empty())
             self.assertEqual(self.floor('policy6'), '1468666')  # the interface's floor stays
-        self.assertEqual(self.floor('policy0'), '500000')
+        self.assert_floor_write('500000')
+        self.assertTrue(self.floors.empty())
 
     def test_the_floor_comes_back_though_the_kernel_shows_it_late(self):
-        # On the phone the floor is applied later: a read right after the write shows the old one.
+        # Simulate a restore accepted by the kernel before its new effective floor is visible.
         floor = self.root / 'sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq'
-        with self.clock():
-            floor.write_text('500000\n')
+        with self.clock() as transfer:
+            transfer.progress()
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('500000')
+        floor.write_text('2000000\n')
+        with self.clock() as resumed:
+            resumed.progress()
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('500000')
         self.assertEqual(self.floor('policy0'), '500000')
-        with self.clock():
-            self.assertEqual(self.floor('policy0'), '2000000')
+
+    def test_a_new_floor_after_the_watcher_exits_is_preserved(self):
+        floor = self.root / 'sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq'
+        with self.clock() as transfer:
+            transfer.progress()
+            watcher = self.clock.watcher
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('500000')
+        watcher.join(5)
+        self.assertFalse(watcher.is_alive())
+
+        floor.write_text('2000000\n')
+        with self.clock() as next_transfer:
+            next_transfer.progress()
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('2000000')
+        self.assertEqual(self.floor('policy0'), '2000000')
+
+    def test_a_failed_restore_retries_the_original_floor(self):
+        write = self.clock.write
+        failure = threading.Event()
+
+        def fail_first_restore(path, value):
+            if value == '500000' and not failure.is_set():
+                failure.set()
+                return False
+            return write(path, value)
+
+        self.clock.write = fail_first_restore
+        with self.clock() as transfer:
+            transfer.progress()
+            self.assert_floor_write('2000000')
+        self.assertTrue(failure.is_set())
+        self.assert_floor_write('500000')
         self.assertEqual(self.floor('policy0'), '500000')
 
     def test_the_interrupt_on_the_fastest_cluster_changes_nothing(self):
         self.irq('6')
-        with self.clock():
-            self.assertEqual((self.floor('policy0'), self.floor('policy6')), ('500000', '1468666'))
+        with self.clock() as transfer:
+            transfer.progress()
+        self.assertTrue(self.floors.empty())
 
     def test_without_a_usb_controller_nothing_changes(self):
         (self.root / 'proc/interrupts').write_text('           CPU0\n  11:   5  GICv3  27 Level  arch_timer\n')
-        with self.clock():
-            self.assertEqual(self.floor('policy0'), '500000')
+        with self.clock() as transfer:
+            transfer.progress()
+        self.assertTrue(self.floors.empty())
+
+    def test_send_boost_starts_with_data_expires_on_stall_and_resumes(self):
+        target = self.root / 'upload.bin'
+        stream, worker, reads, replies = self.start_stream(adbd.service_sync, 'sync:')
+        reads.get(timeout=5)
+        stream.incoming(self.sync_request(b'SEND', f'{target},420') + self.record(b'DATA', b''))
+        reads.get(timeout=5)
+        self.assertTrue(self.floors.empty())
+
+        stream.incoming(self.record(b'DATA', b'first block'))
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('500000')
+        self.assertTrue(worker.is_alive())
+        self.assertFalse(target.exists())
+
+        stream.incoming(self.record(b'DATA', b'second block') + b'DONE' + bytes(4))
+        self.assertEqual(replies.get(timeout=5), b'OKAY' + bytes(4))
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('500000')
+        self.assertEqual(target.read_bytes(), b'first blocksecond block')
+        self.assertFalse(list(self.root.glob('.adb-part-*')))
+
+    def test_failed_send_releases_boost_before_discarding_more_data(self):
+        target = self.root / 'upload.bin'
+        target.write_bytes(b'previous complete file')
+        write = adbd.write_file_data
+
+        def write_or_fail(fd, data):
+            if data == b'incomplete block':
+                os.write(fd, data[:2])
+                raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+            write(fd, data)
+
+        self.enterContext(mock.patch.object(adbd, 'write_file_data', side_effect=write_or_fail))
+        stream, _, reads, replies = self.start_stream(adbd.service_sync, 'sync:')
+        reads.get(timeout=5)
+        stream.incoming(self.sync_request(b'SEND', f'{target},420') + self.record(b'DATA', b'first block'))
+        self.assert_floor_write('2000000')
+        reads.get(timeout=5)
+
+        stream.incoming(self.record(b'DATA', b'incomplete block'))
+        reads.get(timeout=5)
+        self.assert_floor_write('500000')
+        stream.incoming(self.record(b'DATA', b'discarded block') + b'DONE' + bytes(4))
+        reply = replies.get(timeout=5)
+        self.assertEqual(reply[:4], b'FAIL')
+        self.assertIn(os.strerror(errno.ENOSPC).encode(), reply[8:])
+        self.assertTrue(self.floors.empty())
+        self.assertEqual(target.read_bytes(), b'previous complete file')
+        self.assertFalse(list(self.root.glob('.adb-part-*')))
+
+    def test_send_with_a_failed_open_never_boosts(self):
+        target = self.root / 'absent-parent' / 'upload.bin'
+        stream, _, reads, replies = self.start_stream(adbd.service_sync, 'sync:')
+        reads.get(timeout=5)
+        stream.incoming(self.sync_request(b'SEND', f'{target},420') + self.record(b'DATA', b'discarded block'))
+        reads.get(timeout=5)
+        self.assertTrue(self.floors.empty())
+        stream.incoming(b'DONE' + bytes(4))
+        self.assertEqual(replies.get(timeout=5)[:4], b'FAIL')
+        self.assertTrue(self.floors.empty())
+
+    def test_recv_boosts_reads_and_releases_during_backpressure(self):
+        target = self.root / 'pull.bin'
+        block = b'a' * adbd.SYNC_DATA_MAX
+        target.write_bytes(block + block + block + b'tail')
+        stream, _, _, replies = self.start_stream(adbd.service_sync, 'sync:')
+        stream.incoming(self.sync_request(b'RECV', target))
+        self.assertEqual(replies.get(timeout=5), self.record(b'DATA', block))
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('500000')
+
+        stream.acknowledged()
+        self.assertEqual(replies.get(timeout=5), self.record(b'DATA', block))
+        self.assert_floor_write('2000000')
+        stream.acknowledged()
+        self.assertEqual(replies.get(timeout=5), self.record(b'DATA', block))
+        self.assert_floor_write('500000')
+        stream.acknowledged()
+        self.assertEqual(replies.get(timeout=5), self.record(b'DATA', b'tail') + b'DONE' + bytes(4))
+
+    def test_sideload_waits_for_data_and_releases_between_slow_blocks(self):
+        first, second = b'AVB0' + bytes(4092), bytes(range(256))
+        stream, worker, _, replies = self.start_stream(adbd.receive_sideload, self.root, len(first + second), len(first))
+        self.assertEqual(replies.get(timeout=5), b'00000000')
+        self.assertTrue(self.floors.empty())
+        stream.acknowledged()
+        stream.incoming(first)
+        self.assertEqual(replies.get(timeout=5), b'00000001')
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('500000')
+
+        stream.acknowledged()
+        stream.incoming(second)
+        self.assertEqual(replies.get(timeout=5), b'DONEDONE')
+        self.assert_floor_write('2000000')
+        self.assert_floor_write('500000')
+        worker.join(5)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual([image.read_bytes() for image in self.root.glob('*-vbmeta.img')], [first + second])
+        self.assertFalse((self.root / '.sideload-part').exists())
 
 
 class ChecksumTest(unittest.TestCase):
