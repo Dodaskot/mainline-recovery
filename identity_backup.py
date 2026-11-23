@@ -596,7 +596,7 @@ def backup_archive(context, volume, path):
             os.close(fd)
 
 
-def archive_rows(fd, manifest, raw, progress, phase):
+def archive_rows(fd, manifest, raw, progress, phase='Checking the backup', *, write_targets=()):
     """(row, chunks) for each partition of the archive as it comes; chunks gives (offset, data) and
     checks the checksum at its end. The manifest inside must be the one at the archive's end."""
     rows = {row['file']: row for row in manifest['partitions']}
@@ -615,13 +615,14 @@ def archive_rows(fd, manifest, raw, progress, phase):
 
             def chunks(row=row, stream=stream, size=size):
                 digest, done = hashlib.sha256(), 0
+                row_phase = 'Writing' if row['label'] in write_targets else phase
                 while done < size:
                     data = stream.read(min(CHUNK, size - done))
                     require(data, 'BACKUP_DAMAGED', 'A file of the backup is shorter than recorded', label=row['label'])
                     yield done, data
                     digest.update(data)
                     done += len(data)
-                    progress(phase, row['label'], done, size)
+                    progress(row_phase, row['label'], done, size)
                 require(digest.hexdigest() == row['sha256'], 'BACKUP_DAMAGED',
                         'A file of the backup does not match its checksum', label=row['label'])
 
@@ -633,7 +634,7 @@ def archive_rows(fd, manifest, raw, progress, phase):
 
 
 def verify_archive(fd, manifest, raw, progress):
-    for _row, chunks in archive_rows(fd, manifest, raw, progress, 'Checking the backup'):
+    for _row, chunks in archive_rows(fd, manifest, raw, progress):
         for _ in chunks:
             pass
 
@@ -1044,7 +1045,7 @@ def restore_archive(context, args, progress):
             else:
                 kept = keep_boot(context, targets['boot'], boot_sum, progress)
         done, written = [], 0
-        for row, chunks in archive_rows(fd, manifest, raw, progress, 'Writing'):
+        for row, chunks in archive_rows(fd, manifest, raw, progress, write_targets=targets):
             part = targets.get(row['label'])
             if part is None:
                 continue

@@ -567,6 +567,10 @@ class AndroidArchive(unittest.TestCase):
         self.assertEqual((code, done['restored']), (0, ['boot']), done)
         self.assertEqual(self.part('boot'), self.data['boot'])
         self.assertEqual(self.part('super'), bytes(8 << 20))
+        self.assertEqual({p['partition'] for p in self.progress if p['phase'] == 'Writing'}, {'boot'})
+        self.assertEqual([p['phase'] for p in self.progress
+                          if p['partition'] == 'super' and p['bytes_done'] == p['bytes_total']],
+                         ['Checking the backup', 'Checking the backup'])
         code, refused = self.restore(result, labels='dtbo')  # not in this copy
         self.assertEqual((code, refused['error']['code']), (2, 'INVALID_ARGUMENT'))
 
