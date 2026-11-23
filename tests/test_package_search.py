@@ -1,9 +1,11 @@
 """2026-11-08: the package search of the installer page, on saved answers of each site."""
 from pathlib import Path
+import io
 import json
 import sys
 import unittest
 from unittest import mock
+from xmlrpc import client
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import distro as d
@@ -33,6 +35,10 @@ DEBIAN = '''<h3>Package keepassxc</h3>
   </ul>'''
 FEDORA = '''<a class="stretched-link" href="/pkgs/keepassxc/keepassxc">
 <span>keepassxc</span></a> - Cross-platform password manager
+<a class="stretched-link" href="/pkgs/keepassxc/keepassxc-doc">
+<span>keepassxc-doc</span></a> - Documentation
+<a class="stretched-link" href="/pkgs/keepassxc/keepassxc-x86-plugin">
+<span>keepassxc-x86-plugin</span></a> - x86-only plugin
 <a class="stretched-link" href="/pkgs/keepass/keepass/">
 <span>keepass</span></a> - Password manager'''
 ARCH = json.dumps({'results': [{'pkgname': 'keepassxc', 'pkgver': '2.8.0', 'pkgdesc': 'Password manager'},
@@ -60,10 +66,33 @@ class TestPackageSearch(unittest.TestCase):
         self.assertIn('packages.ubuntu.com/search?keywords=keepass2&searchon=names&suite=noble', url)
         self.assertEqual(result['results'][0]['name'], 'keepass2')
 
-    def test_fedora_names(self):
-        result, url = self.search('fedora', FEDORA)
+    def test_fedora_uses_source_tags_and_checks_exact_binary_names(self):
+        rpms = [{'name': 'keepassxc', 'arch': 'aarch64', 'version': '2.8.0', 'release': '1.fc45'},
+                {'name': 'keepassxc-doc', 'arch': 'noarch', 'version': '2.8.0', 'release': '1.fc45'}]
+        response = [{'faultCode': 3, 'faultString': 'Source lookup failed'}, [[rpms, []]]]
+        payload = client.dumps((response,), methodresponse=True).encode('utf-8')
+        with mock.patch.object(d, 'url_opener') as opener:
+            opener.return_value.open.return_value = io.BytesIO(payload)
+            result, url = self.search('fedora', FEDORA)
+            request = opener.return_value.open.call_args.args[0]
         self.assertIn('releases=Fedora+45', url)
-        self.assertEqual([(r['name'], r['available']) for r in result['results']], [('keepass', None), ('keepassxc', None)])  # Exact first.
+        self.assertEqual(request.full_url, d.FEDORA_KOJI_HUB)
+        params, method = client.loads(request.data)
+        self.assertEqual(method, 'system.multicall')
+        self.assertEqual([call['params'][1]['package'] for call in params[0]], ['keepass', 'keepassxc'])
+        self.assertTrue(all(call['methodName'] == 'listTaggedRPMS' and call['params'][0] == 'f45-updates'
+                            and call['params'][1]['inherit']
+                            and call['params'][1]['arch'] == ['aarch64', 'noarch'] for call in params[0]))
+        self.assertEqual([(r['name'], r['available'], r['version']) for r in result['results']],
+                         [('keepass', None, ''), ('keepassxc', True, '2.8.0-1.fc45'),
+                          ('keepassxc-doc', True, '2.8.0-1.fc45'), ('keepassxc-x86-plugin', False, '')])
+
+    def test_fedora_timeout_leaves_search_results_with_unknown_architecture(self):
+        with mock.patch.object(d, 'url_opener') as opener:
+            opener.return_value.open.side_effect = TimeoutError
+            result, _ = self.search('fedora', FEDORA)
+        self.assertEqual(len(result['results']), 4)
+        self.assertTrue(all(entry['available'] is None for entry in result['results']))
 
     def test_arch_availability_from_arch_linux_arm(self):
         class Answer:

@@ -1,0 +1,72 @@
+{
+  "schema": "a22x.android-decrypt.profile.v1",
+  "profile_id": "evolutionx-a226b-a16",
+  "android_user_id": 0,
+  "credential_types": [
+    "none",
+    "password"
+  ],
+  "read_only": true,
+  "native_efs_persistence": true,
+  "userdata_epoch": "EVOLUTION16_PASSWORD_20261116",
+  "bundle_path": "/opt/a22x-recovery/android-decrypt-runtime.tar",
+  "bundle_sha256": "243883b9c6a248077550a16e6de248eba65053432a73e7c22499131d9623dd8d",
+  "root_manifest_sha256": "7294e951c142f4585f061e6c0d7dc67ed71506599c3122b235ff6de2c6d92e1d",
+  "framework_services_sha256": "ae824be13cfc9f5f7e9673ee9230fdaea5e3fc91230cecbdaf511974c99a533b",
+  "kernel_build": 152,
+  "bootstrap_wrapper_sha256": "d0e08ab8df83dc86ff4f0a11634403cf02afbf82f19091463b48900fe14f3da5",
+  "qualified_fresh_boots": 0,
+  "persistent_mount_qualification": "PENDING_NEUTRAL_PASSWORD_AND_NONE_INFRA",
+  "gsi_android14_16_qualification": "EXACT_EVOLUTION16_PASSWORD_AND_NONE_ONLY",
+  "source_package_sha256": "186e831fe502fb0dbb50c794fba2d41d1d0194743bc079e74e97ceff01f1c5ed",
+  "userdata_filesystem": "f2fs",
+  "credential_discovery": true,
+  "framework_core_sha256": "52018a98c6718d17f0c80386d842f1d15bca36b35498e12ecd669e354a34483a",
+  "runtime_member_count": 135,
+  "diagnostic_ce_qualified_fresh_boots": 1,
+  "qualified_credential": "NATIVE_DISCOVERY_NONE_OR_PASSWORD4",
+  "gatekeeperd_sha256": "b896d42fff9da2cec02a7211772e8fcfbe5c7a8aead796c252aab1da1c2a628c",
+  "gatekeeper_namespace": {
+    "image_running_boolean": false,
+    "native_protector_user_id": 100000,
+    "native_primary_user_id": 0
+  },
+  "ce_rw": {
+    "schema": "a22x.android-decrypt.ce-rw.v1",
+    "qualified": true,
+    "helper": "/system/bin/a22x-data-ce-rw",
+    "helper_sha256": "d53611cc91cbfce31d10429d4e6891237c6e800556c49b1682cae51c8d4a8fe0",
+    "kernel_release": "7.2.0-a22x-recovery-diag1+",
+    "quota_modules": [
+      {
+        "name": "quota_tree",
+        "path": "/lib/modules/quota_tree.ko",
+        "sha256": "50824bbca9fac1f670c482426345dab6e4ea780aa3da0b04e3cbb85eb0e162e1"
+      },
+      {
+        "name": "quota_v2",
+        "path": "/lib/modules/quota_v2.ko",
+        "sha256": "36a102b5b32f4498cbfad7ea2fb558ff33dd5b20f62a49729f94b29377b91491"
+      }
+    ]
+  },
+  "ce_rw_qualification": "WRITE_FSYNC_FRESH_READ_DELETE_FSYNC_FRESH_RO_ABSENCE_PASS",
+  "ce_rw_qualified_credential_types": [
+    "password"
+  ],
+  "ce_rw_qualification_receipt_sha256": "5d630cfc60dc6c4c3bc1c308d10718fec1c355821a9cb440278c0b70ae10c637",
+  "ce_rw_qualified_boots": 2,
+  "ce_rw_durability_cycle_boots": 3,
+  "ce_rw_durability_phases": [
+    "authenticated-rw-create-fsync",
+    "fresh-authenticated-rw-read-delete-fsync",
+    "fresh-authenticated-ro-absence"
+  ],
+  "ce_session": {
+    "helper": "/system/bin/a22x-data-ce-session",
+    "helper_sha256": "dcb59d8a310eceab46f5c4929de046a36e4b3905f94583ba38886e8e05bb89b1",
+    "protocol": 1,
+    "qualified": true,
+    "schema": "a22x.ce-session.capability.v1"
+  }
+}

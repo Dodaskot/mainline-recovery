@@ -290,6 +290,52 @@ class TestDistro(unittest.TestCase):
             action()
         self.assertEqual(caught.exception.code, code, str(caught.exception))
 
+    def test_android_setup_script_is_bound_before_data_is_unmounted(self):
+        source = self.f.live / 'setup.sh'
+        code = b'#!/bin/sh\necho fixture-only\n'
+        source.write_bytes(code)
+        directory = self.f.path / 'private'
+        directory.mkdir(mode=0o700)
+        staged = directory / 'linux-script-123-1.sh'
+        self.f.context_json['volumes'][0]['fs_type'] = 'f2fs'
+        (self.f.path / 'filesystem-fixture.json').write_text(json.dumps(self.f.context_json))
+        ctx = self.f.context
+        token = ctx.volume('userdata')['volume_token']
+        entry = fs.stat_entry(ctx, 'userdata', '/setup.sh', token)['entry']['entry_token']
+        stage = lambda: d.stage_android_script(ctx, '/setup.sh', token, entry, staged, True)
+        source.write_bytes(code + b'changed')
+        self.error('ENTRY_CHANGED', stage)
+        self.assertFalse(staged.exists())
+        source.write_bytes(code)
+        entry = fs.stat_entry(ctx, 'userdata', '/setup.sh', token)['entry']['entry_token']
+        receipt = stage()
+        self.assertEqual(receipt['bytes'], len(code))
+        self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o600)
+        with self.assertRaises(FileExistsError):
+            stage()
+        ctx.unmount('userdata', token)
+        self.assertEqual(d.script_stamp(ctx, receipt['script'])[0], code)
+        self.assertEqual(source.read_bytes(), code)
+        staged.write_bytes(b'#!/bin/sh\necho replacement\n')
+        self.error('SCRIPT_CHANGED', lambda: d.script_stamp(ctx, receipt['script']))
+
+    def test_setup_script_cannot_stage_from_linux_or_read_only_userdata(self):
+        source = self.f.live / 'setup.sh'
+        source.write_text('#!/bin/sh\n')
+        directory = self.f.path / 'private'
+        directory.mkdir(mode=0o700)
+        staged = directory / 'linux-script-123-1.sh'
+        ctx = self.f.context
+        def stage():
+            volume = ctx.volume('userdata')
+            token = fs.stat_entry(ctx, 'userdata', '/setup.sh', volume['volume_token'])['entry']['entry_token']
+            return d.stage_android_script(ctx, '/setup.sh', volume['volume_token'], token, staged, True)
+        self.error('ANDROID_CE_REQUIRED', stage)
+        self.f.context_json['volumes'][0].update(fs_type='f2fs', read_only=True)
+        (self.f.path / 'filesystem-fixture.json').write_text(json.dumps(self.f.context_json))
+        self.error('VOLUME_READ_ONLY', stage)
+        self.assertFalse(staged.exists())
+
     def test_a_system_that_has_started_is_no_longer_called_untested(self):
         """2026-11-12, on the phone: every system stayed "boot not yet tested" for ever, also after it
         had run. A system notes its own start in its /var; the list reads the note where the system

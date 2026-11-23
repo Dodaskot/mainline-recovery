@@ -180,6 +180,23 @@ class KeepRecovery(unittest.TestCase):
             os.close(fd)
         self.assertEqual(sorted(p.name for p in folder.iterdir() if p.name.startswith('recovery')), ['recovery-20261111-000102.img'])
 
+    def test_a_card_keeps_the_newest_three_copies_of_each_partition(self):
+        """2026-11-21, on the phone: copies on a card were never pruned; 41 recoveries (1.8 GB) filled its
+        first partition until a push failed."""
+        folder = self.root / 'card' / saved_boot.ROLLBACKS
+        folder.mkdir(parents=True)
+        names = ['recovery-20261121-%06d.img' % n for n in range(100000, 100006)] + ['super-odm-20261121-120000.img']
+        for name in names:
+            (folder / name).write_bytes(b'x' * 10)
+        fd = os.open(folder, os.O_RDONLY)
+        try:
+            self.assertEqual(saved_boot.prune_rollbacks(fd, keep='recovery-20261121-100005.img', newest=fl.ROLLBACKS_ON_CARDS), 30)
+        finally:
+            os.close(fd)
+        self.assertEqual(sorted(p.name for p in folder.iterdir()),
+                         ['recovery-20261121-100003.img', 'recovery-20261121-100004.img', 'recovery-20261121-100005.img',
+                          'super-odm-20261121-120000.img'])
+
     def test_a_copy_a_write_still_needs_stays_and_counts_as_the_newest(self):
         """2026-11-12 review: the copy save_rollback has just written has its journal already; it was
         left out of its group, so the older copies beside it were never removed."""
@@ -267,6 +284,44 @@ class KeepRecovery(unittest.TestCase):
                          ['android-magisk-new.img', 'linux-k122.img', 'stock-A226BXXSBDZC3-x.img'])
         self.assertEqual([p.name for p in old.iterdir()], ['recovery-20261111-000102.img'])
         self.assertTrue((self.root / 'cache/a22x-recovery/settings.json').exists())
+
+    def test_older_boots_that_are_the_only_copies_move_to_a_card(self):
+        """2026-11-21, on the phone: five BOOTs of 32 MiB, each the only copy of itself, filled cache and Root
+        stopped with CACHE_FULL. Older ones move to a card, read back; the newest stock and Linux BOOTs stay."""
+        import filesystem as fs
+        boots = self.root / 'cache' / saved_boot.SAVED_BOOT
+        boots.mkdir(parents=True)
+        (self.root / 'sd').mkdir()
+        rows = {}
+        for name, kind, saved, root in (('android-old.img', 'android', 1, None), ('android-stock.img', 'android', 5, None),
+                                        ('linux-old.img', 'linux', 2, None), ('linux-new.img', 'linux', 6, None),
+                                        ('linux-rooted.img', 'linux', 3, 'magisk')):
+            data = signed(boot_image()) + name.encode()
+            rows[name] = hashlib.sha256(data).hexdigest()
+            (boots / name).write_bytes(data)
+            meta = {'kind': kind, 'saved': saved, 'sha256': rows[name], 'bytes': len(data)}
+            if root:
+                meta['root'] = root
+            (boots / (name + '.json')).write_text(json.dumps(meta))
+            (boots / (name + '.sha256')).write_text(rows[name] + '\n')
+        config = json.loads((self.root / 'filesystem-fixture.json').read_text())
+        config['volumes'][0]['read_only'] = False
+        config['volumes'].append({'id': 'sdcard-p1', 'path': 'sd', 'fs_type': 'ext4', 'mounted': True, 'read_only': False})
+        (self.root / 'filesystem-fixture.json').write_text(json.dumps(config))
+        context = install.FixtureContext(self.root)
+        with fs.PinnedVolume(context.fs, 'cache', writing=True) as pin:
+            moved = saved_boot.offload_to_card(context, pin, 1 << 62)
+        self.assertEqual(sorted(moved), ['android-old.img', 'linux-old.img', 'linux-rooted.img'])
+        self.assertEqual(sorted(p.name for p in boots.iterdir() if p.suffix == '.img'), ['android-stock.img', 'linux-new.img'])
+        card = self.root / 'sd' / saved_boot.OFFLOAD
+        for name in moved:
+            self.assertEqual(hashlib.sha256((card / name).read_bytes()).hexdigest(), rows[name])
+            self.assertTrue((card / (name + '.json')).is_file() and (card / (name + '.sha256')).is_file())
+        # No card mounted for writing: nothing moves.
+        config['volumes'][1]['read_only'] = True
+        (self.root / 'filesystem-fixture.json').write_text(json.dumps(config))
+        with fs.PinnedVolume(context.fs, 'cache', writing=True) as pin:
+            self.assertEqual(saved_boot.offload_to_card(install.FixtureContext(self.root), pin, 1 << 62), [])
 
     def test_a_full_cache_gives_up_published_linux_boots_that_can_be_downloaded_again(self):
         """2026-11-12, on the phone: three Linux BOOTs, the stock BOOT and a rooted one filled 160 of

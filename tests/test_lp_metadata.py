@@ -85,18 +85,32 @@ class Metadata(unittest.TestCase):
             s.write_image('product', io.BytesIO(bytes(3 * MIB)), 3 * MIB)
         self.assertEqual(caught.exception.code, 'IMAGE_TOO_LARGE')
 
+    def test_stream_reports_the_image_and_padded_partition_digests(self):
+        s = self.open(write=True)
+        for padding in (0, 731):
+            with self.subTest(padding=padding):
+                size = 2 * MIB - padding
+                chunks = (b'x' * (MIB - 19), b'y' * (size - MIB + 19))
+                length, image, partition = s.write_chunks('product', iter(chunks))
+                payload = b''.join(chunks)
+                self.assertEqual(length, size)
+                self.assertEqual(image, hashlib.sha256(payload).hexdigest())
+                self.assertEqual(partition, hashlib.sha256(payload + bytes(padding)).hexdigest())
+                self.assertEqual(s.read_partition('product'), partition)
+
     def test_a_larger_gsi_grows_system_in_free_space(self):
         s = self.open(write=True)
-        self.assertEqual(s.resize('system', 20 * MIB + 5), 21 * MIB)  # rounded up to the 1 MiB alignment
+        # Rounded up to the 4 KiB logical block, as liblp (2026-11-21): an AVB footer stays at the end.
+        self.assertEqual(s.resize('system', 20 * MIB + 5), 20 * MIB + 4096)
         again = self.open(write=True)  # every copy re-read from disk, checksums checked
-        self.assertEqual(again.size_of(again.partition('system')), 21 * MIB)
+        self.assertEqual(again.size_of(again.partition('system')), 20 * MIB + 4096)
         self.assertEqual(again.size_of(again.partition('vendor')), 4 * MIB)
         extents = again.extents_of(again.partition('system'))
         self.assertEqual(len(extents), 2)  # its first extent stays where it was; the rest is after product
         with open(self.path, 'rb') as f:  # vendor's content did not move
             f.seek(again.extents_of(again.partition('vendor'))[0]['start'] * lp.SECTOR)
             self.assertEqual(f.read(6), b'vendor')
-        data = os.urandom(21 * MIB)
+        data = os.urandom(20 * MIB + 4096)
         self.assertEqual(again.write_image('system', io.BytesIO(data), len(data)), hashlib.sha256(data).hexdigest())
 
     def test_the_group_limit_and_free_space_are_kept(self):

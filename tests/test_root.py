@@ -12,9 +12,11 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,12 +41,22 @@ class Root(unittest.TestCase):
         with zipfile.ZipFile(apk, 'w') as z:
             z.writestr('assets/boot_patch.sh', '#!/sbin/sh\n')
         data = apk.read_bytes()
+        # KernelSU Next's kernel as an AnyKernel3 ZIP of the project's releases (2026-11-21).
+        kzip = self.root / 'root-downloads/KernelSU-Next-A226B-4.14.186-v1-AnyKernel3.zip'
+        with zipfile.ZipFile(kzip, 'w') as z:
+            z.writestr('anykernel.sh', 'properties() { :; }\n')
+            z.writestr('Image.gz', b'\x1f\x8b')
+            z.writestr('META-INF/com/google/android/update-binary', '#!/sbin/sh\n')
+        kdata = kzip.read_bytes()
+        self.ksu_sha = hashlib.sha256(kdata).hexdigest()
         (self.root / 'install-fixture.json').write_text(json.dumps({
             'schema': 'a22x.install.fixture.v1', 'device': {'model': 'SM-A226B', 'identity': 'fixture:test'},
             'targets': {'boot': {'path': 'targets/boot', 'size_bytes': 4 * MIB},
                         'vbmeta': {'path': 'targets/vbmeta', 'size_bytes': 1 << 16}},
             'root': {'magisk': {'version': 'v31.1', 'file': apk.name, 'url': 'https://github.com/topjohnwu/Magisk/releases/download/v31.1/' + apk.name,
-                                'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}}}))
+                                'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()},
+                     'kernelsu-next': {'version': 'v1', 'file': kzip.name, 'size': len(kdata), 'sha256': self.ksu_sha,
+                                       'url': 'https://github.com/Dodaskot/mainline-recovery/releases/download/kernelsu-next-a22x-v1/' + kzip.name}}}))
         (self.root / 'filesystem-fixture.json').write_text(json.dumps({'schema': 'a22x.filesystem.fixture.v1', 'volumes': [
             {'id': 'cache', 'path': 'cache', 'fs_type': 'ext4', 'mounted': True, 'read_only': True}]}))
         self.sha = hashlib.sha256(data).hexdigest()
@@ -105,7 +117,9 @@ class Root(unittest.TestCase):
         code, listed, _ = self.run_helper('list')
         self.assertEqual(code, 0, listed)
         rows = {t['id']: t for t in listed['tools']}
-        self.assertEqual(list(rows), ['magisk', 'apatch'])  # KernelSU and KernelSU Next do not install on the 4.14 kernel
+        # KernelSU Next through the project's own 4.14 kernel (2026-11-21); KernelSU's GKI modules do not fit.
+        self.assertEqual(list(rows), ['magisk', 'apatch', 'kernelsu-next'])
+        self.assertTrue(rows['kernelsu-next']['supported'])
         self.assertTrue(rows['magisk']['supported'])
         self.assertEqual(rows['magisk']['version'], 'v31.1')
         self.assertEqual((listed['boot']['kind'], listed['boot']['magisk'], listed['boot']['root']), ('android', False, ''))
@@ -115,6 +129,7 @@ class Root(unittest.TestCase):
         row = {t['id']: t for t in self.run_helper('list')[1]['tools']}['apatch']
         self.assertEqual((row['supported'], row['version'], row['sha256'], row['needs_key'], row['bundled']),
                          (True, 'KernelPatch 0.13.9', sha, True, True))
+        self.assertEqual(row['manager'], rt.APATCH_MANAGER)
 
     def test_apatch_goes_into_the_kernel_with_the_owners_superkey(self):
         """2026-11-11: APatch beside Magisk. The steps of its app's boot_patch.sh with the recovery's
@@ -274,3 +289,305 @@ class Root(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class APatchBootstrap(unittest.TestCase):
+    def setUp(self):
+        work = tempfile.TemporaryDirectory(prefix='a22x-apatch-bootstrap-')
+        self.addCleanup(work.cleanup)
+        self.work = Path(work.name)
+        self.adb = self.work / 'data/adb'
+        self.adb.mkdir(parents=True)
+        self.app = self.work / 'data/app/exact-manager'
+        self.libs = self.app / 'lib/arm64'
+        self.libs.mkdir(parents=True)
+        self.installed_apk = self.app / 'base.apk'
+        self.apk = self.work / 'manager.apk'
+        self.native = {name: f'{name} binary in the signed APK'.encode() for name in rt.APATCH_LIBRARIES}
+        with zipfile.ZipFile(self.apk, 'w') as archive:
+            for name, data in self.native.items():
+                archive.writestr(f'lib/arm64-v8a/lib{name}.so', data)
+                (self.libs / f'lib{name}.so').write_bytes(data)
+        shutil.copyfile(self.apk, self.installed_apk)
+        data = self.apk.read_bytes()
+        manager = {**rt.APATCH_MANAGER, 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()}
+        with mock.patch.object(rt, 'APATCH_MANAGER', manager):
+            code, script, error = self.generate(self.apk)
+        self.assertEqual((code, error), (0, ''))
+        self.assertTrue(script.startswith('#!/system/bin/sh\n'))
+        self.assertIn('MANAGER_VERSION_CODE=11282\n', script)
+        self.assertNotIn(str(self.apk), script)
+        self.script = self.work / 'apatch-bootstrap.sh'
+        self.script.write_text(script.replace('ADB=/data/adb', f'ADB={self.adb}')
+                               .replace('package:/data/app/', f'package:{self.app.parent}/')
+                               .replace('PATH=/system/bin:/system/xbin', 'PATH="$APATCH_TEST_PATH"'))
+        self.bin = self.work / 'bin'
+        self.bin.mkdir()
+        for name, body in {
+            'id': '[ "$*" = -u ] && echo 0',
+            'getprop': '[ "$*" = sys.boot_completed ] && echo "${APATCH_TEST_BOOT:-1}"',
+            'pm': '''
+case "$*" in
+    'list packages --show-versioncode --user 0 me.bmax.apatch')
+        echo "package:me.bmax.apatch versionCode:${APATCH_TEST_VERSION:-11282}" ;;
+    'path --user 0 me.bmax.apatch') echo "package:$APATCH_TEST_APK" ;;
+    *) exit 1 ;;
+esac
+''',
+            'ls': '''
+[ "$1" = -Zd ] || exit 1
+case "$2" in
+    */.a22x-apatch-bootstrap/*) scope=stage ;;
+    *) scope=live ;;
+esac
+label=u:object_r:adb_data_file:s0
+case "${APATCH_TEST_BAD_LABEL:-}" in
+    "$scope"|"$2") label=u:object_r:unlabeled:s0 ;;
+esac
+printf '%s %s\n' "$label" "$2"
+''',
+            'restorecon': '''
+stage="$APATCH_TEST_ADB/.a22x-apatch-bootstrap"
+[ "$*" = "-R $stage" ] && [ ! -L "$stage/ap/bin/apd" ]
+''',
+            'sync': 'exit 0',
+        }.items():
+            path = self.bin / name
+            path.write_text('#!/bin/sh\n' + body + '\n')
+            path.chmod(0o755)
+
+    @staticmethod
+    def generate(apk):
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = rt.main(['--device', 'apatch-bootstrap', '--manager-apk', str(apk)])
+        return code, stdout.getvalue(), stderr.getvalue()
+
+    def run_bootstrap(self, *args, **env):
+        return subprocess.run(['/bin/sh', '-s', '--', *args], text=True, input=self.script.read_text(), capture_output=True,
+                              env={**os.environ, 'APATCH_TEST_PATH': f'{self.bin}:{os.defpath}',
+                                   'APATCH_TEST_APK': str(self.installed_apk), 'APATCH_TEST_ADB': str(self.adb), **env})
+
+    def test_generation_refuses_an_unpinned_apk_without_emitting_a_script(self):
+        code, script, error = self.generate(self.apk)
+        self.assertEqual((code, script), (2, ''))
+        details = json.loads(error)['error']
+        self.assertEqual(details['code'], 'APATCH_MANAGER_HASH')
+        self.assertEqual(details['details']['manager'], rt.APATCH_MANAGER)
+
+    def test_fresh_setup_and_readonly_recheck_preserve_existing_apatch_data(self):
+        check = self.run_bootstrap('--verify-only')
+        self.assertEqual(check.returncode, 1, check)
+        self.assertIn('APATCH_RUNTIME_MISSING', check.stderr)
+        self.assertEqual(list(self.adb.iterdir()), [])
+        setup = self.run_bootstrap()
+        self.assertEqual(setup.returncode, 0, setup)
+        self.assertIn('STATUS=configured\n', setup.stdout)
+        self.assertIn('APATCH_ENV=VERIFIED\n', setup.stdout)
+        self.assertIn('SELINUX_LABEL=u:object_r:adb_data_file:s0\n', setup.stdout)
+        self.assertEqual((self.adb / 'apd').read_bytes(), self.native['apd'])
+        ap = self.adb / 'ap'
+        for name in ('busybox', 'kptools'):
+            self.assertEqual((ap / 'bin' / name).read_bytes(), self.native[name])
+        for name in ('apd', 'magiskpolicy', 'resetprop'):
+            self.assertEqual((ap / 'bin' / name).readlink(), self.adb / 'apd')
+        self.assertEqual((ap / 'su_path').read_text(), '/system/bin/su\n')
+        self.assertEqual((ap / 'version').read_text(), '11282\n')
+        (ap / 'su_path').write_text('/user/configured/su\n')
+        (ap / 'package_config').write_text('user settings\n')
+        (ap / 'log/existing.log').write_text('an existing log\n')
+        module = self.adb / 'modules/meta-overlayfs'
+        module.mkdir(parents=True)
+        (module / 'module.prop').write_text('metamodule=1\n')
+        identity = (ap / 'package_config').stat().st_ino
+        for args in ((), ('--verify-only',)):
+            check = self.run_bootstrap(*args)
+            self.assertEqual(check.returncode, 0, check)
+            self.assertIn('STATUS=already-configured\n', check.stdout)
+        self.assertEqual((ap / 'package_config').stat().st_ino, identity)
+        self.assertEqual((ap / 'package_config').read_text(), 'user settings\n')
+        self.assertEqual((ap / 'su_path').read_text(), '/user/configured/su\n')
+        self.assertEqual((ap / 'log/existing.log').read_text(), 'an existing log\n')
+        self.assertEqual((module / 'module.prop').read_text(), 'metamodule=1\n')
+        self.assertEqual({entry.name for entry in self.adb.iterdir()}, {'ap', 'apd', 'modules'})
+        (ap / 'version').write_text('11224\n')
+        check = self.run_bootstrap('--verify-only')
+        self.assertEqual(check.returncode, 1, check)
+        self.assertIn('APATCH_RUNTIME_CONFLICT', check.stderr)
+        self.assertEqual((ap / 'version').read_text(), '11224\n')
+        (ap / 'version').unlink()
+        check = self.run_bootstrap('--verify-only')
+        self.assertEqual(check.returncode, 0, check)
+        self.assertFalse((ap / 'version').exists())
+
+    def test_manager_version_apk_and_extracted_libraries_must_match_before_writing(self):
+        for env, expected in (
+            ({'APATCH_TEST_BOOT': '0'}, 'APATCH_ANDROID_REQUIRED'),
+            ({'APATCH_TEST_VERSION': '11224'}, 'APATCH_MANAGER_VERSION'),
+            ({'APATCH_TEST_VERSION': '11283'}, 'APATCH_MANAGER_VERSION'),
+        ):
+            done = self.run_bootstrap(**env)
+            self.assertEqual(done.returncode, 1, done)
+            self.assertIn(expected, done.stderr)
+            self.assertEqual(list(self.adb.iterdir()), [])
+        self.installed_apk.write_bytes(b'different APK with the same reported version')
+        done = self.run_bootstrap()
+        self.assertEqual(done.returncode, 1, done)
+        self.assertIn('APATCH_MANAGER_HASH', done.stderr)
+        shutil.copyfile(self.apk, self.installed_apk)
+        (self.libs / 'libapd.so').unlink()
+        done = self.run_bootstrap()
+        self.assertEqual(done.returncode, 1, done)
+        self.assertIn('APATCH_MANAGER_LIBRARIES', done.stderr)
+        self.assertEqual(list(self.adb.iterdir()), [])
+
+    def test_recovery_seed_completes_without_replacing_or_relabeling_the_daemon(self):
+        seed = self.adb / 'apd'
+        seed.write_bytes(self.native['apd'])
+        seed.chmod(0o750)
+        os.setxattr(seed, 'user.a22x-test', b'existing xattr')
+        before = seed.stat()
+        ap = self.adb / 'ap'
+        check = self.run_bootstrap('--verify-only')
+        self.assertEqual(check.returncode, 1, check)
+        self.assertIn('APATCH_RUNTIME_MISSING', check.stderr)
+        self.assertFalse(ap.exists())
+        # A late label failure rolls back only the newly published directory.
+        check = self.run_bootstrap(APATCH_TEST_BAD_LABEL=str(ap))
+        self.assertEqual(check.returncode, 1, check)
+        self.assertIn('APATCH_RUNTIME_INVALID', check.stderr)
+        self.assertEqual(list(self.adb.iterdir()), [seed])
+        setup = self.run_bootstrap()
+        self.assertEqual(setup.returncode, 0, setup)
+        self.assertIn('STATUS=configured\n', setup.stdout)
+        self.assertEqual((ap / 'bin/apd').readlink(), seed)
+        self.assertEqual((ap / 'version').read_text(), '11282\n')
+        after = seed.stat()
+        self.assertEqual((after.st_ino, after.st_mode, after.st_ctime_ns), (before.st_ino, before.st_mode, before.st_ctime_ns))
+        self.assertEqual(seed.read_bytes(), self.native['apd'])
+        self.assertEqual(os.getxattr(seed, 'user.a22x-test'), b'existing xattr')
+        check = self.run_bootstrap('--verify-only')
+        self.assertEqual(check.returncode, 0, check)
+        self.assertIn('STATUS=already-configured\n', check.stdout)
+
+    def test_wrong_or_unlabeled_recovery_seed_is_refused_without_changes(self):
+        seed = self.adb / 'apd'
+        for data, mode, bad_label in (
+            (b'another APD', 0o755, ''),
+            (self.native['apd'], 0o644, ''),
+            (self.native['apd'], 0o755, str(seed)),
+        ):
+            with self.subTest(mode=mode, bad_label=bad_label, data=data):
+                seed.write_bytes(data)
+                seed.chmod(mode)
+                before = seed.stat()
+                done = self.run_bootstrap(APATCH_TEST_BAD_LABEL=bad_label)
+                self.assertEqual(done.returncode, 1, done)
+                self.assertIn('APATCH_RUNTIME_CONFLICT', done.stderr)
+                self.assertEqual(list(self.adb.iterdir()), [seed])
+                self.assertEqual(seed.stat().st_ctime_ns, before.st_ctime_ns)
+                self.assertEqual(seed.read_bytes(), data)
+
+    def test_partial_runtime_is_preserved_and_fresh_label_failure_rolls_back(self):
+        for where, expected in (('stage', 'APATCH_STAGE_INVALID'), ('live', 'APATCH_RUNTIME_INVALID')):
+            done = self.run_bootstrap(APATCH_TEST_BAD_LABEL=where)
+            self.assertEqual(done.returncode, 1, done)
+            self.assertIn(expected, done.stderr)
+            self.assertEqual(list(self.adb.iterdir()), [])
+        ap = self.adb / 'ap'
+        ap.mkdir()
+        (ap / 'package_config').write_text('existing data\n')
+        (self.adb / 'apd').symlink_to(self.work / 'missing')
+        done = self.run_bootstrap()
+        self.assertEqual(done.returncode, 1, done)
+        self.assertIn('APATCH_RUNTIME_CONFLICT', done.stderr)
+        self.assertEqual((ap / 'package_config').read_text(), 'existing data\n')
+        self.assertTrue((self.adb / 'apd').is_symlink())
+        self.assertEqual({entry.name for entry in self.adb.iterdir()}, {'ap', 'apd'})
+
+
+class APatchPatchErrors(unittest.TestCase):
+    def test_kptools_errors_hide_the_superkey_and_stop_before_flashing(self):
+        fixture = Root()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        sha = fixture.apatch()
+        key = 'Offline-Test-Key-123'
+        stock = (fixture.root / 'targets/boot').read_bytes()
+        real_run = subprocess.run
+
+        def run(args, **kwargs):
+            if args[:2] != ['./kptools', '-p']:
+                return real_run(args, **kwargs)
+            if error == 'timeout':
+                raise subprocess.TimeoutExpired(args, 1, output=key.encode())
+            if error == 'invocation':
+                raise subprocess.CalledProcessError(1, args, output=key.encode())
+            return subprocess.CompletedProcess(args, 1, stdout=f'failed while patching with {key}'.encode())
+
+        for error in ('timeout', 'invocation', 'exit'):
+            with self.subTest(error=error), mock.patch.object(rt.subprocess, 'run', side_effect=run) as commands:
+                code, refused, progress = fixture.run_helper('install', '--id', 'apatch', '--expected-sha256', sha, '--confirm',
+                                                             '--superkey-file', fixture.key_file(key))
+                self.assertEqual((code, refused['error']['code']), (2, 'APATCH_PATCH_FAILED'))
+                self.assertEqual(refused['error']['details']['step'], '-p')
+                self.assertNotIn(key, json.dumps(refused) + progress)
+                self.assertEqual(sum(call.args[0][:2] == ['./kptools', '-p'] for call in commands.call_args_list), 1)
+                self.assertEqual((fixture.root / 'targets/boot').read_bytes(), stock)
+
+
+class KernelSuNext(Root):
+    """KernelSU Next (2026-11-21): its kernel ZIP downloaded, checked and kept on cache for the ZIP
+    installer's review; BOOT itself is not written here."""
+
+    def test_the_kernel_zip_waits_on_cache_for_its_review(self):
+        before = (self.root / 'targets/boot').read_bytes()
+        code, done, _ = self.run_helper('install', '--id', 'kernelsu-next', '--expected-sha256', self.ksu_sha, '--confirm')
+        self.assertEqual(code, 0, done)
+        self.assertEqual(done['root'], 'kernelsu-next')
+        self.assertEqual(done['zip']['volume'], 'cache')
+        self.assertEqual(done['zip']['sha256'], self.ksu_sha)
+        kept = self.root / 'cache' / done['zip']['path'].lstrip('/')
+        self.assertEqual(hashlib.sha256(kept.read_bytes()).hexdigest(), self.ksu_sha)
+        self.assertEqual((self.root / 'targets/boot').read_bytes(), before)
+
+    def test_magisk_in_boot_is_removed_first(self):
+        props = {'ro.product.bootimage.device': 'a22x', 'ro.product.bootimage.model': 'SM-A226B'}
+        self.boot(tb.boot(tb.kernel('4.14.186-27218697'), tb.ramdisk(props, {'.backup/.magisk': b'KEEPVERITY=true\n'}),
+                          tb.dt_table(tb.fdt('MT6833', ['mediatek,MT6833']))))
+        code, done, _ = self.run_helper('install', '--id', 'kernelsu-next', '--expected-sha256', self.ksu_sha, '--confirm')
+        self.assertEqual(done['error']['code'], 'ROOT_OTHER_PRESENT')
+
+    def test_a_download_that_is_no_kernel_zip_is_refused(self):
+        bad = self.root / 'root-downloads/KernelSU-Next-A226B-4.14.186-v1-AnyKernel3.zip'
+        with zipfile.ZipFile(bad, 'w') as z:
+            z.writestr('README', 'nothing')
+        data = bad.read_bytes()
+        fixture = json.loads((self.root / 'install-fixture.json').read_text())
+        fixture['root']['kernelsu-next'].update(size=len(data), sha256=hashlib.sha256(data).hexdigest())
+        (self.root / 'install-fixture.json').write_text(json.dumps(fixture))
+        code, done, _ = self.run_helper('install', '--id', 'kernelsu-next', '--expected-sha256', hashlib.sha256(data).hexdigest(),
+                                        '--confirm')
+        self.assertEqual(done['error']['code'], 'KERNEL_ZIP_INVALID')
+
+
+class KernelSuNextInBoot(Root):
+    def test_kernelsu_next_s_own_domain_is_recognized_as_kernelsu(self):
+        """KernelSU Next's kernel starts ksud in u:r:ksu:s0 (its legacy branch): the BOOT counts as
+        rooted by KernelSU, so Magisk is not offered over it and KernelSU Next updates over itself."""
+        import gzip
+        import bootimage as bi
+        image = bytearray(64 * 1024)
+        image[56:60] = b'ARMd'
+        banner = b'Linux version 4.14.186+ (a22x@mainline-recovery) #1 SMP\n'
+        image[4096:4096 + len(banner)] = banner
+        rc = b'    exec u:r:ksu:s0 root -- /data/adb/ksud post-fs-data\n'
+        image[8192:8192 + len(rc)] = rc
+        props = {'ro.product.bootimage.device': 'a22x', 'ro.product.bootimage.model': 'SM-A226B'}
+        self.boot(tb.boot(gzip.compress(bytes(image), mtime=0), tb.ramdisk(props), tb.dt_table(tb.fdt('MT6833', ['mediatek,MT6833']))))
+        code, listed, _ = self.run_helper('list')
+        self.assertEqual(listed['boot']['root'], 'kernelsu')
+        code, refused, _ = self.run_helper('install', '--id', 'magisk', '--expected-sha256', self.sha, '--confirm')
+        self.assertEqual(refused['error']['code'], 'ROOT_OTHER_PRESENT')
+        code, done, _ = self.run_helper('install', '--id', 'kernelsu-next', '--expected-sha256', self.ksu_sha, '--confirm')
+        self.assertEqual(code, 0, done)

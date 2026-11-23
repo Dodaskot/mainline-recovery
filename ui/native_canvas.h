@@ -149,6 +149,36 @@ static void canvas_capsule(uint32_t*pixels,Bounds b,float ax,float ay,float bx,f
         }
     }
 }
+/* A filled triangle whose corners are rounded by RADIUS, smoothed at its edges (2026-11-22, the owner:
+ * the play button's two outlined triangles looked crooked). Exact signed distance to the triangle. */
+static void canvas_triangle(uint32_t*pixels,Bounds b,const float p[6],float radius,uint32_t color){
+    float lo_x=p[0],hi_x=p[0],lo_y=p[1],hi_y=p[1];
+    for(int k=1;k<3;k++){if(p[2*k]<lo_x)lo_x=p[2*k];if(p[2*k]>hi_x)hi_x=p[2*k];if(p[2*k+1]<lo_y)lo_y=p[2*k+1];if(p[2*k+1]>hi_y)hi_y=p[2*k+1];}
+    int x0=(int)floorf(lo_x-radius)-1,y0=(int)floorf(lo_y-radius)-1,x1=(int)ceilf(hi_x+radius)+2,y1=(int)ceilf(hi_y+radius)+2;
+    if(x0<b.x0)x0=b.x0;
+    if(y0<b.y0)y0=b.y0;
+    if(x1>b.x1)x1=b.x1;
+    if(y1>b.y1)y1=b.y1;
+    float ex[3],ey[3],len[3];
+    for(int k=0;k<3;k++){int n=(k+1)%3;ex[k]=p[2*n]-p[2*k];ey[k]=p[2*n+1]-p[2*k+1];len[k]=ex[k]*ex[k]+ey[k]*ey[k];if(len[k]<=0)len[k]=1;}
+    float orient=ex[0]*ey[2]-ey[0]*ex[2]<0?-1.f:1.f;
+    for(int y=y0;y<y1;y++){
+        uint32_t*row=pixels+(size_t)y*NW;float py=(float)y+.5f;
+        for(int x=x0;x<x1;x++){
+            float px=(float)x+.5f,nearest=1e30f,side=1e30f;
+            for(int k=0;k<3;k++){
+                float vx=px-p[2*k],vy=py-p[2*k+1],t=(vx*ex[k]+vy*ey[k])/len[k];
+                t=t<0?0:(t>1?1:t);
+                float qx=vx-ex[k]*t,qy=vy-ey[k]*t,d=qx*qx+qy*qy,s=orient*(vx*ey[k]-vy*ex[k]);
+                if(d<nearest)nearest=d;
+                if(s<side)side=s;
+            }
+            float distance=(side<0?sqrtf(nearest):-sqrtf(nearest))-radius;
+            unsigned int value=(unsigned int)(canvas_cover(distance)*255.f+.5f);
+            if(value)row[x]=canvas_blend(row[x],color,value);
+        }
+    }
+}
 /* A ring keeps width pixels inside radius; width at or above radius is a disc. */
 static void canvas_ring(uint32_t*pixels,Bounds b,float cx,float cy,float radius,float width,uint32_t color){
     int x0=(int)floorf(cx-radius)-1,y0=(int)floorf(cy-radius)-1,x1=(int)ceilf(cx+radius)+2,y1=(int)ceilf(cy+radius)+2;

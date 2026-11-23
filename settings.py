@@ -54,9 +54,28 @@ LOCK_WAIT = 20.0
 DEFAULTS = {'language': 'en', 'theme': 'graphite', 'terminal': 'auto', 'storage': 'sd', 'vibration': 2, 'timeout': 2, 'utc_offset': 0,
             'refresh': 0, 'brightness': 0, 'animation': 'zoom', 'lock': 1, 'access': 1, 'navigation': 0, 'timezone': '',
             'torch': 0,  # the flashlight's level; 0: not chosen yet
+            # The sound volume in percent, set again at each start (2026-11-22: it came back at 60 %
+            # after every restart); -1: not chosen yet, sound.py's own level.
+            'volume': -1,
+            'tap_wake': 0,  # a double tap wakes the dark screen (Novatek touch); off by default (2026-11-22, #10)
+            'android_password_policy': 'each_mount',  # only the prompt policy persists, never an Android credential
+            # Mounted at start (automount.py, 2026-11-20): cards and Android data for writing as in TWRP,
+            # other volumes not; mount_list overrides single volumes ("id:mode,...").
+            'mount_cards': 'rw', 'mount_data': 'rw', 'mount_others': 'off', 'mount_list': '',
+            # Where the browser's finished downloads go (web_downloads.py, 2026-11-20): the SD card
+            # first, then a USB drive ("auto"), only one of them, or nowhere ("ram": they stay in RAM).
+            'web_downloads': 'auto',
+            'web_dark': 0,  # 1: sites in their dark version, the others darkened (2026-11-21)
+            'files_sort': 'name',  # the order of Files: name, newest, oldest or largest (2026-11-21)
             'android_log': ''}  # the id of the failed start of Android the owner has read about (android_log.py)
-TEXT_KEYS = ('language', 'theme', 'terminal', 'storage', 'animation', 'timezone', 'android_log')
+TEXT_KEYS = ('language', 'theme', 'terminal', 'storage', 'animation', 'timezone', 'android_log', 'android_password_policy',
+             'mount_cards', 'mount_data', 'mount_others', 'mount_list', 'web_downloads', 'files_sort')
 ANIMATIONS = ('zoom', 'blur', 'slide', 'fade', 'dissolve', 'off')
+ANDROID_PASSWORD_POLICIES = ('each_mount', 'startup', 'first_access')
+MOUNT_MODES = ('off', 'ro', 'rw')
+WEB_DOWNLOADS = ('auto', 'sdcard', 'usb', 'ram')
+# Single volumes mounted at start (automount.py): "id:mode,id:mode", an id never starting with "-".
+MOUNT_LIST = re.compile(r'[a-z0-9][a-z0-9_.-]{0,39}:(?:off|ro|rw)(?:,[a-z0-9][a-z0-9_.-]{0,39}:(?:off|ro|rw)){0,63}')
 HEX = re.compile(r'[0-9a-f]+')
 
 
@@ -101,6 +120,16 @@ def valid(key, value):
         return value in ('sd', 'usb')
     if key == 'animation':
         return value in ANIMATIONS
+    if key == 'android_password_policy':
+        return value in ANDROID_PASSWORD_POLICIES
+    if key in ('mount_cards', 'mount_data', 'mount_others'):
+        return value in MOUNT_MODES
+    if key == 'web_downloads':
+        return value in WEB_DOWNLOADS
+    if key == 'files_sort':
+        return value in ('name', 'newest', 'oldest', 'largest')
+    if key == 'mount_list':
+        return value == '' or (len(value) <= 1000 and MOUNT_LIST.fullmatch(value) is not None)
     if key == 'android_log':
         return re.fullmatch(r'(?:[0-9a-f]{16})?', value) is not None
     if key == 'timezone':
@@ -112,7 +141,8 @@ def valid(key, value):
             'utc_offset': -720 <= number <= 840 and number % 15 == 0,
             'refresh': number in (0, 60, 90), 'brightness': 0 <= number <= 100,
             'lock': 0 <= number <= 2, 'access': number in (0, 1), 'navigation': 0 <= number <= 2,
-            'torch': 0 <= number <= 255}.get(key, False)
+            'torch': 0 <= number <= 255, 'web_dark': number in (0, 1), 'tap_wake': number in (0, 1),
+            'volume': -1 <= number <= 100}.get(key, False)
 
 
 @contextlib.contextmanager
@@ -990,6 +1020,18 @@ def matches(record, path):
     return hmac.compare_digest(derive(path.read_text().rstrip('\n'), record['salt']), record['hash'])
 
 
+def android_password_policy(record=None):
+    """The Android mount policy; old or malformed values keep the strict default.
+
+    This setting is only when to ask. The decrypt session enforces it, owns any
+    RAM-only unlock capability, and independently requires fresh format authority.
+    """
+    if record is None:
+        record = load()
+    value = record.get('android_password_policy') if isinstance(record, dict) else None
+    return value if isinstance(value, str) and value in ANDROID_PASSWORD_POLICIES else 'each_mount'
+
+
 def main():
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest='command', required=True)
@@ -1008,7 +1050,7 @@ def main():
         return reset_damaged()
     record = load()
     if args.command == 'status':
-        print(json.dumps({**DEFAULTS, **{k: v for k, v in record.items() if k in DEFAULTS}, 'password': bool(record.get('hash')), 'password_digits': bool(record.get('digits'))}))
+        print(json.dumps({**DEFAULTS, **{k: v for k, v in record.items() if k in DEFAULTS}, 'password': bool(record.get('hash')), 'password_digits': bool(record.get('digits')), 'android_password_policy': android_password_policy(record)}))
         return 0
     if args.command == 'set':
         for key in DEFAULTS:

@@ -2,7 +2,8 @@
 """Explicit external microSD mounting for the A22x RAM recovery.
 
 No formatting, filesystem repair, internal partition mounting, or arbitrary path
-arguments. The first device version supports the existing ext4 microSD only.
+arguments. The card's first partition holds the store in any filesystem the kernel writes:
+ext4 first, since 2026-11-20 also exFAT, F2FS, Btrfs, UDF and FAT32 (files up to 4 GiB there).
 """
 # SPDX-License-Identifier: MIT
 import argparse
@@ -17,6 +18,7 @@ import struct
 import subprocess
 import sys
 from operation_lock import operation_lock
+import filesystem
 
 DEVICE = Path('/dev/mmcblk1p1')
 PARENT = Path('/sys/class/block/mmcblk1')
@@ -60,15 +62,15 @@ def admission():
         raise StorageError('ROOT_MUST_BE_RAM')
 
 
-def probe_ext4(fd):
-    data = os.pread(fd, 1024, 1024)
-    if len(data) != 1024 or data[56:58] != b'\x53\xef':
+def probe_store(fd):
+    """The card's filesystem, by its own superblock (filesystem.probe_magic). One the kernel cannot
+    write, or none, keeps the code the interface explains (the name stays for older interfaces)."""
+    info = filesystem.probe_magic(os.pread(fd, filesystem.PROBE_BYTES, 0))
+    if info.get('fs_type') not in filesystem.BACKUP_FILESYSTEMS:
         raise StorageError('EXT4_MICROSD_REQUIRED_NO_FORMAT_PERFORMED')
-    raw_label = data[120:136].split(b'\0', 1)[0].decode('utf-8', 'replace')
+    raw_label = info.get('filesystem_label') or ''
     label = ''.join(c if c.isprintable() else '?' for c in raw_label)
-    uid = data[104:120].hex()
-    return {'filesystem': 'ext4', 'label': label,
-            'filesystem_uuid': '-'.join([uid[:8], uid[8:12], uid[12:16], uid[16:20], uid[20:]])}
+    return {'filesystem': info['fs_type'], 'label': label, 'filesystem_uuid': info.get('filesystem_uuid')}
 
 
 def inspect_sd(listing=False):
@@ -84,7 +86,7 @@ def inspect_sd(listing=False):
         devno = f'{os.major(st.st_rdev)}:{os.minor(st.st_rdev)}'
         if devno != (PART / 'dev').read_text().strip():
             raise StorageError('SD_DEVICE_ID_CHANGED')
-        values = probe_ext4(fd)
+        values = probe_store(fd)
         values.update({'device': str(DEVICE), 'devno': devno,
                        'device_bytes': struct.unpack('Q', fcntl.ioctl(fd, 0x80081272, bytes(8)))[0]})
     finally:
@@ -160,7 +162,8 @@ def main():
                 MOUNTPOINT.mkdir(mode=0o700, parents=True, exist_ok=True)
                 if MOUNTPOINT.is_symlink() or any(MOUNTPOINT.iterdir()):
                     raise StorageError('BACKUP_MOUNTPOINT_MUST_BE_EMPTY_DIRECTORY')
-                subprocess.run(['/bin/busybox', 'mount', '-t', 'ext4', '-o', 'rw,nodev,nosuid,noexec',
+                subprocess.run(['/bin/busybox', 'mount', '-t', info['filesystem'], '-o',
+                                filesystem.mount_options(info['filesystem'], 'rw'),
                                 str(DEVICE), str(MOUNTPOINT)], check=True, capture_output=True, timeout=20)
                 info = inspect_sd()
                 if not info['mounted']:

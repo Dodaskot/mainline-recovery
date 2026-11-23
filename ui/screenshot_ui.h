@@ -124,6 +124,7 @@ static bool screenshot_allowed(const App*a){
 static void take_screenshot(App*a){
     if(a->shot_pid){toast(a,"The last screenshot is still being saved");return;}
     if(!screenshot_allowed(a)){toast(a,"No screenshot while a password is on the screen");return;}
+    web_sync_pixels(a);  /* the browser's last page frame may be on the panel only */
     int width=1080,height=2408;uint32_t*frame=malloc((size_t)width*height*sizeof(*frame));
     char folder[PATH_LEN],path[PATH_LEN+64],stamp[32];bool removable=false;time_t now=time(NULL);struct tm tm;
     /* The time shown on the screen, a fixed offset too (2026-11-14 review: localtime was UTC then). */

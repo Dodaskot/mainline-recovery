@@ -64,6 +64,9 @@ LINUX_BOOT_K121 = 'e3542fcdd905a4b89a10eb828fa983bc9f0837a2635155d0124c692f6c5fb
 LINUX_BOOT_K122 = '9701f48ddced60c648e79a502885778935d1cb5610a011d77fc1898eea01d41a'
 # Kernel 138 (BOOT v147, 2026-11-12): the battery percent kept in the PMIC; same modules.
 LINUX_BOOT_K138 = '5faafaa0035bff7bd77251ab01e2b4c395798755ad24db7b3240cc3d6139ad0f'
+# Kernel 165 (BOOT v1r8, 2026-11-22): k138 with the recovery kernel #164's fixes (panels, touch, display
+# select), a neutral banner; same modules (release 7.2.0-a22x+). Live: Debian 13 boots, Wi-Fi, BT, sound, sleep.
+LINUX_BOOT_K165 = 'c09c126596d7bd4180706135543d439dfa353a0685fed277da0241e29f49524c'
 MMC_SECTORS = 122142720  # the 64 GB phone, for fixtures
 # Every SM-A226B, 64 GB or 128 GB: the eMMC and userdata are judged by backend/storage.py's rule.
 
@@ -393,6 +396,9 @@ def fixed_chunks(iterator):
     pending = bytearray()
     for data in iterator:
         require(0 < len(data) <= CHUNK, 'INTERNAL_CHUNK_BOUND', 'Decoder produced an invalid chunk size')
+        if not pending and len(data) == CHUNK and isinstance(data, bytes):
+            yield data
+            continue
         position = 0
         while position < len(data):
             count = min(CHUNK - len(pending), len(data) - position)
@@ -650,46 +656,56 @@ class DeviceContext:
                 'partition_number': number, 'start_sector': start, 'partuuid': fields['PARTUUID'],
                 'device': devno, 'object': same_object(st)}
 
-    def reset_android(self):
-        """Format /data as stock recovery does and clear /metadata, which Android recreates."""
-        paths = {}
-        for label in ('userdata', 'metadata'):
-            path = Path('/dev/disk/by-partlabel').joinpath(label).resolve(strict=True)
-            st = path.lstat()
-            require(stat.S_ISBLK(st.st_mode), 'TARGET_NOT_BLOCK', 'Reset target is not a block partition', label=label)
-            devno = str(os.major(st.st_rdev)) + ':' + str(os.minor(st.st_rdev))
-            require(devno in self.raw.nodes and self.raw.graph.physical_roots(devno) == {self.raw.internal_disk},
-                    'WRONG_INTERNAL_DEVICE', 'Reset target is not on the internal eMMC', label=label)
-            self.raw.graph.require_unmounted(devno, self.raw.mounts)
-            self.raw.graph.require_no_holders(devno)
-            paths[label] = path
-        fd = os.open(paths['metadata'], os.O_WRONLY | os.O_CLOEXEC | os.O_EXCL)
-        try:
-            for offset in range(0, METADATA_CLEAR_BYTES, CHUNK):
-                write_all(fd, bytes(CHUNK), offset=offset)
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-        done = subprocess.run([*RESET_MAKE_METADATA, str(paths['metadata'])], stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True, errors='replace')
-        require(done.returncode == 0, 'METADATA_RESET_FAILED', 'mkfs.ext4 could not format metadata', output=done.stdout[-400:])
-        fd = os.open(paths['metadata'], os.O_RDONLY | os.O_CLOEXEC)
-        try:
-            magic = os.pread(fd, 2, EXT4_MAGIC_AT)
-        finally:
-            os.close(fd)
-        require(magic == b'\x53\xef', 'METADATA_RESET_FAILED', 'metadata holds no ext4 after formatting')
-        done = subprocess.run([*RESET_MAKE_F2FS, str(paths['userdata'])], stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True, errors='replace')
-        require(done.returncode == 0, 'USERDATA_RESET_FAILED', 'make_f2fs could not format userdata', output=done.stdout[-400:])
-        fd = os.open(paths['userdata'], os.O_RDONLY | os.O_CLOEXEC)
-        try:
-            head = os.pread(fd, 4096, 0)
-        finally:
-            os.close(fd)
-        features = struct.unpack_from('<I', head, F2FS_FEATURE_AT)[0] if len(head) >= F2FS_FEATURE_AT + 4 else None
-        require(head[1024:1028] == F2FS_MAGIC and features == ANDROID_DATA_FEATURES, 'USERDATA_RESET_FEATURES',
-                "userdata was formatted with other features than Samsung's", features=features)
+    def reset_android(self, *, format_authorization=None):
+        """Reset Android data only after current-password authorization or proven initialization."""
+        import format_authorization as authorization
+        with authorization.writer_lease(self.fs):
+            before_reset = self.fs.volume('userdata')
+            if format_authorization is not None:
+                authorization.prepare_write(self.fs, before_reset, 'f2fs', 'android-reset', format_authorization)
+                # Normal CE cleanup changed the mapper graph; refresh before raw admission.
+                self.raw = _backend_storage().DeviceContext()
+            else:
+                authorization.require_unprotected(self.fs, android_reset=True)
+            paths = {}
+            for label in ('userdata', 'metadata'):
+                path = Path('/dev/disk/by-partlabel').joinpath(label).resolve(strict=True)
+                st = path.lstat()
+                require(stat.S_ISBLK(st.st_mode), 'TARGET_NOT_BLOCK', 'Reset target is not a block partition', label=label)
+                devno = str(os.major(st.st_rdev)) + ':' + str(os.minor(st.st_rdev))
+                require(devno in self.raw.nodes and self.raw.graph.physical_roots(devno) == {self.raw.internal_disk},
+                        'WRONG_INTERNAL_DEVICE', 'Reset target is not on the internal eMMC', label=label)
+                self.raw.graph.require_unmounted(devno, self.raw.mounts)
+                self.raw.graph.require_no_holders(devno)
+                paths[label] = path
+            fd = os.open(paths['metadata'], os.O_WRONLY | os.O_CLOEXEC | os.O_EXCL)
+            try:
+                for offset in range(0, METADATA_CLEAR_BYTES, CHUNK):
+                    write_all(fd, bytes(CHUNK), offset=offset)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            done = subprocess.run([*RESET_MAKE_METADATA, str(paths['metadata'])], stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True, errors='replace')
+            require(done.returncode == 0, 'METADATA_RESET_FAILED', 'mkfs.ext4 could not format metadata', output=done.stdout[-400:])
+            fd = os.open(paths['metadata'], os.O_RDONLY | os.O_CLOEXEC)
+            try:
+                magic = os.pread(fd, 2, EXT4_MAGIC_AT)
+            finally:
+                os.close(fd)
+            require(magic == b'\x53\xef', 'METADATA_RESET_FAILED', 'metadata holds no ext4 after formatting')
+            done = subprocess.run([*RESET_MAKE_F2FS, str(paths['userdata'])], stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True, errors='replace')
+            require(done.returncode == 0, 'USERDATA_RESET_FAILED', 'make_f2fs could not format userdata', output=done.stdout[-400:])
+            fd = os.open(paths['userdata'], os.O_RDONLY | os.O_CLOEXEC)
+            try:
+                head = os.pread(fd, 4096, 0)
+            finally:
+                os.close(fd)
+            features = struct.unpack_from('<I', head, F2FS_FEATURE_AT)[0] if len(head) >= F2FS_FEATURE_AT + 4 else None
+            require(head[1024:1028] == F2FS_MAGIC and features == ANDROID_DATA_FEATURES, 'USERDATA_RESET_FEATURES',
+                    "userdata was formatted with other features than Samsung's", features=features)
+            authorization.record_initialized(self.fs, 'android-reset', before_reset, 'f2fs')
 
     def close_logical(self):
         """Partitions of super that Files opened are closed before super itself is read or written
@@ -1740,6 +1756,10 @@ def execute(context, plan, confirmation, progress=None, hook=None):
     with operation_lock(context.lock_path, context.mode) as lease:
         context = context.fresh()
         check_plan(context, plan, confirmation)
+        if context.mode == 'device' and plan['operation'] == 'install-stock':
+            import format_authorization
+            # This existing Linux-return workflow cannot silently erase protected Android data.
+            format_authorization.require_unprotected(context.fs)
         with Source(context, plan['source_volume'], plan['source_volume_token']) as source:
             store = Store(source)
             transaction, original = (None, plan)
@@ -1942,10 +1962,10 @@ def boot_check(context):
                     observed[label] = target_hash(context, context.target(label))
                 return observed[label]
             known_linux = all(current(label) == expected or (label == 'boot' and context.mode == 'device'
-                                                              and current(label) in (LINUX_BOOT_K108, LINUX_BOOT_CHARGER_OFF, LINUX_BOOT_K116, LINUX_BOOT_K121, LINUX_BOOT_K122, LINUX_BOOT_K138))
+                                                              and current(label) in (LINUX_BOOT_K108, LINUX_BOOT_CHARGER_OFF, LINUX_BOOT_K116, LINUX_BOOT_K121, LINUX_BOOT_K122, LINUX_BOOT_K138, LINUX_BOOT_K165))
                               for label, expected in baseline.items())
             verified_transaction = None
-            verified_flash, verified_contents = [], []
+            verified_flash, verified_contents, unverified_chained = [], [], []
             if not known_linux:
                 # Merely inserting an unrelated empty card is not proof that
                 # the original installation completed. Bind an exact durable
@@ -1966,7 +1986,7 @@ def boot_check(context):
                     records = read_flash_records(context)
                     changed = [label for label, expected in baseline.items() if current(label) != expected and not (
                         label == 'boot' and context.mode == 'device' and current(label) in (
-                            LINUX_BOOT_K108, LINUX_BOOT_CHARGER_OFF, LINUX_BOOT_K116, LINUX_BOOT_K121, LINUX_BOOT_K122, LINUX_BOOT_K138))]
+                            LINUX_BOOT_K108, LINUX_BOOT_CHARGER_OFF, LINUX_BOOT_K116, LINUX_BOOT_K121, LINUX_BOOT_K122, LINUX_BOOT_K138, LINUX_BOOT_K165))]
                     problems = {}
                     for label in changed:
                         if records.get(label) == current(label):
@@ -1977,17 +1997,32 @@ def boot_check(context):
                             verified_contents.append(label)
                         except bootimage.ImageError as exc:
                             problems[label] = exc.code
+                    # 2026-11-20 (a tester's ROM with an empty vbmeta_system): when the main vbmeta turns
+                    # verification off, the bootloader never reads the chained vbmeta partitions, so what
+                    # they hold cannot stop the start.
+                    chained = [label for label in problems if label in ('vbmeta_system', 'vbmeta_vendor')]
+                    if chained and 'vbmeta' not in problems:
+                        try:
+                            main = bootimage.vbmeta(target_bytes(context, context.target('vbmeta')), verify=False)
+                        except bootimage.ImageError:
+                            main = None
+                        if main is not None and main['flags'] & 2:
+                            for label in chained:
+                                del problems[label]
+                                unverified_chained.append(label)
                     require(changed and not problems, 'BOOT_SAFETY_UNPROVEN',
                             'Changed %s is not a complete image for this phone (%s); flash a good image or use Recovery repair'
                             % (', '.join(sorted(problems)) or 'BOOT', ', '.join(sorted(set(problems.values()))) or 'no proof'),
                             partitions=problems)
-                require(verified_transaction is not None or verified_flash or verified_contents, 'BOOT_SAFETY_UNPROVEN',
+                require(verified_transaction is not None or verified_flash or verified_contents or unverified_chained,
+                        'BOOT_SAFETY_UNPROVEN',
                         'Changed BOOT lacks a completed matching transaction; use Recovery repair or reinsert its source SD')
             return {'ok': True, 'schema': 'a22x.install.boot-check.v1', 'operation': 'boot-check',
                     'mode': context.mode, 'boot_id': context.boot_id, 'normal_boot_allowed': True,
                     'journal_storage_present': present, 'durable_state_checked': present,
                     'known_linux_boot_safe': known_linux, 'verified_completed_transaction': verified_transaction,
                     'verified_recovery_flash': verified_flash, 'verified_by_contents': verified_contents,
+                    'unverified_chained_vbmeta': unverified_chained,
                     'pending': False, 'auto_reboot': False}
         finally:
             for ident, token in reversed(owned):

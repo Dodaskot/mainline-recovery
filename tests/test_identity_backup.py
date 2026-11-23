@@ -107,6 +107,32 @@ class IdentityBackup(unittest.TestCase):
         code, again = self.restore(result, '--confirm')
         self.assertTrue(again['identical'])
 
+    def test_a_copy_without_its_zero_end_is_whole(self):
+        """2026-11-21 copies on an exFAT card: the zero end of a partition was never written to its file
+        (efs.img 7 of 8 MiB, keydata.img empty). The partition's SHA-256 decides, with that end as zeros."""
+        tail = 4096
+        self.data['efs'] = self.data['efs'][:-tail] + bytes(tail)
+        (self.root / 'parts' / 'efs').write_bytes(self.data['efs'])
+        result = self.backup()
+        image = self.root / 'sd' / result['path'].lstrip('/') / 'efs.img'
+        image.write_bytes(image.read_bytes()[:-tail])  # as such a copy holds it
+        code, check = self.run_helper('verify', '--volume', 'sdcard-p1', '--path', result['path'])
+        self.assertEqual(code, 0, check)
+        (self.root / 'parts' / 'efs').write_bytes(os.urandom(PARTS['efs']))
+        code, done = self.restore(result, '--confirm')
+        self.assertEqual((code, done['restored']), (0, ['efs']), done)
+        self.assertEqual((self.root / 'parts' / 'efs').read_bytes(), self.data['efs'])
+        # A missing end that was not zeros is damage, found by the checksum.
+        image.write_bytes(image.read_bytes()[:-1])
+        damaged = bytearray(self.data['efs'][:-tail])
+        damaged[-1] ^= 0xff
+        image.write_bytes(bytes(damaged[:-1]))
+        code, check = self.run_helper('verify', '--volume', 'sdcard-p1', '--path', result['path'])
+        self.assertEqual((code, check['error']['code']), (2, 'BACKUP_DAMAGED'))
+        image.write_bytes(bytes(PARTS['efs'] + 1))
+        code, check = self.run_helper('verify', '--volume', 'sdcard-p1', '--path', result['path'])
+        self.assertEqual((code, check['error']['code']), (2, 'BACKUP_DAMAGED'))
+
     def test_restore_refuses_another_phone_a_changed_backup_and_a_busy_partition(self):
         result = self.backup()
         (self.root / 'parts' / 'efs').write_bytes(bytes(PARTS['efs']))
@@ -230,6 +256,58 @@ class AndroidPartitionsBackup(unittest.TestCase):
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), mock.patch.dict(ib.KINDS['android'], {'ARCHIVE': False}):
             code = ib.main(['--fixture', str(self.root), '--kind', 'android', *extra, *args])
         return code, json.loads(out.getvalue().splitlines()[-1])
+
+    def test_unencrypted_userdata_goes_by_its_files_and_comes_back(self):
+        """2026-11-21: userdata of Android data that encrypts nothing is copied by its files beside the archive,
+        listed with the copies, checked, and put back into an empty userdata."""
+        self.data.update(metadata=os.urandom(1 << 12), userdata=os.urandom(1 << 12))
+        for label in ('metadata', 'userdata'):
+            (self.root / 'parts' / label).write_bytes(self.data[label])
+        self.config('fixture:phone-a')
+        (self.root / 'filesystem-fixture.json').write_text(json.dumps({'schema': 'a22x.filesystem.fixture.v1', 'volumes': [
+            {'id': 'sdcard-p1', 'path': 'sd', 'mounted': True, 'read_only': False},
+            {'id': 'userdata', 'path': 'data', 'mounted': True, 'read_only': False, 'unencrypted_android_data': True}]}))
+        (self.root / 'data/system').mkdir()
+        (self.root / 'data/system/packages.list').write_text('org.example 10123 0 /data/user/0/org.example default:targetSdkVersion=33 3003 0 1\n')
+        (self.root / 'data/media/0/DCIM').mkdir(parents=True)
+        (self.root / 'data/media/0/DCIM/photo.jpg').write_bytes(os.urandom(5000))
+        code, result = self.run_helper('backup', '--volume', 'sdcard-p1', labels='boot,metadata,userdata')
+        self.assertEqual(code, 0, result)
+        self.assertTrue(result['userdata']['path'].startswith('/A22xUserdataBackups/userdata-'))
+        code, listed = self.run_helper('copies')
+        row = next(r for r in listed['backups'] if r.get('userdata_files'))
+        self.assertEqual((row['labels'], row['partitions'], row['manifest_sha256']), (['userdata'], 1, result['userdata']['sha256']))
+        code, checked = self.run_helper('verify', '--volume', 'sdcard-p1', '--path', row['path'])
+        self.assertEqual((code, checked['restorable'], checked['partitions'][0]['label']), (0, True, 'userdata'), checked)
+        # Not into data that is there.
+        code, refused = self.run_helper('restore', '--volume', 'sdcard-p1', '--path', row['path'],
+                                        '--expected-manifest-sha256', row['manifest_sha256'], '--confirm')
+        self.assertEqual((code, refused['error']['code']), (2, 'USERDATA_NOT_EMPTY'))
+        shutil.rmtree(self.root / 'data/system')
+        shutil.rmtree(self.root / 'data/media')
+        code, done = self.run_helper('restore', '--volume', 'sdcard-p1', '--path', row['path'],
+                                     '--expected-manifest-sha256', row['manifest_sha256'], '--confirm')
+        self.assertEqual((code, done['restored']), (0, ['userdata']), done)
+        self.assertTrue((self.root / 'data/system/packages.list').read_text().startswith('org.example'))
+        self.assertEqual(len((self.root / 'data/media/0/DCIM/photo.jpg').read_bytes()), 5000)
+        # 2026-11-21, on the phone: with --replace-data (the review says userdata is replaced) the copy is
+        # checked, then userdata formatted and filled; what was there is gone.
+        (self.root / 'data/stock-leftover').write_text('x')
+        code, done = self.run_helper('restore', '--volume', 'sdcard-p1', '--path', row['path'],
+                                     '--expected-manifest-sha256', row['manifest_sha256'], '--confirm', '--replace-data')
+        self.assertEqual((code, done['restored']), (0, ['userdata']), done)
+        self.assertFalse((self.root / 'data/stock-leftover').exists())
+        self.assertTrue((self.root / 'data/system/packages.list').read_text().startswith('org.example'))
+        # A copy that does not match its index formats nothing.
+        (self.root / 'data/kept').write_text('x')
+        code, refused = self.run_helper('restore', '--volume', 'sdcard-p1', '--path', row['path'],
+                                        '--expected-manifest-sha256', '0' * 64, '--confirm', '--replace-data')
+        self.assertEqual(code, 2, refused)
+        self.assertTrue((self.root / 'data/kept').exists())
+        code, gone = self.run_helper('delete', '--volume', 'sdcard-p1', '--path', row['path'],
+                                     '--expected-manifest-sha256', row['manifest_sha256'], '--confirm')
+        self.assertEqual(code, 0, gone)
+        self.assertEqual(list((self.root / 'sd/A22xUserdataBackups').iterdir()), [])
 
     def test_chosen_partitions_are_saved_with_holes_and_checked(self):
         code, listed = self.run_helper('list')

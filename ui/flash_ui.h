@@ -22,8 +22,13 @@ static bool start_flash_job(App*a,int kind){
     if(a->job.pid||a->preview||!flash_job(kind))return false;
     char*args[20];int n=0;args[n++]=a->python;args[n++]=a->flash_helper;
     if(a->device)args[n++]="--device";else{args[n++]="--fixture";args[n++]=a->fixture;}
-    args[n++]=kind==J_FLASH_TARGETS?"targets":(kind==J_FLASH_CHECK?"check":(kind==J_FLASH_MEMBERS?"members":"write"));
-    if(kind==J_FLASH_MEMBERS){
+    args[n++]=kind==J_FLASH_TARGETS?"targets":(kind==J_FLASH_CHECK?"check":(kind==J_FLASH_MEMBERS?"members":(kind==J_FLASH_STAGE?"payload-stage":"write")));
+    /* A partition of an update_engine payload is taken out into an image on the card first (2026-11-22). */
+    if(kind==J_FLASH_STAGE){
+        if(strncmp(a->flash_member,"payload.bin/",12))return false;
+        args[n++]="--volume";args[n++]=a->flash_volume;args[n++]="--volume-token";args[n++]=a->flash_volume_token;args[n++]="--path";args[n++]=a->flash_path;
+        args[n++]="--partition";args[n++]=a->flash_member+12;
+    }else if(kind==J_FLASH_MEMBERS){
         args[n++]="--volume";args[n++]=a->flash_volume;args[n++]="--volume-token";args[n++]=a->flash_volume_token;args[n++]="--path";args[n++]=a->flash_path;
     }else if(kind!=J_FLASH_TARGETS){
         const char*label=flash_target_label(a);
@@ -53,11 +58,13 @@ static void complete_flash_job(App*a,const Json*j,int kind,bool ok){
         if(list<0||j->tokens[list].type!=J_ARRAY){a->flash_after_targets=false;a->flash_after_label[0]=0;return;}
         for(int i=list+1;i<json_next(j,list)&&a->flash_target_count<FLASH_TARGETS;i=json_next(j,i)){
             FlashTarget*t=&a->flash_targets[a->flash_target_count];jstring(j,i,"label",t->label,sizeof(t->label));jstring(j,i,"title",t->title,sizeof(t->title));
+            t->node[0]=0;jstring(j,i,"node",t->node,sizeof(t->node));
             t->bytes=json_uint(j,json_get(j,i,"size_bytes"),0);t->logical=json_bool(j,json_get(j,i,"logical"),0)==1;t->room=json_uint(j,json_get(j,i,"room_bytes"),0);
             if(t->label[0])a->flash_target_count++;
         }
         a->flash_super_free=json_uint(j,json_get(j,0,"super_free_bytes"),0);
-        a->flash_known=a->flash_target_count>0;a->flash_reason[0]=0;a->dirty=true;
+        a->flash_known=a->flash_target_count>0;a->flash_reason[0]=0;
+        jstring(j,0,"super_error",a->flash_reason,sizeof(a->flash_reason));a->dirty=true;
         /* "Flash it to BOOT" after the stock BOOT was taken out of the firmware (2026-11-10): the
            partitions are known now, so BOOT is chosen and the kept copy checked like any image. */
         if(a->flash_after_targets){
@@ -77,7 +84,8 @@ static void complete_flash_job(App*a,const Json*j,int kind,bool ok){
         int list=json_get(j,0,"members");
         if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list)&&a->flash_member_count<FLASH_MEMBERS_MAX;i=json_next(j,i)){
             FlashMember*m=&a->flash_members[a->flash_member_count];jstring(j,i,"name",m->name,sizeof(m->name));jstring(j,i,"target",m->target,sizeof(m->target));
-            m->bytes=json_uint(j,json_get(j,i,"size"),0);if(m->name[0])a->flash_member_count++;
+            m->bytes=json_uint(j,json_get(j,i,"size"),0);m->payload=json_bool(j,json_get(j,i,"payload"),0)==1;m->incremental=json_bool(j,json_get(j,i,"incremental"),0)==1;
+            if(m->name[0])a->flash_member_count++;
         }
         unsigned int usable=0,match=0,last=0;
         for(unsigned int n=0;n<a->flash_member_count;n++)if(a->flash_members[n].target[0]){usable++;last=n;if(!strcmp(a->flash_members[n].target,flash_target_label(a)))match++;}
@@ -87,8 +95,14 @@ static void complete_flash_job(App*a,const Json*j,int kind,bool ok){
                 "The archive holds no image this recovery can flash.",flash_repick(a,nav_top(a)));return;
         }
         /* One image, for the partition already chosen: it is checked at once, as before. */
-        if(usable==1&&match==1){copy(a->flash_member,sizeof(a->flash_member),a->flash_members[last].name);start_flash_job(a,J_FLASH_CHECK);return;}
+        if(usable==1&&match==1){copy(a->flash_member,sizeof(a->flash_member),a->flash_members[last].name);start_flash_job(a,a->flash_members[last].payload?J_FLASH_STAGE:J_FLASH_CHECK);return;}
         screen(a,FLASH_MEMBERS);return;
+    }
+    if(kind==J_FLASH_STAGE){
+        /* The partition's image is on the card now: it is checked as any image chosen there. */
+        char path[sizeof(a->flash_path)]={0};jstring(j,0,"path",path,sizeof(path));
+        if(path[0]!='/'){files_problem(a,"INVALID_FLASH_REVIEW","The helper did not say where the image was put.",flash_home(a));return;}
+        copy(a->flash_path,sizeof(a->flash_path),path);a->flash_member[0]=0;start_flash_job(a,J_FLASH_CHECK);return;
     }
     if(kind==J_FLASH_CHECK){
         int image=json_get(j,0,"image"),target=json_get(j,0,"target");char label[24]={0};if(target>=0)jstring(j,target,"label",label,sizeof(label));
@@ -134,7 +148,10 @@ static void complete_flash_job(App*a,const Json*j,int kind,bool ok){
     a->result_return=flash_home(a);screen(a,RESULT);
 }
 static void render_flash(App*a){
-    heading(a,"Flash a partition","Pick a partition, then an image from SD, USB stick or phone storage.",true);
+    if(a->flash_from_file){
+        char note[320];snprintf(note,sizeof(note),T("Where should %s go? Tap the partition; system, vendor, product and odm are inside super."),a->fs_selected.name);
+        heading(a,"Flash a partition",NULL,true);raw_text(true);wrapped(a,40,176,640,0,MUTED,note,2);raw_text(false);
+    }else heading(a,"Flash a partition","Pick a partition, then an image from SD, USB stick or phone storage.",true);
     if(!a->flash_known){wrapped(a,48,300,624,1,MUTED,a->job.pid?"Reading partitions...":(a->flash_reason[0]?a->flash_reason:"Partitions are unavailable."),6);return;}
     /* Each partition with a tinted icon, as on the home page; the note follows the last row. */
     static const struct{const char*label;int glyph;unsigned int tone;}looks[]={{"boot",A_OS,0},{"dtbo",ICON_TUNE,3},{"vbmeta",ICON_LOCK,5},
@@ -148,10 +165,14 @@ static void render_flash(App*a){
         surface(a,r,24,PANEL,action);
         gradient(a,(Rect){r.x+18,y+20,60,60},30,ui_theme->tile_fill[tone],ui_theme->tile_fill[tone]);icon(a,glyph,r.x+30,y+32,36,ui_theme->tile_ink[tone]);
         text(a,122,y+12,1,TEXT,t->label);ellipsis(a,122,y+56,380,0,MUTED,t->title);
-        text(a,644-text_width(size,0),y+36,0,MUTED,size);icon(a,ICON_CHEVRON,646,y+35,30,MUTED);register_button(a,r,action,ui_free(a),0);
+        /* Its block device above its size (2026-11-21, a tester, #8: no /dev/block/by-name here to look it up). */
+        if(t->node[0]){raw_text(true);text(a,644-text_width(t->node,0),y+14,0,MUTED,t->node);raw_text(false);text(a,644-text_width(size,0),y+56,0,MUTED,size);}
+        else text(a,644-text_width(size,0),y+36,0,MUTED,size);
+        icon(a,ICON_CHEVRON,646,y+35,30,MUTED);register_button(a,r,action,ui_free(a),0);
         y+=110;
     }
-    text_tile(a,y+14,0,MUTED,"The bootloader, modem and calibration data are not listed and cannot be flashed here.",3);
+    if(a->flash_reason[0])text_tile(a,y+14,0,MUTED,a->flash_reason,3);
+    else text_tile(a,y+14,0,MUTED,"The bootloader, modem and calibration data are not listed and cannot be flashed here.",3);
 }
 /* super: the whole image (as Odin's AP has it) or one logical partition inside (a GSI's system). */
 static void render_flash_super(App*a){
@@ -169,7 +190,7 @@ static void render_flash_super(App*a){
         register_button(a,r,A_FLASH_TARGET+(int)n,ui_free(a),0);y+=124;
     }
     char free_[64];human_bytes(a->flash_super_free,free_,sizeof(free_));snprintf(line,sizeof(line),T("Free in super: %s"),free_);text(a,40,y+10,0,MUTED,line);
-    text_tile(a,y+60,0,MUTED,"A GSI's system.img goes into system. When the image is larger, the partition grows into the free space of super; the other partitions stay as they are.",5);
+    text_tile(a,y+60,0,MUTED,"Sparse or raw images. Each partition takes its image's size, as with fastboot: a larger one grows into the free space of super, a smaller one leaves the rest free.",5);
 }
 static void render_flash_review(App*a){
     char size[64],line[160];human_bytes(a->flash_bytes,size,sizeof(size));
@@ -194,6 +215,7 @@ static void render_flash_review(App*a){
     if(a->flash_logical&&!a->flash_identical){
         char now[48],after[48];human_bytes(a->flash_size_now,now,sizeof(now));human_bytes(a->flash_size_after,after,sizeof(after));
         if(a->flash_size_after>a->flash_size_now)snprintf(line,sizeof(line),T("The partition grows from %s to %s inside super."),now,after);
+        else if(a->flash_size_after&&a->flash_size_after<a->flash_size_now)snprintf(line,sizeof(line),T("The partition shrinks from %s to %s; super keeps the rest free."),now,after);
         else if(a->flash_payload==a->flash_size_now)snprintf(line,sizeof(line),T("The image fills the whole %s partition."),now);
         else snprintf(line,sizeof(line),T("The image fills part of the %s partition; the rest is zeroed."),now);
         y+=wrapped(a,40,y,640,0,GREEN,line,2)+16;
@@ -205,12 +227,16 @@ static void render_flash_review(App*a){
     if(a->flash_warnings[0])y+=text_tile(a,y,0,a->flash_offline?ORANGE:RED,a->flash_warnings,5)+16;
     if(a->flash_rollback[0]&&!a->flash_identical){snprintf(line,sizeof(line),T("The current content will be saved to %s first."),a->flash_rollback);y+=text_tile(a,y,0,MUTED,line,2)+16;}
     text_tile(a,y,0,MUTED,"Recovery stays on the phone, so you can come back here and flash again.",3);
-    button(a,(Rect){28,1320,664,104},a->flash_restore?"Hold 3 seconds to restore":"Hold 3 seconds to flash",A_FLASH_CONFIRM,ui_free(a)&&a->flash_review_valid&&!a->flash_identical&&a->flash_offline,true,3000);
+    button(a,(Rect){28,1320,664,104},a->flash_restore?"Hold 1 second to restore":"Hold 1 second to flash",A_FLASH_CONFIRM,ui_free(a)&&a->flash_review_valid&&!a->flash_identical&&a->flash_offline,true,3000);
 }
 /* Choosing a file only reads, so the picker offers nothing that changes storage. */
 static bool pick_action(App*a,int id,void(*chosen)(App*)){
+    /* Search and filters, and their page with its keyboard, work as in Files (2026-11-22, a tester, #8). */
+    if((id==A_FS_QUERY&&a->screen==FILE_BROWSER)||(a->screen==FILE_PROMPT&&a->fs_prompt_kind==J_FS_QUERY))return false;
+    /* Shared storage keeps its existing userdata token and read-only mount flow. */
+    if(id==A_FS_INTERNAL&&a->flash_pick&&a->screen==FILE_VOLUMES)return files_action(a,id);
     /* A card chosen in the sheet returns to the sheet; the other pickers to their page of volumes. */
-    if(id==A_FS_VOLUME||(id==A_BACK&&a->screen==FILE_BROWSER&&!strcmp(a->fs_path,"/"))){if(!source_back(a))screen(a,FILE_VOLUMES);return true;}
+    if(id==A_FS_VOLUME||(id==A_BACK&&a->screen==FILE_BROWSER&&(!strcmp(a->fs_path,"/")||(a->fs_open_root[0]&&!strcmp(a->fs_path,a->fs_open_root))))){a->fs_open_root[0]=0;if(!source_back(a))screen(a,FILE_VOLUMES);return true;}
     if(id>=A_FS_VOLUME_ITEM&&id<A_FS_VOLUME_ITEM+a->volume_count){
         int index=id-A_FS_VOLUME_ITEM;const FileVolume*v=&a->volumes[index];if(!flash_source_allowed(v))return true;
         bool mounted=v->mounted;select_volume(a,index);
@@ -242,7 +268,9 @@ static void render_flash_members(App*a){
         int action=A_FLASH_MEMBER+(int)n;surface(a,r,24,PANEL,usable?action:0);
         raw_text(true);ellipsis(a,52,y+18,606,1,usable?TEXT:MUTED,m->name);raw_text(false);
         human_bytes(m->bytes,size,sizeof(size));
-        if(usable)snprintf(line,sizeof(line),T("%s  /  for %s"),size,m->target);else snprintf(line,sizeof(line),"%s  /  %s",size,tr("not a partition this recovery writes"));
+        if(usable&&m->incremental)snprintf(line,sizeof(line),T("%s  /  for %s, an update of the one installed"),size,m->target);
+        else if(usable)snprintf(line,sizeof(line),T("%s  /  for %s"),size,m->target);
+        else snprintf(line,sizeof(line),"%s  /  %s",size,tr(m->incremental?"an update this recovery cannot apply":"not a partition this recovery writes"));
         ellipsis(a,52,y+66,606,0,usable?GREEN:MUTED,line);
         if(usable){icon(a,ICON_CHEVRON,646,y+40,30,MUTED);register_button(a,r,action,ui_free(a),0);}
         y+=124;
@@ -272,12 +300,20 @@ static bool flash_action(App*a,int id){
         a->flash_restore=a->flash_pick=true;a->flash_review_valid=false;a->flash_label[0]=0;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;
         screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
     }
-    if(id==A_BACK&&a->screen==FLASH){a->flash_after_targets=false;a->flash_after_label[0]=0;}  /* then the usual Back */
-    if(id==A_FLASH||(id==A_DONE&&a->result_return==FLASH)){a->flash_after_targets=false;a->flash_after_label[0]=0;a->flash_restore=false;a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;}
+    if(id==A_BACK&&a->screen==FLASH){a->flash_after_targets=false;a->flash_after_label[0]=0;
+        if(a->flash_from_file){a->flash_from_file=false;screen(a,FILE_INFO);return true;}}  /* then the usual Back */
+    /* From a file's page: the partitions are listed and the one tapped takes this file (#8). */
+    if(id==A_FS_FLASH&&a->screen==FILE_INFO&&file_is_regular(&a->fs_selected)){
+        a->flash_after_targets=false;a->flash_after_label[0]=0;a->flash_restore=false;a->flash_pick=a->flash_review_valid=false;
+        a->flash_known=false;a->flash_reason[0]=0;a->flash_from_file=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;
+    }
+    if(id==A_FLASH||(id==A_DONE&&a->result_return==FLASH)){a->flash_from_file=false;a->flash_after_targets=false;a->flash_after_label[0]=0;a->flash_restore=false;a->flash_pick=a->flash_review_valid=false;a->flash_known=false;a->flash_reason[0]=0;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;}
     if(id==A_FLASH_SUPER&&a->screen==FLASH){screen(a,FLASH_SUPER);return true;}
     if(id==A_BACK&&a->screen==FLASH_SUPER){screen(a,FLASH);return true;}
     if((a->screen==FLASH||a->screen==FLASH_SUPER)&&id>=A_FLASH_TARGET&&id<A_FLASH_TARGET+(int)a->flash_target_count){
-        a->flash_selected=id-A_FLASH_TARGET;a->flash_pick=true;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
+        a->flash_selected=id-A_FLASH_TARGET;
+        if(a->flash_from_file){a->flash_from_file=false;flash_chosen(a);return true;}
+        a->flash_pick=true;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
     }
     if(a->flash_pick){
         /* Samsung's firmware is chosen with the same picker (2026-11-10): its AP file. */
@@ -294,7 +330,7 @@ static bool flash_action(App*a,int id){
         /* The partition follows the image: vendor.img inside goes to super/vendor. */
         for(unsigned int n=0;n<a->flash_target_count;n++)if(!strcmp(a->flash_targets[n].label,m->target))a->flash_selected=(int)n;
         if(strcmp(flash_target_label(a),m->target))return true;
-        copy(a->flash_member,sizeof(a->flash_member),m->name);start_flash_job(a,J_FLASH_CHECK);return true;
+        copy(a->flash_member,sizeof(a->flash_member),m->name);start_flash_job(a,m->payload?J_FLASH_STAGE:J_FLASH_CHECK);return true;
     }
     if(id==A_BACK&&a->screen==FLASH_MEMBERS){reopen(a,flash_repick(a,came_from(a,flash_home(a))));return true;}
     if(id==A_FLASH_CONFIRM&&a->screen==FLASH_REVIEW){if(a->flash_review_valid&&!a->flash_identical)start_flash_job(a,J_FLASH_WRITE);return true;}

@@ -425,6 +425,18 @@ class LinuxTests(unittest.TestCase):
         self.assertEqual(len(partials), 1)
         self.assertFalse((partials[0] / "COMPLETE.json").exists())
         self.assertFalse(json.loads((partials[0] / "FAILED.json").read_text())["restorable"])
+        # Its data went: only the record stays (2026-11-22, live: a cancelled copy kept 172 MB).
+        self.assertEqual(sorted(p.name for p in partials[0].iterdir()), ["FAILED.json"])
+
+    def test_a_copy_cut_short_without_a_record_gives_its_space_back_at_the_next_plan(self):
+        """2026-11-22, live: power or a hard kill leaves a .partial folder with data and no FAILED.json."""
+        stale = self.repo / ".cut.partial-0123456789abcdef"
+        stale.mkdir()
+        (stale / "boot.img.gz").write_bytes(b"x" * 4096)
+        (stale / "userdata.partclone.zst").write_bytes(b"y" * 8192)
+        engine.make_backup_plan(self.context, "linux", self.repo, "next", data_format="partclone-ext4")
+        self.assertEqual(sorted(p.name for p in stale.iterdir()), ["FAILED.json"])
+        self.assertEqual(json.loads((stale / "FAILED.json").read_text())["error"], "INTERRUPTED")
 
     def test_host_qualification_rejects_fixture_as_real_source(self):
         backup = self.snapshot()
@@ -432,6 +444,8 @@ class LinuxTests(unittest.TestCase):
         self.error("QUALIFICATION_REAL_SOURCE_REQUIRED", linux.qualify_to_images, backup, output, {}, {})
         self.assertFalse(output.exists())
 
+    @unittest.skipUnless(os.geteuid() == 0, 'the capsule must be root-owned: '
+                         'unshare --map-auto --map-root-user python3 -B -m pytest tests/test_linux_workflow.py')
     def test_host_image_harness_new_files_capsule_binding_and_reuse_refusal(self):
         # Deliberately simulated physical-source envelope with reduced test
         # geometry. No production option admits this fixture as a device.
@@ -468,9 +482,14 @@ class LinuxTests(unittest.TestCase):
             capsule = qualification.make_capsule(record, acceptance)
             capsule_path = self.base / "capsule.json"
             capsule_path.write_bytes(canonical(capsule))
+            # The phone as device_binding sees it: in its RAM recovery, with the snapshot's identity.
+            phone = SimpleNamespace(mode="device", assert_recovery=lambda: None, device=manifest["device"])
+            # admission() reads the phone's own toolchain when none is given (an empty dict counts as none);
+            # implementation() is replaced here, so these tools are only passed through.
+            pinned = toolchain["tools"]
             with mock.patch.object(qualification, "CAPSULE_PATH", capsule_path), mock.patch.object(qualification, "implementation", return_value=record):
-                result = qualification.admission(SimpleNamespace(mode="device"), parts=[{}], tools={})
-                self.assertTrue(result["eligible"])
+                result = qualification.admission(phone, parts=[{}], tools=pinned)
+                self.assertTrue(result["eligible"], result)
                 changed = copy.deepcopy(record)
                 changed["sources"]["backend/linux_workflow.py"] = "0" * 64
                 self.assertEqual(result["basis"], "capsule")
@@ -480,10 +499,10 @@ class LinuxTests(unittest.TestCase):
                        "blockers": [], "linux_boot_sha256": None}
                 with mock.patch.object(qualification, "implementation", return_value=changed), \
                         mock.patch.object(qualification, "built_in_admission", return_value=own):
-                    self.assertEqual(qualification.admission(SimpleNamespace(mode="device"), parts=[{}], tools={}), own)
+                    self.assertEqual(qualification.admission(phone, parts=[{}], tools=pinned), own)
                 with mock.patch.object(qualification, "implementation", return_value=changed), \
                         mock.patch.object(qualification, "device_binding", side_effect=RecoveryError("GEOMETRY_MISMATCH", "other layout")):
-                    refused = qualification.admission(SimpleNamespace(mode="device"), parts=[{}], tools={})
+                    refused = qualification.admission(phone, parts=[{}], tools=pinned)
                 self.assertFalse(refused["eligible"])
                 self.assertEqual(refused["blockers"], ["GEOMETRY_MISMATCH"])
         self.assertFalse((output / "userdata.img").is_symlink())

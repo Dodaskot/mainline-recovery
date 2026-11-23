@@ -12,6 +12,7 @@ import argparse
 import base64
 import binascii
 import contextlib
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -39,7 +40,7 @@ COLORS = ('bg', 'panel', 'panel2', 'line', 'edge', 'text', 'muted', 'accent', 'c
           'hero_top', 'hero_bottom', 'hero_text', 'hero_sub')
 REQUIRED = ('bg', 'panel', 'text', 'muted', 'accent', 'on_accent')
 # The names the interface already uses for its own themes and terminal colors.
-RESERVED = {'graphite', 'daylight', 'aurora', 'auto', 'catppuccin-mocha', 'catppuccin-latte', 'dracula', 'nord', 'tokyo-night',
+RESERVED = {'graphite', 'daylight', 'aurora', 'amoled', 'auto', 'catppuccin-mocha', 'catppuccin-latte', 'dracula', 'nord', 'tokyo-night',
             'gruvbox-dark', 'gruvbox-light', 'solarized-dark', 'solarized-light'}
 # What cannot be read is refused. Tighter limits for the built-in themes are in ui/tools/check_themes.py.
 READABLE = (('text', 'bg', 4.5), ('text', 'panel', 4.5), ('text', 'panel2', 4.5), ('text', 'container', 4.5), ('muted', 'panel', 3),
@@ -88,7 +89,15 @@ def text_field(value, limit, name):
     return encoded
 
 
-def interface_colors(source, dark):
+def readability(condition, message, warnings):
+    if condition:
+        return
+    if warnings is None:
+        raise ThemeError('THEME_UNREADABLE', message)
+    warnings.append(message)
+
+
+def interface_colors(source, dark, warnings=None):
     values = source.get('colors')
     require(isinstance(values, dict), 'THEME_BAD_FORMAT', 'colors must be an object')
     known = set(COLORS) | {'tile_fill', 'tile_ink', 'terminal_bg', 'terminal_fg'}
@@ -119,19 +128,19 @@ def interface_colors(source, dark):
         tiles.append([color(item, name) for item in items] or [fallback] * 6)
     for one, two, least in READABLE:
         ratio = contrast(c[one], c[two])
-        require(ratio >= least, 'THEME_UNREADABLE', f'{one} on {two} would be too hard to read ({ratio:.1f}, needs {least})')
+        readability(ratio >= least, f'{one} on {two} ({ratio:.1f}:1, needs {least}:1)', warnings)
     for ink, fill in zip(tiles[1], tiles[0]):
-        require(contrast(ink, fill) >= 2, 'THEME_UNREADABLE', 'A tile icon would be too hard to read')
+        readability(contrast(ink, fill) >= 2, 'A tile icon is hard to see', warnings)
     return c, tiles
 
 
-def terminal_colors(source):
+def terminal_colors(source, warnings=None):
     value = source.get('terminal')
     require(isinstance(value, dict), 'THEME_BAD_FORMAT', 'terminal must be an object')
     palette = value.get('palette')
     require(isinstance(palette, list) and len(palette) == 16, 'THEME_BAD_FORMAT', 'The terminal palette needs 16 colors')
     background, foreground = color(value.get('background'), 'background'), color(value.get('foreground'), 'foreground')
-    require(contrast(background, foreground) >= 4.5, 'THEME_UNREADABLE', 'The terminal text would be too hard to read')
+    readability(contrast(background, foreground) >= 4.5, 'Terminal text is hard to read', warnings)
     return background, foreground, [color(item, 'palette') for item in palette]
 
 
@@ -168,7 +177,7 @@ def pixel(pixels, width, x, y):
     return pixels[spot] << 16 | pixels[spot + 1] << 8 | pixels[spot + 2]
 
 
-def compile_theme(data, fallback_code=''):
+def compile_theme(data, fallback_code='', *, warnings=None):
     """Return (code, name, flags, compiled bytes) for the contents of a theme file."""
     require(len(data) <= SOURCE_LIMIT, 'THEME_TOO_LARGE', 'The theme file is too large')
     try:
@@ -194,7 +203,7 @@ def compile_theme(data, fallback_code=''):
         dark = source.get('dark', luminance(color(raw, 'bg')) < .25 if raw is not None else True)
         require(isinstance(dark, bool), 'THEME_BAD_FORMAT', 'dark must be true or false')
         flags |= 0 if dark else FLAG_LIGHT
-        colors, tiles = interface_colors(source, dark)
+        colors, tiles = interface_colors(source, dark, warnings)
         if 'image' in source:
             width, height, pixels = picture(source['image'])
             thumb = thumbnail(width, height, pixels)
@@ -203,13 +212,25 @@ def compile_theme(data, fallback_code=''):
         # Glass needs something behind it, so a theme without a picture stays solid unless it asks.
         alphas = [glass.get('surface_alpha', 176 if pixels else 255), glass.get('edge_alpha', 110 if pixels else 255), glass.get('shadow_strength', 70 if pixels else 0)]
         require(all(type(item) is int and 0 <= item <= 255 for item in alphas) and alphas[0] >= 96, 'THEME_BAD_FORMAT', 'glass values must be 0 to 255, surface_alpha at least 96')
+        blur = glass.get('blur', 0)
+        require(type(blur) is int and 0 <= blur <= 100, 'THEME_BAD_FORMAT', 'glass.blur must be 0 to 100')
+        flags |= blur << 8
         layout = source.get('layout', 'tiles')
         require(layout in ('tiles', 'list'), 'THEME_BAD_FORMAT', 'layout must be tiles or list')
         flags |= FLAG_BENTO if layout == 'tiles' else 0
+        geometry = source.get('tile_style', {})
+        require(isinstance(geometry, dict), 'THEME_BAD_FORMAT', 'tile_style must be an object')
+        for field, maximum, shift in (('radius', 90, 16), ('icon_radius', 42, 23), ('border', 6, 29)):
+            if field in geometry:
+                value = geometry[field]
+                require(type(value) is int and 0 <= value <= maximum, 'THEME_BAD_FORMAT',
+                        f'tile_style.{field} must be 0 to {maximum}')
+                flags |= (value + 1) << shift
+
     palette = [0] * 16
     if has_terminal:
         flags |= FLAG_TERMINAL
-        colors['terminal_bg'], colors['terminal_fg'], palette = terminal_colors(source)
+        colors['terminal_bg'], colors['terminal_fg'], palette = terminal_colors(source, warnings)
     top, bottom = colors['bg'], colors['bg']
     if pixels:
         top, bottom = pixel(pixels, width, width // 2, height // 10), pixel(pixels, width, width // 2, height * 9 // 10)
@@ -330,6 +351,47 @@ def restore(context):
     return on_disk(context, forget)
 
 
+def editor_theme(path, *, warnings):
+    """Convert the native editor draft to the same source model validated for PC themes."""
+    with path.open('rb') as source:
+        header = source.read(HEADER.size)
+        require(len(header) == HEADER.size, 'THEME_BAD_FORMAT', 'Incomplete editor draft')
+        magic, flags, *fields = HEADER.unpack(header)
+        require(magic == MAGIC and flags & FLAG_UI, 'THEME_BAD_FORMAT', 'Invalid editor draft')
+        ink = ['#%06x' % value for value in fields[:55]]
+        surface, edge, shadow, _, _, width, height = fields[55:62]
+        code, name, note = (field.split(b'\0', 1)[0].decode('utf-8') for field in fields[-3:])
+        require(width <= IMAGE_WIDTH and height <= IMAGE_HEIGHT and bool(width) == bool(height),
+                'THEME_BAD_IMAGE', 'Invalid backdrop dimensions')
+        pixels = source.read(width * height * 3 + 1)
+        require(len(pixels) == width * height * 3, 'THEME_BAD_IMAGE', 'Incomplete editor backdrop')
+    colors = dict(zip(COLORS, ink[:25]))
+    colors.update(tile_fill=ink[25:31], tile_ink=ink[31:37], terminal_bg=ink[37], terminal_fg=ink[38])
+    if code:
+        require(re.fullmatch(r'[a-z0-9-]{3,23}', code) and code not in RESERVED,
+                'THEME_BAD_CODE', 'Invalid custom theme identifier')
+        saved = settings.RAM_THEMES / (code + '.theme')
+        require(saved.is_file() and not saved.is_symlink(), 'THEME_MISSING', 'The theme was removed')
+    else:
+        number = next((i for i in range(1, INSTALLED_LIMIT + 1)
+                       if not any((folder / f'custom-{i}.theme').exists() for folder in (settings.RAM_THEMES, BUNDLED))), None)
+        require(number is not None, 'THEME_LIMIT', 'Remove a custom theme first')
+        code = f'custom-{number}'
+    draft = dict(format=1, code=code, name=name, colors=colors,
+                 dark=not bool(flags & FLAG_LIGHT), layout='tiles' if flags & FLAG_BENTO else 'list',
+                 glass=dict(surface_alpha=surface, edge_alpha=edge, shadow_strength=shadow, blur=(flags >> 8) & 127),
+                 tile_style={field: encoded - 1 for field, encoded in
+                             (('radius', (flags >> 16) & 127), ('icon_radius', (flags >> 23) & 63),
+                              ('border', (flags >> 29) & 7)) if encoded})
+    if note:
+        draft['note'] = note
+    if flags & FLAG_TERMINAL:
+        draft['terminal'] = dict(background=ink[37], foreground=ink[38], palette=ink[39:55])
+    if pixels:
+        draft['image'] = dict(width=width, height=height, data=base64.b64encode(zlib.compress(pixels, 1)).decode('ascii'))
+    return compile_theme(json.dumps(draft).encode(), warnings=warnings)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
@@ -345,6 +407,9 @@ def main(argv=None):
     add.add_argument('--path', required=True)
     commands.add_parser('remove').add_argument('--code', required=True)
     commands.add_parser('restore')
+    edit = commands.add_parser('save-editor')
+    edit.add_argument('draft', type=Path)
+    edit.add_argument('--allow-low-contrast', action='store_true')
     args = parser.parse_args(argv)
     try:
         if args.command == 'compile':
@@ -356,6 +421,18 @@ def main(argv=None):
             if args.command == 'remove':
                 result = {'kept': remove(context, args.code)}
                 code, name, flags = args.code, '', 0
+            elif args.command == 'save-editor':
+                settings.RAM_THEMES.mkdir(parents=True, exist_ok=True)
+                directory = os.open(settings.RAM_THEMES, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+                try:
+                    fcntl.flock(directory, fcntl.LOCK_EX)
+                    warnings = []
+                    code, name, flags, data = editor_theme(args.draft, warnings=warnings)
+                    require(not warnings or args.allow_low_contrast, 'THEME_UNREADABLE',
+                            warnings[0] if warnings else '')
+                    result = {'kept': install(context, code, data), 'low_contrast': bool(warnings)}
+                finally:
+                    os.close(directory)
             elif args.command == 'restore':
                 result = {'kept': restore(context)}
                 code, name, flags = '', '', 0

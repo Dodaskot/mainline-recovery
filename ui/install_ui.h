@@ -210,7 +210,7 @@ static void render_install_review(App*a,bool result){
     bool current=(uint64_t)time(NULL)<=m->expires,at_end=m->review_scroll>=install_review_max_scroll(a);
     const char*note=!current?"This plan expired. Return and review again.":(!m->can_execute?"The plan is blocked. Read the reported blockers.":(!at_end?"Scroll to the end before confirming.":"Leaving the button cancels the hold."));
     text(a,40,1282,0,!current||!m->can_execute?RED:MUTED,note);
-    button(a,(Rect){28,1330,664,108},stock?"Hold 5 seconds to install stock":"Hold 3 seconds to flash BOOT",A_INSTALL_CONFIRM,ui_free(a)&&m->plan_valid&&m->can_execute&&current&&at_end&&m->review_bottom_seen,true,m->hold_ms);
+    button(a,(Rect){28,1330,664,108},stock?"Hold 2 seconds to install stock":"Hold 1 second to flash BOOT",A_INSTALL_CONFIRM,ui_free(a)&&m->plan_valid&&m->can_execute&&current&&at_end&&m->review_bottom_seen,true,m->hold_ms);
 }
 static bool start_install_job(App*a,int kind){
     InstallState*m=&a->install;if(a->job.pid||a->preview||!install_job(kind))return false;
@@ -400,6 +400,7 @@ static bool install_action(App*a,int id){
         return true;
     }
     if(m->pick_source){
+        if((id==A_FS_QUERY&&a->screen==FILE_BROWSER)||(a->screen==FILE_PROMPT&&a->fs_prompt_kind==J_FS_QUERY))return false;  /* search and filters, as in Files */
         if(id==A_INSTALL_CANCEL_PICK||(id==A_BACK&&a->screen==FILE_VOLUMES)){m->pick_source=false;screen(a,INSTALL);return true;}
         if(id==A_BACK&&a->screen==FILE_BROWSER&&!strcmp(a->fs_path,"/")){screen(a,FILE_VOLUMES);return true;}
         if(id==A_FS_VOLUME){screen(a,FILE_VOLUMES);return true;}

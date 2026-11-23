@@ -232,13 +232,16 @@ class Super:
                 require(read_at(self.fd, offset, len(blob)) == blob, 'READBACK_MISMATCH', 'The metadata of super did not read back')
 
     def resize(self, name, size, commit=True):
-        """Make partition NAME exactly SIZE bytes (rounded up to the alignment of super), taking
-        free space after its own extents first; the group's maximum size is kept. Without COMMIT
-        only the metadata in memory changes, for several changes written at once by commit()."""
+        """Make partition NAME exactly SIZE bytes (rounded up to the logical block of super, as liblp
+        does: an image with an AVB footer keeps it at the very end, where it is looked for), taking
+        free space after its own extents first; new extents start at the alignment of super. The
+        group's maximum size is kept. Without COMMIT only the metadata in memory changes, for several
+        changes written at once by commit()."""
         p = self.partition(name)
         device = self.metadata['devices'][0]
         align = max(device['alignment'], SECTOR) // SECTOR
-        want = -(-size // (align * SECTOR)) * align  # sectors, rounded up to the alignment
+        unit = max(self.geometry['logical_block_size'], SECTOR) // SECTOR
+        want = -(-size // (unit * SECTOR)) * unit  # sectors, rounded up to the logical block
         group = self.metadata['groups'][p['group']]
         others = sum(self.size_of(q) for q in self.metadata['partitions'] if q['group'] == p['group'] and q is not p)
         require(not group['maximum_size'] or others + want * SECTOR <= group['maximum_size'], 'GROUP_FULL',
@@ -256,7 +259,9 @@ class Super:
         elif want > have:
             need = want - have
             for start, end in self.free_regions():
-                start = -(-start // align) * align
+                # Free space right after its last extent is taken as it is; elsewhere from the alignment.
+                if not (own and own[-1]['type'] == TARGET_LINEAR and own[-1]['start'] + own[-1]['sectors'] == start):
+                    start = -(-start // align) * align
                 if start >= end:
                     continue
                 take = min(need, end - start)
@@ -344,7 +349,7 @@ class Super:
         p = self.partition(name)
         spans = [(e['start'] * SECTOR, e['sectors'] * SECTOR, e['type']) for e in self.extents_of(p)]
         total = sum(span for _, span, _ in spans)
-        image, whole, done = hashlib.sha256(), hashlib.sha256(), 0
+        image, done = hashlib.sha256(), 0
 
         def put(data):
             nonlocal done
@@ -369,9 +374,9 @@ class Super:
         length = 0
         for data in chunks:
             image.update(data)
-            whole.update(data)
             length += len(data)
             put(data)
+        whole = image.copy()
         zero = bytes(1 << 20)
         while done < total:
             data = zero[:min(len(zero), total - done)]

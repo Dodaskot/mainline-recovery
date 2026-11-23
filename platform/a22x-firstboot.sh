@@ -562,6 +562,14 @@ phone_build_needed() {
     [ "$(cat /opt/a22x-phoc/built-for 2>/dev/null)" != "$key" ]
 }
 build_for_phone() {
+    # Phrog first from the project's package for this distribution and its Phosh (packaging/phrog,
+    # built on GitHub's arm64 machines): nothing is built here when one matches (2026-11-22, the owner:
+    # not 30-40 minutes on the phone). Where none matches, the distribution's Phrog or a build below.
+    if [ "$GREETER" = phrog ] && [ -f /opt/a22x-conn/build/a22x-phrog-package.sh ]; then
+        if sh /opt/a22x-conn/build/a22x-phrog-package.sh >> "$LOG" 2>&1; then
+            say "Phrog installed from its package for this system"
+        fi
+    fi
     command -v pacman >/dev/null || return 0
     need=
     case " $SHELLS " in *" phosh "*) need=1 ;; esac
@@ -602,7 +610,7 @@ while [ -e /var/lib/pacman/db.lck ]; do sleep 20; done
 status=0
 sh /opt/a22x-conn/build/a22x-build-phoc.sh || status=1
 if [ -f /usr/local/lib/a22x-phrog/built-for ]; then
-    sh /opt/a22x-conn/build/a22x-build-phrog.sh || status=1
+    sh /opt/a22x-conn/build/a22x-phrog-package.sh || sh /opt/a22x-conn/build/a22x-build-phrog.sh || status=1
 fi
 exit $status
 S

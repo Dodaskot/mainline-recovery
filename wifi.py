@@ -680,11 +680,24 @@ def connect(ssid, password, hidden, use_saved=False, keep=True):
     # 2026-11-10: the exact time from the internet, without making the join wait for it.
     import clock
     clock.sync_in_background()
+    prepare_web_engine()
     result = state(ssid)
     if keep:
         # Joined either way; whether it was saved is said (2026-11-14 review: it was not, silently).
         result['remembered'] = remember(ssid, key) is True
     return result
+
+
+def prepare_web_engine():
+    """2026-11-19, the owner: with Wi-Fi the browser engine is fetched into RAM at once and kept there
+    until the recovery restarts, so the browser opens without waiting. Nothing is written to a card."""
+    try:
+        if 'a22x.recovery=1' not in Path('/proc/cmdline').read_text().split():
+            return  # only on the phone's recovery, never from tests or a host
+        import web_cache
+        web_cache.prefetch_in_background()
+    except (ImportError, OSError):
+        pass
 
 
 def auto():
@@ -696,9 +709,11 @@ def auto():
         return {**state(b''), 'saved_count': 0}
     now = state()
     if now['connected']:
+        prepare_web_engine()
         return {**now, 'saved_count': len(networks), 'tried': 0}
     found = scan()
     if found['connected']:
+        prepare_web_engine()
         return {**state(), 'saved_count': len(networks), 'tried': 0}
     tried = []
     for network in found['networks']:

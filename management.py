@@ -108,6 +108,43 @@ def _add_input(items, records, name, path, limit=MAX_LOG):
                      'tail_only': truncated}
 
 
+SUMMARY_LABELS = ('boot', 'dtbo', 'vbmeta', 'vbmeta_system', 'vbmeta_vendor', 'recovery')
+
+
+def partition_summary():
+    """What the small Android partitions hold, for a report (2026-11-20: a tester's normal boot was refused
+    for a vbmeta_system that was not an image): size, SHA-256, the AVB header's flags, whether they are
+    erased, and how this recovery judges them. Read only; never their payload."""
+    import bootimage
+    import install
+    out = {}
+    try:
+        context = install.DeviceContext()
+    except Exception:  # noqa: BLE001 - a report must not fail for this part
+        return out
+    for label in SUMMARY_LABELS:
+        row = {}
+        try:
+            data = install.target_bytes(context, context.target(label))
+            row.update(bytes=len(data), sha256=hashlib.sha256(data).hexdigest(), erased=not any(data),
+                       magic=data[:8].hex())
+            if data[:4] == b'AVB0':
+                try:
+                    meta = bootimage.vbmeta(data, verify=False)
+                    row.update(avb_flags=meta['flags'], avb_algorithm=meta['algorithm'])
+                except bootimage.ImageError as error:
+                    row['avb_error'] = error.code
+            try:
+                judged = bootimage.inspect(label, data)
+                row['judged'] = judged.get('kind', 'ok')
+            except bootimage.ImageError as error:
+                row['judged'] = error.code
+        except Exception as error:  # noqa: BLE001
+            row['error'] = type(error).__name__
+        out[label] = row
+    return out
+
+
 def archive_bytes(context):
     items, records = {}, {}
     run = context.root / 'management-logs' if context.mode == 'fixture' else RUN
@@ -134,6 +171,11 @@ def archive_bytes(context):
             records['logs/dmesg.txt'] = {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'tail_only': len(p.stdout) > MAX_LOG}
         except (OSError, subprocess.SubprocessError):
             pass
+        partitions = partition_summary()
+        if partitions:
+            data = json.dumps(partitions, indent=1).encode()
+            items['logs/partitions.json'] = data
+            records['logs/partitions.json'] = {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'tail_only': False}
     names = ['boot.json', 'ui.log', 'ui.stdout', 'diagnostics.log', 'ssh-start.log',
              'power-volumes.json', 'power-storage.json', 'maintenance.log', 'display.log',
              'android-last.json', 'android-last-kmsg.txt']  # how Android's last start ended (android_log.py)
@@ -159,7 +201,7 @@ def archive_bytes(context):
 
 def export(context, volume, expected=None, confirmed=False):
     context.confirm(confirmed)
-    with context.operation_lock(), fs.PinnedVolume(context, volume, expected, writing=True) as pin:
+    with context.operation_lock(shared=True), fs.PinnedVolume(context, volume, expected, writing=True) as pin:
         data = archive_bytes(context)
         space = os.fstatvfs(pin.fd)
         if space.f_bavail * space.f_frsize < len(data) + 16 * 1024 * 1024:

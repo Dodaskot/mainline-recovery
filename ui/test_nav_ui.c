@@ -14,7 +14,8 @@
 
 typedef struct{App app;unsigned int language;const Theme*theme;const TerminalScheme*terminal;int depth;char path[384];}State;
 static State*queue[4096];static int head,tail;
-static bool seen[80][80];
+enum { WALK_SCREENS=WEB_BROWSER+1 };
+static bool seen[WALK_SCREENS][WALK_SCREENS];
 static void save(State*s,const App*a){memcpy(&s->app,a,sizeof(App));s->language=ui_language;s->theme=ui_theme;s->terminal=ui_terminal;}
 static void load(const State*s,App*a){memcpy(a,&s->app,sizeof(App));ui_language=s->language;ui_theme=s->theme;ui_terminal=s->terminal;}
 
@@ -27,7 +28,7 @@ static int walk(void){
     a->fs_prompt_kind=0;a->catalog_return=HOME;a->catalog_saving=false;a->focus=-1;a->button_count=0;
     a->device=true;a->preview=true;a->inventory_ok=true;a->successful=true;a->now=milliseconds();screen(a,HOME);
     State*first=calloc(1,sizeof(State));if(!first)return 2;save(first,a);snprintf(first->path,sizeof(first->path),"0");queue[tail++]=first;
-    int wrong=0,edges=0,pages=0;bool page_seen[80]={false};
+    int wrong=0,edges=0,pages=0;bool page_seen[WALK_SCREENS]={false};
     while(head<tail){
         State*s=queue[head++];load(s,a);render(a);
         int ids[MAX_BUTTONS],count=0;
@@ -42,24 +43,31 @@ static int walk(void){
             if(id==A_BACK||id==A_NAV_BACK||id==A_NAV_HOME||id==A_DONE||(id>=A_LANGUAGE_ITEM&&id<A_LANGUAGE_ITEM+LANGUAGE_COUNT))continue;
             load(s,a);render(a);int before=(int)a->screen;tap_action(a,id);int after=(int)a->screen;
             if(after==before)continue;
-            edges++;if(after<80&&!page_seen[after]){page_seen[after]=true;pages++;}
+            edges++;if(after<WALK_SCREENS&&!page_seen[after]){page_seen[after]=true;pages++;}
             render(a);int back=nav_back_action(a),target=-1;
             State*next=calloc(1,sizeof(State));if(!next)return 2;save(next,a);next->depth=s->depth+1;snprintf(next->path,sizeof(next->path),"%s >%d> %d",s->path,id,after);
             if(back){tap_action(a,back);target=(int)a->screen;}
-            if(back==A_BACK&&target!=before&&!nav_passing((enum Screen)before)){
+            /* A tab is a switch at the top (shell_ui.h, 2026-11-22): Back from a tab's page goes up its tab,
+               to its first page or to Overview, never to the tab it came from. */
+            bool tab=id>=A_TAB&&id<A_TAB+TAB_COUNT;
+            /* Its pages are walked on all the same (2026-11-22: the Systems tab is reached through the tab
+               alone since Home's Install card became two, Linux and Android). */
+            bool tab_up=tab&&back==A_BACK&&(target==HOME||target==(int)tab_root(id-A_TAB));
+            if(!tab_up&&back==A_BACK&&target!=before&&!nav_passing((enum Screen)before)){
                 wrong++;fprintf(stderr,"Back from page %d (opened from %d by action %d) leads to %d; path %s\n",after,before,id,target,s->path);
             }
-            if(before<80&&after<80&&!seen[before][after]&&next->depth<7&&tail<4096){seen[before][after]=true;queue[tail++]=next;}else free(next);
+            if(before<WALK_SCREENS&&after<WALK_SCREENS&&!seen[before][after]&&next->depth<7&&tail<4096){seen[before][after]=true;queue[tail++]=next;}else free(next);
         }
         free(s);
     }
-    /* The terminal opens over any page (swipe up and hold): Back returns to that page, Home goes home. */
+    /* Recent screens open over any page (swipe up and hold, or the third button; 2026-11-20, they opened
+       the terminal before): Back returns to that page, Home goes home. */
     screen(a,HOME);screen(a,OS_MENU);render(a);tap_action(a,A_NAV_TERMINAL);
-    if(a->screen!=TERMINAL){wrong++;fprintf(stderr,"the terminal did not open over page %d\n",(int)OS_MENU);}
+    if(a->screen!=RECENTS){wrong++;fprintf(stderr,"the recent screens did not open over page %d\n",(int)OS_MENU);}
     render(a);tap_action(a,A_NAV_BACK);
-    if(a->screen!=OS_MENU){wrong++;fprintf(stderr,"Back from the terminal leads to %d, not to page %d under it\n",(int)a->screen,(int)OS_MENU);}
+    if(a->screen!=OS_MENU){wrong++;fprintf(stderr,"Back from the recent screens leads to %d, not to page %d under it\n",(int)a->screen,(int)OS_MENU);}
     render(a);tap_action(a,A_NAV_TERMINAL);render(a);tap_action(a,A_NAV_HOME);
-    if(a->screen!=HOME){wrong++;fprintf(stderr,"Home from the terminal leads to %d\n",(int)a->screen);}
+    if(a->screen!=HOME){wrong++;fprintf(stderr,"Home from the recent screens leads to %d\n",(int)a->screen);}
     /* A partition inside super is picked on its own page: leaving the picker returns there. */
     screen(a,HOME);screen(a,OS_MENU);screen(a,FLASH);screen(a,FLASH_SUPER);a->flash_pick=true;a->flash_restore=false;screen(a,FILE_VOLUMES);render(a);tap_action(a,A_NAV_BACK);
     if(a->screen!=FLASH_SUPER||a->flash_pick){wrong++;fprintf(stderr,"Back from the picker of a partition in super leads to %d\n",(int)a->screen);}
@@ -112,7 +120,7 @@ static int walk(void){
     screen(a,HOME);screen(a,OS_MENU);screen(a,ANDROID_MENU);render(a);tap_action(a,A_ANDROID_CATALOG);render(a);
     if(a->screen!=SYSTEMS_CATALOG||a->catalog_only!=2||a->catalog_category!=CATEGORY_ANDROID||test_button(a,A_CATALOG_CATEGORY)){wrong++;fprintf(stderr,"the catalog of Android offers Linux\n");}
     for(unsigned int n=0;n<a->catalog_count;n++)if(!catalog_android(&a->catalog[n])&&test_button(a,A_CATALOG_ITEM+(int)n)){wrong++;fprintf(stderr,"a Linux image is listed while Android is installed\n");break;}
-    screen(a,HOME);render(a);tap_action(a,A_HOME_CATALOG);render(a);
+    screen(a,HOME);render(a);tap_action(a,A_HOME_CATALOG);render(a);tap_action(a,A_WEB_CATALOG);render(a);
     if(a->screen!=SYSTEMS_CATALOG||a->catalog_only||!test_button(a,A_CATALOG_CATEGORY)||!test_button(a,A_CATALOG_CATEGORY+1)){wrong++;fprintf(stderr,"the catalog of Home lost its two categories\n");}
     printf("{\"walk\":{\"edges\":%d,\"pages\":%d,\"wrong\":%d}}\n",edges,pages,wrong);
     free(a->pixels);free(a);
@@ -144,7 +152,8 @@ static App*fresh(const char*script,const char*work){
 }
 static void done(App*a){free(a->pixels);free(a);}
 static bool press(App*a,int id){return test_press(a,id,40);}
-static bool android_menu(App*a){return press(a,A_OS)&&a->screen==OS_MENU&&press(a,A_ANDROID)&&a->screen==ANDROID_MENU;}
+/* Home > Install Android (2026-11-22: the two Install cards on Home; the Systems tab has it too). */
+static bool android_menu(App*a){return press(a,A_ANDROID)&&a->screen==ANDROID_MENU;}
 /* Android > the picker of Samsung's firmware or of its BOOT, in the first folder of cache. */
 static bool picker_folder(App*a,int entry){
     NAV_CHECK(android_menu(a)&&press(a,entry)&&a->screen==FILE_VOLUMES&&a->job.kind==J_FS_INVENTORY&&await_job(a));
@@ -158,7 +167,7 @@ static bool back_during_read(App*a){
     NAV_CHECK(android_menu(a)&&press(a,A_STOCK_BOOT)&&a->screen==FILE_VOLUMES&&a->job.pid&&a->job.kind==J_FS_INVENTORY);
     NAV_CHECK(press(a,A_BACK)&&a->screen==FILE_VOLUMES&&a->job.pid&&a->queued_action==A_BACK);
     NAV_CHECK(await_job(a)&&a->screen==ANDROID_MENU&&!a->flash_pick&&!a->samsung_pick&&!a->stock_boot_pick&&!a->queued_action);
-    NAV_CHECK(press(a,A_BACK)&&a->screen==OS_MENU&&press(a,A_BACK)&&a->screen==HOME);
+    NAV_CHECK(press(a,A_BACK)&&a->screen==HOME);  /* opened from Home's Install Android card */
     return true;
 }
 /* Home while the list is read: the list stays read, and no page opens over Home. */
@@ -167,8 +176,8 @@ static bool home_during_read(App*a){
     render(a);tap_action(a,A_NAV_HOME);
     NAV_CHECK(a->screen==HOME&&a->job.pid&&!a->flash_pick&&!a->samsung_pick);
     NAV_CHECK(await_job(a)&&a->screen==HOME&&a->volume_count==1);
-    /* Files from Home afterwards is the plain list, and its Back is Home. */
-    NAV_CHECK(press(a,A_FILES)&&await_job(a)&&a->screen==FILE_VOLUMES&&!a->flash_pick&&press(a,A_BACK)&&a->screen==HOME);
+    /* Files from Home afterwards (its tab: the card went, 2026-11-22) is the plain list, and its Back is Home. */
+    NAV_CHECK(press(a,A_TAB+TAB_FILES)&&await_job(a)&&a->screen==FILE_VOLUMES&&!a->flash_pick&&press(a,A_BACK)&&a->screen==HOME);
     return true;
 }
 /* Home swiped while the list is read, the finger still down when the read ends: the gesture is the
@@ -240,9 +249,11 @@ static bool kept_boot_to_android(App*a){
 }
 /* The catalog left while the state of userdata is read: the page of systems does not open over Home. */
 static bool catalog_left(App*a){
-    NAV_CHECK(press(a,A_HOME_CATALOG)&&a->screen==SYSTEMS_CATALOG&&a->job.pid&&a->job.kind==J_SYS_STATUS);
-    NAV_CHECK(press(a,A_BACK)&&a->screen==HOME&&a->job.pid);
-    NAV_CHECK(await_job(a)&&a->screen==HOME);
+    /* The catalog is in the browser's menu (2026-11-20, the toolbar as Chrome's). */
+    NAV_CHECK(press(a,A_HOME_CATALOG)&&a->screen==WEB_BROWSER&&press(a,A_WEB_MENU)&&(a->web_menu_at=1,true)&&press(a,A_WEB_CATALOG)&&a->screen==SYSTEMS_CATALOG&&a->job.pid&&a->job.kind==J_CATALOG);
+    NAV_CHECK(press(a,A_BACK)&&a->screen==WEB_BROWSER&&a->job.pid);
+    /* The browser has no Back arrow of its own (Chrome's toolbar): the navigation's Back leaves it. */
+    NAV_CHECK(await_job(a)&&(action_run(a,A_BACK),a->screen==HOME));
     return true;
 }
 /* The reason the phone stayed in recovery is not replaced by the inventory read at start-up. */
@@ -257,11 +268,15 @@ static bool refusal_kept(App*a){
 
 /* 2026-11-11, found on the phone: Export diagnostics from Home reads the status and then the list
    of volumes. The second read is started by the end of the first, and must keep its own reply. */
+/* 2026-11-22: the export is one of the Tools tab's utilities (shell_ui.h), no longer a tile of Home. */
 static bool export_from_home(App*a){
-    NAV_CHECK(!a->tools_known&&press(a,A_TOOLS_EXPORT)&&a->job.pid&&a->job.kind==J_TOOLS_STATUS&&a->screen==HOME);
-    NAV_CHECK(await_job(a)&&a->screen==TOOLS_EXPORT&&a->tools_known&&a->logs_export_available&&a->volume_count==1&&!a->job.pid);
+    NAV_CHECK(!a->tools_known&&press(a,A_TAB+TAB_TOOLS)&&a->job.pid&&a->job.kind==J_TOOLS_STATUS);
+    NAV_CHECK(await_job(a)&&a->screen==TOOLS&&a->tools_known&&!a->job.pid);
+    NAV_CHECK(press(a,A_TOOLS_EXPORT));
+    while(a->job.pid)NAV_CHECK(await_job(a));
+    NAV_CHECK(a->screen==TOOLS_EXPORT&&a->logs_export_available&&a->volume_count==1);
     NAV_CHECK(strcmp(a->status,"BACKEND_FAILED")!=0);
-    NAV_CHECK(press(a,A_BACK)&&a->screen==HOME);
+    NAV_CHECK(press(a,A_BACK)&&a->screen==TOOLS);
     return true;
 }
 
@@ -361,7 +376,7 @@ static bool rom_from_a_file(App*a){
     /* Back from the top folder: the sheet again, over the Android page; Cancel gives the choice up. */
     NAV_CHECK(press(a,A_BACK)&&a->screen==ANDROID_MENU&&a->source_sheet&&a->rom_pick&&await_job(a));
     NAV_CHECK(press(a,A_SOURCE_CANCEL)&&a->screen==ANDROID_MENU&&!a->source_sheet&&!a->rom_pick&&!a->flash_pick);
-    NAV_CHECK(press(a,A_BACK)&&a->screen==OS_MENU);
+    NAV_CHECK(press(a,A_BACK)&&a->screen==HOME);
     return true;
 }
 /* Restore > Android: the copies on the cards, the page of one, its check and its restore with one
@@ -372,13 +387,13 @@ static bool android_copies(App*a){
     NAV_CHECK(press(a,A_LIST_CATEGORY+1)&&a->screen==LIST&&list_android(a)&&a->job.pid&&a->job.kind==J_COPY_LIST);
     NAV_CHECK(await_job(a)&&a->copies_known&&a->copy_count==1&&a->copy_waiting_count==1&&a->copies[0].archive&&a->copies[0].parts==2&&!a->copies[0].writable);
     NAV_CHECK(press(a,A_COPY_ITEM)&&a->screen==COPY_DETAIL&&copy_current(a));
-    render(a);NAV_CHECK(test_button(a,A_COPY_DELETE)&&!test_button(a,A_COPY_DELETE)->enabled&&test_button(a,A_COPY_RESTORE)->enabled&&test_button(a,A_COPY_RESTORE)->hold_ms==3000);
+    render(a);NAV_CHECK(test_button(a,A_COPY_DELETE)&&!test_button(a,A_COPY_DELETE)->enabled&&test_button(a,A_COPY_RESTORE)->enabled&&test_button(a,A_COPY_RESTORE)->hold_ms==1000);
     NAV_CHECK(press(a,A_COPY_VERIFY)&&a->job.kind==J_COPY_VERIFY&&await_job(a)&&a->screen==RESULT&&a->successful&&a->result_return==COPY_DETAIL&&strstr(a->message,"vbmeta"));
     NAV_CHECK(press(a,A_DONE)&&a->screen==COPY_DETAIL);
     /* super left out: the helper is told to restore boot only (the stand-in answers to nothing else). */
     NAV_CHECK(press(a,A_COPY_PART+1)&&a->copy_off==2u&&a->screen==COPY_DETAIL);
-    NAV_CHECK(test_press(a,A_COPY_RESTORE,1500)&&!a->job.pid&&a->screen==COPY_DETAIL); /* a short hold starts nothing */
-    NAV_CHECK(test_press(a,A_COPY_RESTORE,3200)&&a->job.pid&&a->job.kind==J_COPY_RESTORE&&!strcmp(a->copy_labels_arg,"boot"));
+    NAV_CHECK(test_press(a,A_COPY_RESTORE,999)&&!a->job.pid&&a->screen==COPY_DETAIL); /* a short hold starts nothing */
+    NAV_CHECK(test_press(a,A_COPY_RESTORE,1200)&&a->job.pid&&a->job.kind==J_COPY_RESTORE&&!strcmp(a->copy_labels_arg,"boot"));
     NAV_CHECK(await_job(a)&&a->screen==RESULT&&a->successful&&!strcmp(a->status,"Android restored")&&strstr(a->message,"boot")&&strstr(a->message,"saved-boot"));
     NAV_CHECK(press(a,A_DONE)&&a->screen==COPY_DETAIL&&press(a,A_BACK)&&a->screen==LIST&&list_android(a));
     /* The card that was not mounted: mounted read-only, and the list read again with what it holds. */

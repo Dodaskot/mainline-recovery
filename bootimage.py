@@ -300,9 +300,15 @@ def kernel_info(blob):
     trees = fdts(appended.lstrip(b'\0')) if appended.lstrip(b'\0')[:4] == FDT_MAGIC.to_bytes(4, 'big') else []
     return {'compression': compression, 'verified': verified, 'trees': trees,
             'release': release.group(1).decode('utf-8', 'replace') if release else None,
-            'kernelpatch': kernelpatch_version(image) if image else None}
+            'kernelpatch': kernelpatch_version(image) if image else None,
+            'kernelsu': bool(image) and any(mark in image for mark in KERNELSU_MARKS)}
 
 
+# KernelSU in a kernel (2026-11-20, H3ckedUI's BOOT for this phone): its init.rc lines run this path as
+# root at post-fs-data, services and boot-completed. KernelSU Next runs it in a domain of its own
+# (2026-11-21, its legacy branch built for this phone: u:r:ksu:s0).
+KERNELSU_MARK = b'exec u:r:su:s0 root -- /data/adb/ksud '
+KERNELSU_MARKS = (KERNELSU_MARK, b'exec u:r:ksu:s0 root -- /data/adb/ksud ')
 KERNELPATCH_MAGIC = b'KP1158\0\0'
 
 
@@ -429,8 +435,9 @@ def inspect_boot(data, partition='boot'):
             'ramdisk_compression': ramdisk['compression'], 'props': ramdisk['props'],
             'device': device, 'avb': {'present': bool(footer), 'state': avb_state},
             'mainline': linux.startswith('7.') or '-a22x' in linux, 'image_bytes': header['end'],
-            # Root in this BOOT: Magisk lives in the ramdisk, APatch (KernelPatch) in the kernel.
-            'root': 'magisk' if ramdisk['magisk'] else ('apatch' if kernel['kernelpatch'] else ''),
+            # Root in this BOOT: Magisk lives in the ramdisk, APatch (KernelPatch) and KernelSU in the kernel.
+            'root': 'magisk' if ramdisk['magisk'] else ('apatch' if kernel['kernelpatch'] else
+                                                        ('kernelsu' if kernel['kernelsu'] else '')),
             'kernelpatch': kernel['kernelpatch'] or ''}
 
 

@@ -1,0 +1,29 @@
+{
+  "schema": "a22x.android-decrypt.profile.v1",
+  "profile_id": "samsung-a226b-a13",
+  "android_user_id": 0,
+  "credential_types": [
+    "password",
+    "pattern"
+  ],
+  "read_only": true,
+  "native_efs_persistence": true,
+  "userdata_epoch": "POST_RESET03",
+  "bundle_path": "/opt/a22x-recovery/android-decrypt-runtime.tar",
+  "bundle_sha256": "243883b9c6a248077550a16e6de248eba65053432a73e7c22499131d9623dd8d",
+  "root_manifest_sha256": "7294e951c142f4585f061e6c0d7dc67ed71506599c3122b235ff6de2c6d92e1d",
+  "framework_services_sha256": "f4795ef0b1f3ebc45e44258b5d9324b52c3148e3ac3158fe02584862d3e9e055",
+  "kernel_build": 152,
+  "bootstrap_wrapper_sha256": "d0e08ab8df83dc86ff4f0a11634403cf02afbf82f19091463b48900fe14f3da5",
+  "qualified_fresh_boots": 0,
+  "persistent_mount_qualification": "SHARED_RUNTIME_PENDING",
+  "gsi_android14_16_qualification": "PENDING",
+  "source_package_sha256": "186e831fe502fb0dbb50c794fba2d41d1d0194743bc079e74e97ceff01f1c5ed",
+  "userdata_filesystem": "f2fs",
+  "credential_discovery": true,
+  "framework_core_sha256": "731db55aa1a0d3a97d28375296cdde04a9a8196028813b15e612c7f39be8e144",
+  "base_password_qualified_fresh_boots": 2,
+  "pattern_hardware_qualification": "PENDING",
+  "password_unicode_hardware_qualification": "PENDING",
+  "runtime_member_count": 135
+}

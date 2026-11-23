@@ -163,9 +163,9 @@ public class MainActivity extends Activity {
     }
 
     static String theme(Context context) {
-        String saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_THEME, "daylight");
+        String saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_THEME, "graphite");
         for (String known : THEMES) if (known.equals(saved)) return saved;
-        return "daylight";
+        return "graphite";
     }
 
     private static Class<?> launcher(String theme) {
@@ -254,7 +254,7 @@ public class MainActivity extends Activity {
             final boolean newer = AppUpdate.newer(latestApp.version, installed);
             box.addView(label(getString(newer ? R.string.update_newer : R.string.update_current), 14, newer ? p.green : p.muted, false));
             final AppUpdate.Release release = latestApp;
-            hold(content, getString(R.string.update_hold), 2000, newer, () -> background(() -> {
+            TextView update = button(content, getString(R.string.update_hold), true, () -> background(() -> {
                 try {
                     final int[] shown = {-1};
                     File apk = AppUpdate.download(getCacheDir(), release, (done, total) -> {
@@ -271,6 +271,7 @@ public class MainActivity extends Activity {
                     say(getString(R.string.failed, String.valueOf(e.getMessage())));
                 }
             }));
+            enable(update, newer);
         }
         LinearLayout boot = panel(getString(R.string.boot_kept_title));
         String answer = prefs().getString(KEY_BOOT_KEPT, "");
@@ -558,6 +559,12 @@ public class MainActivity extends Activity {
     private TextView button(ViewGroup parent, String text, boolean primary, Runnable click) {
         TextView view = label(text, 16, primary ? p.onAccent : p.text, true);
         view.setGravity(Gravity.CENTER);
+        view.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(View host, android.view.accessibility.AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(android.widget.Button.class.getName());
+            }
+        });
         view.setBackground(shape(primary ? p.accent : p.panel2, 28));
         // A long label (Ukrainian, German) takes a second line instead of touching the edges.
         view.setMinHeight(dp(54));
@@ -572,15 +579,6 @@ public class MainActivity extends Activity {
     private void enable(View view, boolean on) {
         view.setEnabled(on);
         view.setAlpha(on ? 1f : 0.45f);
-    }
-
-    private HoldButton hold(ViewGroup parent, String text, long ms, boolean enabled, Runnable action) {
-        HoldButton button = new HoldButton(this, text, ms, p.accent, p.onAccent, p.panel2, p.muted, action);
-        button.setEnabled(enabled);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60));
-        lp.topMargin = dp(14);
-        parent.addView(button, lp);
-        return button;
     }
 
     /** A selectable pill, as the recovery's choice buttons. */
@@ -870,11 +868,11 @@ public class MainActivity extends Activity {
         TextView note = label(getString(R.string.confirm_backup, BACKUPS), 13, p.muted, false);
         note.setPadding(0, dp(8), 0, 0);
         content.addView(note);
-        hold(content, getString(R.string.hold_install), 3000, compat.compatible && (withRecovery || withBoot), () -> {
+        TextView install = button(content, getString(R.string.install), true, () -> {
             final List<Payload.Image> chosen = new ArrayList<>();
             if (withRecovery) chosen.add(recovery);
             if (withBoot) chosen.add(boot);
-            background(() -> {
+            Runnable perform = () -> background(() -> {
                 for (Payload.Image item : chosen) {
                     say(getString(R.string.working) + " " + item.label);
                     try {
@@ -896,7 +894,18 @@ public class MainActivity extends Activity {
                     }
                 }
             });
+            if (withRecovery) {
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.confirm_title)
+                        .setMessage(getString(R.string.confirm_recovery, recovery.version) + "\n\n" + getString(R.string.confirm_backup, BACKUPS))
+                        .setNegativeButton(R.string.cancel, null)
+                        .setPositiveButton(R.string.install, (dialog, which) -> perform.run())
+                        .show();
+            } else {
+                perform.run();
+            }
         });
+        enable(install, compat.compatible && (withRecovery || withBoot));
     }
 
     /** A card chosen or not, with the recovery's round mark. */
@@ -1148,7 +1157,7 @@ public class MainActivity extends Activity {
         heading(getString(R.string.home_restart), getString(R.string.restart_title));
         LinearLayout box = panel(null);
         box.addView(label(getString(R.string.restart_page_text), 15, p.text, false));
-        hold(content, getString(R.string.hold_restart), 2000, true, () -> background(() -> {
+        button(content, getString(R.string.restart), true, () -> background(() -> {
             Root.Result r = RecoveryStore.restartIntoRecovery();
             if (!r.ok()) say(getString(R.string.failed, r.output.trim()));
         }));
@@ -1367,7 +1376,7 @@ public class MainActivity extends Activity {
         button(content, getString(R.string.done), true, this::back);
     }
 
-    /** The review of the recovery: what will be installed, then a hold to save the plan. */
+    /** The review of the recovery: what will be installed, then buttons to save the plan. */
     private void planReview() {
         heading(getString(R.string.plan_review_title), getString(R.string.plan_review_sub));
         LinearLayout system = panel(getString(R.string.caps_new_system));
@@ -1390,7 +1399,8 @@ public class MainActivity extends Activity {
             other.setPadding(0, dp(8), 0, 0);
             content.addView(other);
         }
-        hold(content, getString(R.string.hold_save_restart), 2000, compat.compatible, () -> save(true));
+        TextView saveAndRestart = button(content, getString(R.string.plan_save_restart), true, () -> save(true));
+        enable(saveAndRestart, compat.compatible);
         TextView only = button(content, getString(R.string.plan_save), false, () -> save(false));
         enable(only, compat.compatible);
         button(content, getString(R.string.plan_remove), false, () -> background(() -> {

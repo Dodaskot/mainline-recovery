@@ -1,0 +1,59 @@
+diff --git a/src/lockscreen.rs b/src/lockscreen.rs
+index c618740..960be55 100644
+--- a/src/lockscreen.rs
++++ b/src/lockscreen.rs
+@@ -56,6 +56,7 @@ mod imp {
+     pub struct Lockscreen {
+         #[property(get, set)]
+         pub user_session_page: OnceCell<UserSessionPage>,
++        pub back_button: OnceCell<gtk::Button>,
+         greetd: RefCell<Option<(Sender<Request>, Receiver<Response>)>>,
+         session: RefCell<Option<String>>,
+     }
+@@ -122,7 +123,6 @@ mod imp {
+                 glib::spawn_future_local(clone!(@weak ls => async move {
+                     // Page is lockscreen, begin greetd conversation.
+                     if ls.page() == LockscreenPage::Unlock {
+-                        this.obj().set_default_page(LockscreenPage::Unlock);
+                         this.create_session().await;
+                     } else {
+                         // No longer on unlock, cancel session.
+@@ -164,6 +164,38 @@ mod imp {
+             self.user_session_page.set(usp).unwrap();
+ 
+             self.parent_constructed();
++
++            let content = self_obj.child().expect("lockscreen content");
++            self_obj.upcast_ref::<gtk::Bin>().remove(&content);
++            let overlay = gtk::Overlay::new();
++            overlay.add(&content);
++            let back = gtk::Button::builder()
++                .label(tr("Back"))
++                .halign(gtk::Align::Start)
++                .valign(gtk::Align::Start)
++                .margin_start(16)
++                .margin_top(48)
++                .height_request(48)
++                .width_request(104)
++                .no_show_all(true)
++                .build();
++            back.set_image(Some(&gtk::Image::from_icon_name(
++                Some("go-previous-symbolic"),
++                gtk::IconSize::Button,
++            )));
++            back.set_always_show_image(true);
++            back.connect_clicked(clone!(@weak self_obj => move |_| {
++                self_obj.clear_pin_entry();
++                self_obj.set_page(LockscreenPage::Extra);
++            }));
++            self_obj.connect_page_notify(clone!(@weak back => move |ls| {
++                back.set_visible(ls.page() == LockscreenPage::Unlock);
++            }));
++            back.set_visible(self_obj.page() == LockscreenPage::Unlock);
++            overlay.add_overlay(&back);
++            self_obj.upcast_ref::<gtk::Bin>().add(&overlay);
++            overlay.show();
++            self.back_button.set(back).unwrap();
+         }
+     }
+ 

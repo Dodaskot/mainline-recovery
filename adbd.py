@@ -34,6 +34,12 @@ MAX_PAYLOAD = 256 * 1024
 AUTH_TOKEN, AUTH_SIGNATURE, AUTH_RSAPUBLICKEY = 1, 2, 3
 SHA1_PREFIX = bytes.fromhex('3021300906052b0e03021a05000414')
 SYNC_DATA_MAX = 64 * 1024
+# 2026-11-21: since 0x01000001 neither side checks a payload's checksum (AOSP A_VERSION_SKIP_CHECKSUM);
+# summing every byte in Python cost a pull time for nothing.
+SKIP_CHECKSUM = 0x01000001
+# One USB request per write of this size: FunctionFS allocates it in one piece (kmalloc), so 64 KiB
+# (order 4) is safe where 256 KiB may not be; 16 KiB requests one at a time left the link idle between them.
+USB_WRITE = 64 * 1024
 BANNER = b'recovery::ro.product.name=a22x;ro.product.model=SM-A226B;ro.product.device=a22x;features=\0'
 
 
@@ -146,12 +152,13 @@ class Connection:
         self.transport, self.keys, self.approve, self.peer, self.gate = transport, keys, approve, peer, gate
         self.write_lock = threading.Lock()
         self.streams, self.next_id, self.lock = {}, 1, threading.Lock()
-        self.max_payload, self.online, self.token = MAX_PAYLOAD, False, b''
+        self.max_payload, self.online, self.token, self.peer_version = MAX_PAYLOAD, False, b'', 0
         self.log = log or (lambda *args: None)
 
     # -- messages
     def send(self, command, arg0, arg1, data=b''):
-        header = struct.pack('<6I', command, arg0, arg1, len(data), sum(data) & 0xffffffff, command ^ 0xffffffff)
+        check = 0 if self.peer_version >= SKIP_CHECKSUM else sum(data) & 0xffffffff
+        header = struct.pack('<6I', command, arg0, arg1, len(data), check, command ^ 0xffffffff)
         # Header and payload are separate USB transfers: the computer reads 24 bytes first, and a
         # longer transfer overflowed that read ("read failed", on the phone, 2026-11-10).
         with self.write_lock:
@@ -187,7 +194,7 @@ class Connection:
             while True:
                 command, arg0, arg1, data = self.receive()
                 if command == A_CNXN:
-                    maxdata = arg1
+                    maxdata, self.peer_version = arg1, arg0
                     self.online = False
                     self.auth_request()
                 elif command == A_AUTH and not self.online:
@@ -408,6 +415,88 @@ def service_exec(stream, service):
         process.wait()
 
 
+class FastClock:
+    """While a file moves over USB, the cluster that takes the USB interrupt runs at its top clock
+    (2026-11-21, on the phone: a push went at 2.4-6 MB/s under schedutil and at 12 MB/s with the little
+    cluster, CPU0's, at its top; a pull at 4.4 and 8.7 MB/s; the big cluster's clock changed nothing).
+    Its scaling_min_freq is raised while any transfer runs and put back when the last one ends. It is
+    not read back to decide that: the kernel applies the floor later (a frequency QoS request), so a read
+    right after the write still shows the old one. Nothing else sets this cluster's floor; the fastest
+    cluster's belongs to the interface (touch), and that cluster is never touched here."""
+
+    def __init__(self, root='/'):
+        self.root = Path(root)
+        self.lock = threading.Lock()
+        self.users = 0
+        self.saved = None
+
+    def read(self, path):
+        try:
+            return (self.root / path).read_text().strip()
+        except OSError:
+            return ''
+
+    def irq_cpu(self):
+        for line in self.read('proc/interrupts').splitlines():
+            number, _, rest = line.strip().partition(':')
+            if 'musb' in rest and number.isdigit():
+                first = self.read(f'proc/irq/{number}/effective_affinity_list').replace('-', ',').split(',')[0]
+                return int(first) if first.isdigit() else 0
+        return None  # no USB device controller here (a computer running the tests): nothing changes
+
+    def policy(self):
+        """The cpufreq policy of the USB interrupt's CPU, unless it is the fastest one."""
+        policies = []
+        for folder in sorted((self.root / 'sys/devices/system/cpu/cpufreq').glob('policy*')):
+            relative = folder.relative_to(self.root)
+            cpus = set()
+            for part in self.read(relative / 'related_cpus').split():
+                if part.isdigit():
+                    cpus.add(int(part))
+            top = self.read(relative / 'cpuinfo_max_freq')
+            if cpus and top.isdigit():
+                policies.append((int(top), relative, cpus))
+        if len(policies) < 2:
+            return None, None
+        fastest = max(policy[0] for policy in policies)
+        cpu = self.irq_cpu()
+        if cpu is None:
+            return None, None
+        for top, relative, cpus in policies:
+            if cpu in cpus and top < fastest:
+                return relative, str(top)
+        return None, None
+
+    def write(self, path, value):
+        try:
+            (self.root / path).write_text(value + '\n')
+            return True
+        except OSError:
+            return False
+
+    @contextlib.contextmanager
+    def __call__(self):
+        with self.lock:
+            self.users += 1
+            if self.users == 1:
+                relative, top = self.policy()
+                floor = relative / 'scaling_min_freq' if relative else None
+                before = self.read(floor) if floor else ''
+                self.saved = (floor, before, top) if floor and before.isdigit() and self.write(floor, top) else None
+        try:
+            yield
+        finally:
+            with self.lock:
+                self.users -= 1
+                if self.users == 0 and self.saved:
+                    floor, before, _ = self.saved
+                    self.write(floor, before)
+                    self.saved = None
+
+
+fast_clock = FastClock(os.environ.get('A22X_ADB_SYSFS_ROOT', '/'))
+
+
 def sync_reply(stream, ident, payload=b''):
     stream.write(ident + struct.pack('<I', len(payload)) + payload)
 
@@ -458,15 +547,22 @@ def service_sync(stream, service):
             except OSError as exc:
                 sync_fail(stream, f'{path}: {exc.strerror}')
                 continue
+            # 2026-11-21: the records go out together, one adb payload per WRTE: every WRTE waits for
+            # the computer's OKAY, and one per 64 KiB record cost a round trip each.
+            out = bytearray()
             try:
-                while True:
-                    data = os.read(fd, SYNC_DATA_MAX)
-                    if not data:
-                        break
-                    sync_reply(stream, b'DATA', data)
+                with fast_clock():
+                    while True:
+                        data = os.read(fd, SYNC_DATA_MAX)
+                        if not data:
+                            break
+                        out += b'DATA' + struct.pack('<I', len(data)) + data
+                        if len(out) >= stream.c.max_payload:
+                            stream.write(out)
+                            out = bytearray()
             finally:
                 os.close(fd)
-            stream.write(b'DONE' + bytes(4))
+            stream.write(bytes(out) + b'DONE' + bytes(4))
         elif ident == b'SEND':
             target, _, mode = path.rpartition(',')
             try:
@@ -480,6 +576,8 @@ def service_sync(stream, service):
             except OSError as exc:
                 problem = f'{target}: {exc.strerror}'
             mtime = 0
+            clock = contextlib.ExitStack()
+            clock.enter_context(fast_clock())
             try:
                 while True:
                     header, pending = stream.read_exact(8, pending)
@@ -506,6 +604,8 @@ def service_sync(stream, service):
                     with contextlib.suppress(OSError):
                         os.unlink(temporary)
                 raise
+            finally:
+                clock.close()
             if fd is not None:
                 # 2026-11-12, on the owner's phone: a pushed recovery image read back with 16 MiB of
                 # zeros in its middle after the volume was mounted again, though adb had said "pushed"
@@ -669,10 +769,11 @@ def receive_sideload(stream, folder, size, block):
     done = False
     try:
         pending = b''
-        for number in range((size + block - 1) // block):
-            stream.write(b'%08d' % number)
-            data, pending = stream.read_exact(min(block, size - number * block), pending)
-            os.write(fd, data)
+        with fast_clock():
+            for number in range((size + block - 1) // block):
+                stream.write(b'%08d' % number)
+                data, pending = stream.read_exact(min(block, size - number * block), pending)
+                os.write(fd, data)
         os.fsync(fd)
         os.close(fd)
         fd = None
@@ -796,7 +897,7 @@ class EndpointTransport:
     def write(self, data):
         view = memoryview(data)
         while view.nbytes:
-            written = os.write(self.in_fd, view[:16384])
+            written = os.write(self.in_fd, view[:USB_WRITE])
             view = view[written:]
 
     def close(self):
@@ -863,15 +964,15 @@ def serve_ffs(folder, keys, approve, log=None, gate=None, ready=None):
 def serve_tcp(address, port, keys, approve, log=None, ready=None, gate=None):
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    # The USB network address appears once the gadget is bound: wait for it.
-    for attempt in range(600):
+    # The USB network address appears once the gadget is bound: wait for it, as long as it takes. Without
+    # an SSH key the recovery has no USB network at all (2026-11-21, #3), and giving up here ended adbd,
+    # its USB transport with it.
+    while True:
         try:
             server.bind((address, port))
             break
         except OSError:
-            if attempt == 599:
-                raise
-            time.sleep(1)
+            time.sleep(2)
     server.listen(4)
     if ready:
         ready(server.getsockname()[1])

@@ -102,7 +102,9 @@ class Flash(unittest.TestCase):
         code, result, _ = self.run_helper('targets')
         labels = [row['label'] for row in result['targets']]
         self.assertEqual(code, 0)
-        self.assertEqual(labels, ['boot', 'dtbo', 'vbmeta', 'vbmeta_vendor', 'super'])
+        # By name, each with its block device (2026-11-21, a tester, #8).
+        self.assertEqual(labels, ['boot', 'dtbo', 'super', 'vbmeta', 'vbmeta_vendor'])
+        self.assertTrue(all(row['node'] for row in result['targets'] if not row.get('logical')))
         # 2026-11-08: the recovery may replace its own partition, as the user asked.
         self.assertIn('recovery', flash.LABELS)
 
@@ -543,11 +545,19 @@ class Settings(unittest.TestCase):
     def test_defaults_then_saved_values(self):
         self.assertEqual(json.loads(self.call('status')[1]), {'language': 'en', 'theme': 'graphite', 'terminal': 'auto', 'storage': 'sd', 'vibration': 2, 'timeout': 2, 'utc_offset': 0,
                                                        'refresh': 0, 'brightness': 0, 'animation': 'zoom', 'lock': 1, 'access': 1,
-                                                       'navigation': 0, 'timezone': '', 'torch': 0, 'android_log': '', 'password': False, 'password_digits': False})
+                                                       'navigation': 0, 'timezone': '', 'torch': 0, 'volume': -1, 'android_log': '', 'files_sort': 'name', 'tap_wake': 0, 'android_password_policy': 'each_mount',
+                                                       'mount_cards': 'rw', 'mount_data': 'rw', 'mount_others': 'off', 'mount_list': '',
+                                                       'web_downloads': 'auto', 'web_dark': 0,
+                                                       'password': False, 'password_digits': False})
         self.assertEqual(self.call('set', '--language', 'uk', '--vibration', '3', '--utc-offset', '60')[0], 0)
         self.assertEqual(self.disk, {'language': 'uk', 'vibration': 3, 'utc_offset': 60})
         self.assertEqual(self.call('set', '--refresh', '90', '--brightness', '40', '--terminal', 'tokyo-night', '--storage', 'usb')[0], 0)
         self.assertEqual((self.disk['refresh'], self.disk['brightness'], self.disk['terminal'], self.disk['storage']), (90, 40, 'tokyo-night', 'usb'))
+        # The volume (2026-11-22): 0..100 kept, -1 is "not chosen", anything else refused.
+        self.assertEqual(self.call('set', '--volume', '35')[0], 0)
+        self.assertEqual(self.disk['volume'], 35)
+        self.assertNotEqual(self.call('set', '--volume', '101')[0], 0)
+        self.assertEqual(self.disk['volume'], 35)
         # The recovery clock's zone (2026-11-09); empty returns to the fixed offset.
         self.assertEqual(self.call('set', '--timezone', 'America/Argentina/Buenos_Aires')[0], 0)
         self.assertEqual(self.disk['timezone'], 'America/Argentina/Buenos_Aires')
@@ -749,20 +759,106 @@ class FlashLogical(unittest.TestCase):
         self.assertTrue(rows['super/vendor']['logical'])
         self.assertIn('super_free_bytes', result)
 
-    def test_a_smaller_image_fills_the_partition_with_zeros(self):
+    def payload_zip(self, data, name='ota.zip'):
+        with zipfile.ZipFile(self.root / 'sd' / name, 'w') as z:
+            z.writestr('payload.bin', data, compress_type=zipfile.ZIP_STORED)
+            z.writestr('payload_properties.txt', 'FILE_HASH=x\n')
+        return '/' + name
+
+    def stage(self, path, partition):
+        return self.run_helper('payload-stage', '--volume', 'sdcard-p1', '--volume-token', self.token('sdcard-p1'),
+                               '--path', path, '--partition', partition)
+
+    def test_a_payloads_partitions_are_taken_out_then_flashed_as_images(self):
+        """2026-11-22: update_engine payloads on this single-slot phone, full and incremental, through Flash."""
+        import test_android_rom as tr
+        import android_rom as rom
+        product = os.urandom(2 * self.MIB)
+        full = tr.payload([('product', product, 'xz')])
+        path = self.payload_zip(full)
+        code, listed, _ = self.run_helper('members', '--volume', 'sdcard-p1', '--volume-token', self.token('sdcard-p1'), '--path', path)
+        self.assertEqual(code, 0, listed)
+        self.assertTrue(listed['payload'])
+        self.assertIn({'name': 'payload.bin/product', 'size': 2 * self.MIB, 'target': 'super/product', 'payload': True,
+                       'incremental': False}, listed['members'])
+        code, staged, _ = self.stage(path, 'product')
+        self.assertEqual(code, 0, staged)
+        self.assertEqual(staged['path'], '/A22xImages/ota.product.img')
+        self.assertEqual((self.root / 'sd/A22xImages/ota.product.img').read_bytes(), product)
+        code, checked, _ = self.check('super/product', staged['path'], volume='sdcard-p1')
+        self.assertEqual(code, 0, checked)
+        self.assertEqual(checked['image']['sha256'], hashlib.sha256(product).hexdigest())
+        # An incremental update of system, made from what system holds here: built, never written in place.
+        s, p = self.partition('system')
+        old = b''.join(s.chunks('system'))
+        new = bytearray(old)
+        new[100:110] = b'0123456789'  # inside block 0, the one patched
+        new = bytes(new)
+        block = tr.BLOCK
+        blocks = len(old) // block
+        ops = [(rom.SOURCE_COPY, b'', [(1, blocks - 1)], [(1, blocks - 1)]),
+               (rom.SOURCE_BSDIFF, tr.bsdiff_patch([(block, 0, 0)], tr.minus(new[:block], old[:block]), b'', block), [(0, 1)], [(0, 1)])]
+        path = self.payload_zip(tr.incremental_payload(old, new, ops), 'inc.zip')
+        code, listed, _ = self.run_helper('members', '--volume', 'sdcard-p1', '--volume-token', self.token('sdcard-p1'), '--path', path)
+        row = next(m for m in listed['members'] if m['name'] == 'payload.bin/system')
+        self.assertTrue(row['incremental'] and row['applicable'] and row['target'] == 'super/system')
+        code, staged, _ = self.stage(path, 'system')
+        self.assertEqual(code, 0, staged)
+        self.assertTrue(staged['incremental'])
+        self.assertEqual((self.root / 'sd/A22xImages/inc.system.img').read_bytes(), new)
+        self.assertEqual(b''.join(s.chunks('system')), old)   # the installed partition only read
+        # Made for another system: refused, and nothing is left on the card.
+        other = bytes(len(old))
+        path = self.payload_zip(tr.incremental_payload(other, new, [(rom.SOURCE_COPY, b'', [(0, blocks)], [(0, blocks)])]), 'other.zip')
+        code, refused, _ = self.stage(path, 'system')
+        self.assertNotEqual(code, 0)
+        self.assertEqual(refused['error']['code'], 'SOURCE_MISMATCH')
+        self.assertEqual(sorted(p.name for p in (self.root / 'sd/A22xImages').iterdir()), ['inc.system.img', 'ota.product.img'])
+
+    def test_busy_super_does_not_hide_physical_targets(self):
+        with mock.patch.object(flash, 'list_super', side_effect=flash.RecoveryError(
+                'VOLUME_BUSY', 'super is busy')):
+            code, result, _ = self.run_helper('targets')
+        self.assertEqual(code, 0)
+        self.assertEqual([row['label'] for row in result['targets']], ['super'])
+        self.assertEqual(result['super_error'], 'super is busy')
+
+    def test_a_smaller_image_shrinks_the_partition_to_its_size(self):
+        """As fastboot does (2026-11-21, #9): the partition takes the image's size and the rest of super
+        is left free for the next image."""
         data = bytearray(os.urandom(3 * self.MIB))
         struct.pack_into('<H', data, 1080, 0xEF53)
         path = self.image(bytes(data), 'vendor.img')
         code, result, _ = self.check('super/vendor', path)
         self.assertEqual(code, 0, result)
-        self.assertEqual((result['target']['size_bytes'], result['target']['new_size_bytes']), (4 * self.MIB, 4 * self.MIB))
+        self.assertEqual((result['target']['size_bytes'], result['target']['new_size_bytes']), (4 * self.MIB, 3 * self.MIB))
         self.assertEqual(result['image']['kind'], 'ext4 file system image')
         code, done, _ = self.write('super/vendor', path, result, result['image']['payload_bytes'])
         self.assertEqual(code, 0, done)
         self.assertTrue(done['verified'])
+        self.assertEqual((done['target']['size_bytes'], done['target']['resized_from']), (3 * self.MIB, 4 * self.MIB))
         s, p = self.partition('vendor')
-        self.assertEqual(s.read_partition('vendor'), hashlib.sha256(bytes(data) + bytes(self.MIB)).hexdigest())
+        self.assertEqual(s.size_of(p), 3 * self.MIB)
+        self.assertEqual(s.read_partition('vendor'), hashlib.sha256(bytes(data)).hexdigest())
         self.assertNotEqual(s.read_partition('system'), done['partition_sha256'])
+
+    def test_an_avb_footer_stays_at_the_end_of_the_partition(self):
+        """odm of LineageOS 20 (2026-11-21): 4,349,952 bytes, its AVB footer in the last 64. The partition
+        takes the image's size to the 4 KiB block, as fastboot, so the footer is where it is looked for."""
+        data = bytearray(os.urandom(4349952))
+        struct.pack_into('<H', data, 1080, 0xEF53)
+        data[-64:-60] = b'AVBf'
+        path = self.image(bytes(data), 'odm.img')
+        code, result, _ = self.check('super/vendor', path)
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result['target']['new_size_bytes'], 4349952)
+        code, done, _ = self.write('super/vendor', path, result, result['image']['payload_bytes'])
+        self.assertEqual(code, 0, done)
+        s, p = self.partition('vendor')
+        self.assertEqual(s.size_of(p), 4349952)
+        self.assertEqual(s.read_partition('vendor'), hashlib.sha256(bytes(data)).hexdigest())
+        last = b''.join(s.chunks('vendor'))[-64:]
+        self.assertEqual(last[:4], b'AVBf')
 
     def test_a_larger_sparse_gsi_grows_system(self):
         payload = os.urandom(20 * self.MIB)
@@ -771,17 +867,17 @@ class FlashLogical(unittest.TestCase):
         self.assertEqual(code, 0, result)
         self.assertEqual(result['image']['format'], 'sparse')
         grown = result['target']['new_size_bytes']
-        self.assertEqual(grown, 21 * self.MIB)  # 20 MiB + one fill block, rounded to 1 MiB
+        self.assertEqual(grown, 20 * self.MIB + 4096)  # 20 MiB + one fill block, to the 4 KiB logical block
         code, done, _ = self.write('super/system', path, result, result['image']['payload_bytes'])
         self.assertEqual(code, 0, done)
-        self.assertEqual((done['target']['size_bytes'], done['target']['resized_from']), (21 * self.MIB, 8 * self.MIB))
+        self.assertEqual((done['target']['size_bytes'], done['target']['resized_from']), (20 * self.MIB + 4096, 8 * self.MIB))
         s, p = self.partition('system')
-        self.assertEqual(s.size_of(p), 21 * self.MIB)
+        self.assertEqual(s.size_of(p), 20 * self.MIB + 4096)
         self.assertEqual(s.read_partition('system'), done['partition_sha256'])
 
     def test_a_gsi_zip_goes_into_system(self):
         """2026-11-10: Google's GSI ZIP holds system.img, vbmeta.img and build.prop; system.img is
-        decoded from it straight into super/system, with the rest of the partition zeroed."""
+        decoded from it straight into super/system, which takes its size (2026-11-21, as fastboot)."""
         data = bytearray(os.urandom(5 * self.MIB))
         struct.pack_into('<H', data, 1080, 0xEF53)
         with zipfile.ZipFile(self.root / 'usb/aosp_arm64-exp-TEST.zip', 'w', zipfile.ZIP_DEFLATED) as z:
@@ -791,12 +887,12 @@ class FlashLogical(unittest.TestCase):
         code, result, _ = self.check('super/system', '/aosp_arm64-exp-TEST.zip')
         self.assertEqual(code, 0, result)
         self.assertEqual((result['image']['compression'], result['image']['payload_bytes'], result['target']['new_size_bytes']),
-                         ('zip', len(data), 8 * self.MIB))
+                         ('zip', len(data), 5 * self.MIB))
         self.assertEqual(result['image']['kind'], 'ext4 file system image')
         code, done, _ = self.write('super/system', '/aosp_arm64-exp-TEST.zip', result, result['image']['payload_bytes'])
         self.assertEqual(code, 0, done)
         s, _ = self.partition('system')
-        self.assertEqual(s.read_partition('system'), hashlib.sha256(bytes(data) + bytes(3 * self.MIB)).hexdigest())
+        self.assertEqual(s.read_partition('system'), hashlib.sha256(bytes(data)).hexdigest())
 
     def test_its_own_size_keeps_the_partition_and_the_old_content_is_saved(self):
         """2026-11-10, on the phone: odm holds 4,349,952 bytes, not a whole MiB, and its own image

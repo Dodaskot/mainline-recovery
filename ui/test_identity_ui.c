@@ -15,8 +15,9 @@ int main(int argc,char**argv){
     for(int n=0;n<4;n++)settle(a);
     ICHECK(a->screen==IDENTITY&&a->id_known&&!a->id_error[0]&&a->id_count==3&&identity_volume(a)&&!strcmp(a->id_volume_id,"sdcard-p1"));
     render(a);Button*b=test_button(a,A_ID_BACKUP);ICHECK(b&&b->enabled);
-    ICHECK(!test_press(a,A_ID_BACKUP,1500)||!a->job.pid);ICHECK(!a->id_done[0]);
-    ICHECK(test_press(a,A_ID_BACKUP,2100));settle(a);
+    /* 2026-11-20: a hold of 2 or 3 seconds is one second now, as the labels say. */
+    ICHECK(!test_press(a,A_ID_BACKUP,999)||!a->job.pid);ICHECK(!a->id_done[0]);
+    ICHECK(test_press(a,A_ID_BACKUP,1100));settle(a);
     ICHECK(a->screen==IDENTITY&&!strncmp(a->id_done,"/A22xIdentityBackups/identity-",30));
     char manifest[PATH_LEN*2];snprintf(manifest,sizeof(manifest),"%s/sd%s/manifest.json",argv[1],a->id_done);ICHECK(access(manifest,R_OK)==0);
     /* The partition changes; the copy is written back from the restore page. */
@@ -25,8 +26,8 @@ int main(int argc,char**argv){
     ICHECK(a->id_backup_count==1&&a->id_backups[0].same&&a->id_backups[0].parts==3);
     render(a);b=test_button(a,A_ID_RESTORE);ICHECK(b&&!b->enabled);
     ICHECK(test_press(a,A_ID_ITEM+0,50)&&a->id_pick==0);
-    ICHECK(test_press(a,A_ID_RESTORE,2500)&&!a->job.pid);
-    ICHECK(test_press(a,A_ID_RESTORE,3100));settle(a);
+    ICHECK(test_press(a,A_ID_RESTORE,999)&&!a->job.pid);
+    ICHECK(test_press(a,A_ID_RESTORE,1100));settle(a);
     ICHECK(a->screen==IDENTITY_RESTORE&&a->successful);
     char saved[PATH_LEN*3];snprintf(saved,sizeof(saved),"%s/sd%s/efs.img",argv[1],a->id_done);
     FILE*x=fopen(part,"rb"),*y=fopen(saved,"rb");ICHECK(x&&y);int same=1,c1,c2;while((c1=fgetc(x))!=EOF){c2=fgetc(y);if(c1!=c2){same=0;break;}}fclose(x);fclose(y);ICHECK(same);
@@ -54,9 +55,9 @@ int main(int argc,char**argv){
     ICHECK(a->screen==RESULT&&a->successful&&a->result_return==COPY_DETAIL&&test_press(a,A_DONE,50)&&a->screen==COPY_DETAIL);
     ICHECK(test_press(a,A_COPY_RESTORE,3100));settle(a);
     ICHECK(a->screen==RESULT&&a->successful&&strstr(a->message,"nothing was written")&&test_press(a,A_DONE,50)&&a->screen==COPY_DETAIL);
-    render(a);b=test_button(a,A_COPY_DELETE);ICHECK(b&&b->enabled&&b->hold_ms==3000);
-    ICHECK(test_press(a,A_COPY_DELETE,2500)&&!a->job.pid&&access(folder,R_OK)==0);
-    ICHECK(test_press(a,A_COPY_DELETE,3100));for(int n=0;n<3;n++)settle(a);
+    render(a);b=test_button(a,A_COPY_DELETE);ICHECK(b&&b->enabled&&b->hold_ms==1000);
+    ICHECK(test_press(a,A_COPY_DELETE,999)&&!a->job.pid&&access(folder,R_OK)==0);
+    ICHECK(test_press(a,A_COPY_DELETE,1100));for(int n=0;n<3;n++)settle(a);
     ICHECK(a->screen==LIST&&a->successful&&a->copies_known&&a->copy_count==0&&a->copy_pick==-1&&access(folder,F_OK)!=0);
     ICHECK(access(manifest,R_OK)==0); /* The identity copy made first is another kind and stays. */
     action(a,A_BACK);ICHECK(a->screen==IDENTITY);

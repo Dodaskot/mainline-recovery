@@ -13,6 +13,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,26 +68,126 @@ class ZipInstall(unittest.TestCase):
                 z.writestr(member, data)
         return '/' + name
 
-    def helper(self, command, path, *more):
-        token = fs.FixtureContext(self.root).volume('cache')['volume_token']
+    def helper(self, command, path, *more, volume='cache'):
+        token = fs.FixtureContext(self.root).volume(volume)['volume_token']
         stdout, stderr = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = zi.main(['--fixture', str(self.root), command, '--volume', 'cache', '--volume-token', token, '--path', path, *more])
+            code = zi.main(['--fixture', str(self.root), command, '--volume', volume, '--volume-token', token, '--path', path, *more])
         return code, json.loads(stdout.getvalue().splitlines()[-1]), stderr.getvalue()
 
     def test_the_review_says_what_the_zip_is_and_refuses_what_has_no_installer(self):
         path = self.archive('module.zip', extra={'module.prop': 'id=demo\nname=Demo module\nversion=v1.2\n'})
-        code, about, _ = self.helper('inspect', path)
-        self.assertEqual(code, 0, about)
+        code, refused, _ = self.helper('inspect', path)
+        self.assertEqual((code, refused['error']['code']), (2, 'MODULE_ZIP_UNSUPPORTED'))
+        about = refused['error']['details']['package']
         self.assertEqual((about['installer'], about['what'], about['title']), ('script', 'module', 'Demo module v1.2'))
         self.assertEqual(about['sha256'], hashlib.sha256((self.root / 'cache/module.zip').read_bytes()).hexdigest())
-        self.assertEqual(about['partitions'], ['boot', 'dtbo'])  # never the recovery or Android's data
+        self.assertFalse(about['run_supported'])
+        self.assertEqual((about['writable'], about['logical']), ([], []))
         self.assertTrue(any('module' in line for line in about['warnings']))
         code, refused, _ = self.helper('inspect', self.archive('images.zip', installer=False, extra={'system.img': b'x'}))
         self.assertEqual((code, refused['error']['code']), (2, 'ZIP_NO_INSTALLER'))
         (self.root / 'cache/broken.zip').write_bytes(b'PK\x03\x04 not a zip')
         code, refused, _ = self.helper('inspect', '/broken.zip')
         self.assertEqual((code, refused['error']['code']), (2, 'ZIP_DAMAGED'))
+
+    def test_module_zip_refuses_before_any_installer_target_or_backup_action(self):
+        path = self.archive('module.zip', 'printf executed > "$A22X_ZIP_ROOT/updater-ran"',
+                            extra={'module.prop': 'id=demo\nname=Demo module\nversion=1\n'})
+        checksum = hashlib.sha256((self.root / 'cache/module.zip').read_bytes()).hexdigest()
+        before = {str(p.relative_to(self.root)): p.read_bytes()
+                  for folder in ('targets', 'cache') for p in (self.root / folder).rglob('*') if p.is_file()}
+        with contextlib.ExitStack() as stack:
+            blocked = [stack.enter_context(mock.patch.object(owner, name)) for owner, name in (
+                (zi, 'targets'), (zi, 'Room'), (zi, 'package_sizes'), (zi, 'apply_fit'),
+                (zi, 'fixture_child'), (zi, 'room_child'), (zi, 'native_install'),
+                (saved_boot, 'keep_current_boot'), (zi.install.FixtureContext, 'check_offline'),
+                (fs.FixtureContext, 'mount'), (fs.FixtureContext, 'unmount'))]
+            for command, extra in [('inspect', ()), ('run', ('--expected-sha256', checksum, '--confirm'))]:
+                with self.subTest(command=command):
+                    code, refused, _ = self.helper(command, path, *extra)
+                    self.assertEqual((code, refused['error']['code']), (2, 'MODULE_ZIP_UNSUPPORTED'))
+                    for step in blocked:
+                        step.assert_not_called()
+        after = {str(p.relative_to(self.root)): p.read_bytes()
+                 for folder in ('targets', 'cache') for p in (self.root / folder).rglob('*') if p.is_file()}
+        self.assertEqual(before, after)
+        self.assertFalse((self.root / 'zip-room').exists())
+
+    def test_module_zip_without_display_name_cannot_use_generic_installer(self):
+        for metadata in ('id=demo\nversion=1\n', '', 'name=\n'):
+            with self.subTest(metadata=metadata):
+                path = self.archive('unnamed-module.zip', extra={'module.prop': metadata})
+                checksum = hashlib.sha256((self.root / 'cache/unnamed-module.zip').read_bytes()).hexdigest()
+                code, refused, _ = self.helper('run', path, '--expected-sha256', checksum, '--confirm')
+                self.assertEqual((code, refused['error']['code']), (2, 'MODULE_ZIP_UNSUPPORTED'))
+                self.assertEqual(refused['error']['details']['package']['what'], 'module')
+                self.assertFalse((self.root / 'zip-room').exists())
+
+    def test_module_metadata_limit_refuses_before_execution(self):
+        path = self.archive('large-module.zip', extra={'module.prop': 'x' * (zi.MODULE_PROP_LIMIT + 1)})
+        checksum = hashlib.sha256((self.root / 'cache/large-module.zip').read_bytes()).hexdigest()
+        with mock.patch.object(saved_boot, 'keep_current_boot') as keep:
+            code, refused, _ = self.helper('run', path, '--expected-sha256', checksum, '--confirm')
+        self.assertEqual((code, refused['error']['code']), (2, 'MODULE_ZIP_UNSUPPORTED'))
+        keep.assert_not_called()
+        self.assertFalse((self.root / 'zip-room').exists())
+
+    def test_run_requires_reviewed_mounted_source_without_implicit_remount(self):
+        path = self.archive('module.zip', extra={'module.prop': 'id=demo\nname=Demo\n'})
+        checksum = hashlib.sha256((self.root / 'cache/module.zip').read_bytes()).hexdigest()
+        config = self.root / 'filesystem-fixture.json'
+        value = json.loads(config.read_text());value['volumes'][0]['mounted'] = False
+        config.write_text(json.dumps(value))
+        with mock.patch.object(fs.FixtureContext, 'mount') as mount, mock.patch.object(saved_boot, 'keep_current_boot') as keep:
+            code, refused, _ = self.helper('run', path, '--expected-sha256', checksum, '--confirm')
+        self.assertEqual((code, refused['error']['code']), (2, 'VOLUME_NOT_MOUNTED'))
+        mount.assert_not_called();keep.assert_not_called()
+        self.assertFalse((self.root / 'zip-room').exists())
+
+    def test_non_module_kernel_and_rom_keep_the_inspect_then_run_flow(self):
+        packages = [('kernel.zip', 'kernel', {'anykernel.sh': '# fixture kernel script'}),
+                    ('rom.zip', 'other', {'system.img': b'fixture declarative image'})]
+        for name, kind, extra in packages:
+            with self.subTest(package=name):
+                path = self.archive(name, 'printf executed > "$A22X_ZIP_ROOT/updater-ran"', extra=extra)
+                config = self.root / 'filesystem-fixture.json'
+                value = json.loads(config.read_text());value['volumes'][0]['mounted'] = False
+                config.write_text(json.dumps(value))
+                code, about, _ = self.helper('inspect', path)
+                self.assertEqual(code, 0, about)
+                self.assertTrue(about['run_supported'])
+                self.assertEqual(about['what'], kind)
+                self.assertTrue(fs.FixtureContext(self.root).volume('cache')['mounted'])
+                code, done, _ = self.helper('run', path, '--expected-sha256', about['sha256'], '--confirm')
+                self.assertEqual(code, 0, done)
+                self.assertEqual((done['exit'], done['changed']), (0, []))
+                self.assertEqual((self.root / 'zip-room/updater-ran').read_text(), 'executed')
+                self.assertEqual((self.root / 'targets/boot').read_bytes(), self.old)
+
+    def test_mounted_userdata_can_supply_a_zip_without_becoming_a_write_target(self):
+        media = self.root / 'userdata-files/media/0'
+        media.mkdir(parents=True)
+        config = self.root / 'filesystem-fixture.json'
+        value = json.loads(config.read_text())
+        value['volumes'].append({'id': 'userdata', 'path': 'userdata-files', 'fs_type': 'f2fs',
+                                 'mounted': True, 'read_only': False})
+        config.write_text(json.dumps(value))
+        name = 'kernel.zip'
+        self.archive(name, extra={'anykernel.sh': '# fixture kernel script'})
+        archive = media / name
+        (self.root / 'cache' / name).rename(archive)
+        before = archive.read_bytes()
+        path = '/media/0/' + name
+        code, about, _ = self.helper('inspect', path, volume='userdata')
+        self.assertEqual(code, 0, about)
+        self.assertEqual(about['what'], 'kernel')
+        code, done, _ = self.helper('run', path, '--expected-sha256', about['sha256'],
+                                    '--confirm', volume='userdata')
+        self.assertEqual(code, 0, done)
+        self.assertEqual(done['changed'], [])
+        self.assertNotIn('userdata', (self.root / 'seen').read_text().split())
+        self.assertEqual(archive.read_bytes(), before)
 
     def test_the_installer_runs_with_the_allowed_partitions_and_the_old_boot_is_kept(self):
         path = self.archive('kernel.zip', 'dd if="$A22X_ZIP_ROOT/../new-boot.img" of="$A22X_ZIP_ROOT/dev/block/by-name/boot" conv=notrunc 2>/dev/null')
@@ -119,6 +220,20 @@ class ZipInstall(unittest.TestCase):
         self.assertEqual(code, 0, done)
         self.assertEqual(done['changed'], ['boot'])
         self.assertTrue(done['android_boot_changed'] and done['keeps_recovery'])
+
+    def test_with_verification_off_a_changed_boot_needs_no_reset(self):
+        """2026-11-21 (KernelSU Next's AnyKernel3 on the phone, vbmeta verification off): Android kept its
+        data over the changed BOOT, so no erase is offered; with verification on, or not known, it is."""
+        changed = bytearray(stock_boot())
+        changed[-1] ^= 1
+        (self.root / 'new-boot.img').write_bytes(signed(bytes(changed)))
+        path = self.archive('ak3.zip', 'dd if="$A22X_ZIP_ROOT/../new-boot.img" of="$A22X_ZIP_ROOT/dev/block/by-name/boot" conv=notrunc 2>/dev/null')
+        about = self.helper('inspect', path)[1]
+        with mock.patch('root.verification_on', return_value=False):
+            code, done, _ = self.helper('run', path, '--expected-sha256', about['sha256'], '--confirm')
+        self.assertEqual(code, 0, done)
+        self.assertEqual(done['changed'], ['boot'])
+        self.assertFalse(done['android_boot_changed'])
 
     def test_an_installer_that_fails_is_reported_with_its_last_lines(self):
         path = self.archive('bad.zip', 'ui_print "! Unsupported device"', code=3)

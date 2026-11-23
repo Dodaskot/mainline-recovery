@@ -18,6 +18,7 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 PHROG_VERSION=0.53.0
+PHROG_A22X=2  # the A22x revision, as the packages (2: the keypad's back button)
 PHROG_SHA256=42d3b9153d60cbfc130d19e3531776887755cba9ca5734c4c4e21ec6944d1197
 PHROG_URL=https://github.com/samcday/phrog/archive/refs/tags/$PHROG_VERSION.tar.gz
 LIBDIR=/usr/local/lib/a22x-phrog
@@ -32,8 +33,8 @@ case "$phosh" in
 *[!0-9.]*|'') log "Phosh is not installed (Phrog is built from its library)"; exit 1 ;;
 esac
 # --key: the build this system needs, for a cached one to be used instead (2026-11-09).
-[ "${1:-}" != --key ] || { echo "phrog $PHROG_VERSION phosh $phosh"; exit 0; }
-if [ -x /usr/local/bin/phrog ] && [ "$(cat "$LIBDIR/built-for" 2>/dev/null)" = "phrog $PHROG_VERSION phosh $phosh" ]; then
+[ "${1:-}" != --key ] || { echo "phrog $PHROG_VERSION-a22x$PHROG_A22X phosh $phosh"; exit 0; }
+if [ -x /usr/local/bin/phrog ] && [ "$(cat "$LIBDIR/built-for" 2>/dev/null)" = "phrog $PHROG_VERSION-a22x$PHROG_A22X phosh $phosh" ]; then
     log "already built: Phrog $PHROG_VERSION with Phosh $phosh"
     exit 0
 fi
@@ -78,6 +79,8 @@ sed -i 's/^if enable_introspection or bindings_lib$/if enable_introspection/' "$
 # list stays put (2026-11-09).
 sed -i 's/^    sessions\.values()\.cloned()\.collect()$/    let mut list: Vec<SessionObject> = sessions.values().cloned().collect();\n    list.sort_by_key(|s| s.name());\n    list/' "$rsrc/src/sessions.rs"
 grep -q 'list.sort_by_key' "$rsrc/src/sessions.rs" || log "sessions stay in Phrog's own order (no sort patch for this version)"
+# The keypad's way back to the user and shell choice (2026-10-18, the owner's; as the packages).
+patch -p1 -d "$rsrc" < "$HERE/phrog-back-navigation.patch"
 api=$(sed -n "s/^libphosh_api_version = '\([0-9.]*\)'.*/\1/p" "$psrc/meson.build")
 [ -n "$api" ] || { log "no libphosh API version in Phosh $phosh"; exit 1; }
 # --prefix=/usr: the library then finds the installed Phosh's plugins, translations and data.
@@ -122,6 +125,6 @@ sed 's#^Exec=phrog$#Exec=/usr/local/bin/phrog#' "$d/mobi.phosh.Phrog.desktop" > 
 sed 's#^ExecStart=phrog$#ExecStart=/usr/local/bin/phrog#' "$d/mobi.phosh.Phrog.service" > /usr/local/lib/systemd/user/mobi.phosh.Phrog.service
 cp "$d/mobi.phosh.Phrog.target" /usr/local/lib/systemd/user/mobi.phosh.Phrog.target
 cp "$d/systemd-session.conf" /usr/local/lib/systemd/user/gnome-session@phrog.target.d/session.conf
-echo "phrog $PHROG_VERSION phosh $phosh" > "$LIBDIR/built-for"
+echo "phrog $PHROG_VERSION-a22x$PHROG_A22X phosh $phosh" > "$LIBDIR/built-for"
 /usr/local/bin/phrog --version >/dev/null
 log "done: /usr/local/bin/phrog $PHROG_VERSION with $LIBDIR/libphosh-$api.so.0"

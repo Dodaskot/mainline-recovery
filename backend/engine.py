@@ -435,6 +435,10 @@ def verify_backup(context, backup_path, progress=None):
 
 
 def list_backups(context, repository):
+    # A card's store before its first snapshot has no folder yet (2026-11-22: Install's list of
+    # backups on such a card failed as BACKEND_FAILED). Nothing is read: there is nothing to list.
+    if isinstance(repository, (str, os.PathLike)) and not os.path.lexists(repository):
+        return {"ok": True, "operation": "list", "repository": str(repository), "backups": []}
     repo = context.repository(repository)
     result = []
     for candidate in sorted(Path(repo["path"]).iterdir(), reverse=True):

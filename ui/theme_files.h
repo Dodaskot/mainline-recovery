@@ -20,10 +20,17 @@
 #define THEME_FLAG_TERMINAL 2u
 #define THEME_FLAG_BENTO 4u
 #define THEME_FLAG_LIGHT 8u
+#define THEME_STYLE_MASK UINT32_C(0xffff0000)
+#define THEME_BLUR_MASK UINT32_C(0x00007f00)
 #define THEME_THUMB_W 117u
 #define THEME_THUMB_H 261u
 #define THEME_IMAGE_W 540u
 #define THEME_IMAGE_H 1204u
+
+static inline int theme_style_value(uint32_t style, unsigned shift, unsigned mask, int fallback) {
+    unsigned encoded = (style >> shift) & mask;
+    return encoded ? (int)encoded - 1 : fallback;
+}
 
 typedef struct {
     char magic[8];uint32_t flags;
@@ -52,7 +59,7 @@ static void theme_file_fill(ThemeFile*f){
         .on_accent=c[10],.icon_fill=c[11],.knob=c[12],.green=c[13],.red=c[14],.blue=c[15],.purple=c[16],.danger=c[17],.toast_fill=c[18],.toast_text=c[19],.shadow=c[20],
         .hero_top=c[21],.hero_bottom=c[22],.hero_text=c[23],.hero_sub=c[24],.terminal_bg=h->terminal_bg,.terminal_fg=h->terminal_fg,
         .terminal_palette=(h->flags&THEME_FLAG_TERMINAL)?h->palette:((h->flags&THEME_FLAG_LIGHT)?terminal_light_palette:NULL),
-        .surface_alpha=h->surface_alpha,.edge_alpha=h->edge_alpha,.shadow_strength=h->shadow_strength,.bento=(h->flags&THEME_FLAG_BENTO)!=0};
+        .blur=(h->flags&THEME_BLUR_MASK)>>8,.tile_style=h->flags&THEME_STYLE_MASK,.surface_alpha=h->surface_alpha,.edge_alpha=h->edge_alpha,.shadow_strength=h->shadow_strength,.bento=(h->flags&THEME_FLAG_BENTO)!=0};
     memcpy(f->theme.tile_fill,h->tile_fill,sizeof(h->tile_fill));memcpy(f->theme.tile_ink,h->tile_ink,sizeof(h->tile_ink));
     f->scheme=(TerminalScheme){.code=h->code,.name=h->name,.bg=h->terminal_bg,.fg=h->terminal_fg};memcpy(f->scheme.palette,h->palette,sizeof(h->palette));
 }

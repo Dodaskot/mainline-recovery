@@ -3,6 +3,66 @@
 #include "recovery_ui.c"
 #undef main
 
+
+/* Deterministic, hardware-free frame pacing telemetry regression.
+ * A separate command avoids display helper, real panel and credential paths. */
+static int pacing_synthetic(void){
+    unsigned checks=0;
+#define PCHECK(cond) do { checks++; if(!(cond)){fprintf(stderr,"pacing check %u at %d failed: %s\n",checks,__LINE__,#cond);return 1;} } while(0)
+    FramePacing fp={.enabled=true};
+    uint64_t t=1000000000ull;
+    frame_pacing_note(&fp,t,90,2000000,1000000,2000000,true);
+    for(unsigned n=1;n<=100;n++){
+        t+=(n==75||n==85)?22222222ull:11111111ull;
+        frame_pacing_note(&fp,t,90,2000000,1000000,2000000,true);
+    }
+    FramePacingStats s=frame_pacing_stats(&fp);
+    PCHECK(s.count==100&&s.frames==100);
+    PCHECK(s.interval_p50_us==11111&&s.interval_p95_us==11111);
+    PCHECK(s.interval_p99_us==22222);
+    PCHECK(s.missed_deadline_est==2);
+    PCHECK(s.render_p95_us==2000&&s.wait_p95_us==1000&&s.copy_p95_us==2000);
+    unsigned kept=s.count;uint64_t misses=s.missed_deadline_est;
+    frame_pacing_note(&fp,t+2000000000ull,90,0,0,0,false);
+    frame_pacing_note(&fp,t+2000000000ull+11111111ull,90,2000000,0,1000000,true);
+    PCHECK(frame_pacing_stats(&fp).count==kept);
+    PCHECK(frame_pacing_stats(&fp).missed_deadline_est==misses);
+    FramePacing logs=fp;logs.frames=512;
+    PCHECK(frame_pacing_log_due(&logs));
+    PCHECK(!frame_pacing_log_due(&logs));
+    PCHECK(logs.last_logged_frames==512);
+    FramePacing at60={.enabled=true};
+    frame_pacing_note(&at60,1000000000ull,60,0,0,0,true);
+    frame_pacing_note(&at60,1016666667ull,60,0,0,0,true);
+    PCHECK(frame_pacing_stats(&at60).interval_p50_us==16666);
+    FramePacing off={0};
+    frame_pacing_note(&off,1000000000ull,90,2000000,0,0,true);
+    frame_pacing_note(&off,1022222222ull,90,2000000,0,0,true);
+    PCHECK(frame_pacing_stats(&off).count==0);
+    App*a=calloc(1,sizeof(*a));PCHECK(a!=NULL);initialize(a);screen(a,HOME);render(a);
+    PCHECK(!a->dirty);
+    /* Forced render benchmark only: production idle pages are not redrawn. */
+    uint64_t render_total_ns=0;
+    for(unsigned n=0;n<16;n++){
+        uint64_t render_before=frame_pacing_clock_ns();render(a);
+        render_total_ns+=frame_pacing_clock_ns()-render_before;
+    }
+    PCHECK(!a->dirty);
+    Display d={.drm=-1,.vw=NW,.vh=NH};
+    d.v.xres=NW;d.v.yres=NH;d.v.bits_per_pixel=32;d.v.red.offset=16;d.v.green.offset=8;d.v.blue.offset=0;d.f.line_length=NW*4;
+    d.length=(size_t)NW*NH*4;d.map=calloc(1,d.length);PCHECK(d.map!=NULL);
+    uint64_t copy_total_ns=0;
+    for(unsigned n=0;n<32;n++){
+        uint64_t before=frame_pacing_clock_ns();PCHECK(present(a,&d));copy_total_ns+=frame_pacing_clock_ns()-before;
+    }
+    PCHECK(!a->dirty&&d.map[0]==(uint8_t)(a->pixels[0]&0xff));
+    free(d.map);free(a->pixels);free(a);
+    printf("{\"ok\":true,\"case\":\"pacing-synthetic\",\"checks\":%u,\"interval_p50_us\":%u,\"interval_p95_us\":%u,\"interval_p99_us\":%u,\"missed_deadline_est\":%llu,\"host_forced_render_mean_us\":%llu,\"host_present_copy_mean_us\":%llu,\"measured_on_device\":false,\"physical_vblank\":false,\"credential_io\":false}\n",
+           checks,s.interval_p50_us,s.interval_p95_us,s.interval_p99_us,(unsigned long long)s.missed_deadline_est,(unsigned long long)(render_total_ns/16/1000),(unsigned long long)(copy_total_ns/32/1000));
+#undef PCHECK
+    return 0;
+}
+
 #define DCHECK(expr) do{checks++;if(!(expr)){fprintf(stderr,"display-ui check %u line %d failed: %s; screen=%d blank=%d blocked=%d uncertain=%d note=%s\n",checks,__LINE__,#expr,a->screen,a->display_blanked,a->display_input_blocked,a->display_uncertain,a->display_light_note);goto failed;}}while(0)
 static bool display_test_settle(App*a){
     uint64_t deadline=milliseconds()+12000;
@@ -19,6 +79,7 @@ static bool display_test_json(App*a,const char*text_value){JsonToken tokens[128]
 static ThemeFile*theme_file_in_use(void){for(unsigned int n=0;n<theme_file_count;n++)if(&theme_files[n].theme==ui_theme)return &theme_files[n];return NULL;}
 static int theme_index(const char*code){for(int n=0;n<(int)theme_file_count;n++)if(!strcmp(theme_files[n].header.code,code))return n;return -1;}
 int main(int argc,char**argv){
+    if(argc==2&&!strcmp(argv[1],"pacing-synthetic"))return pacing_synthetic();
     if(argc!=5)return 2;
     unsigned int checks=0;const char*which=argv[3];App*a=calloc(1,sizeof(*a));if(!a)return 2;initialize(a);
     /* 2026-11-10: the check for a plan from the Android app runs once from hotplug_tick() and starts
@@ -35,8 +96,12 @@ int main(int argc,char**argv){
     DCHECK(a->display_light_known&&!a->display_control.pid&&!a->job.pid&&a->screen==HOME);
     if(!strcmp(which,"unavailable")){
         DCHECK(!a->display_brightness_supported&&!a->display_blank_supported&&!a->display_blank_known&&!a->display_input_blocked);
-        display_test_power(a,100);DCHECK(!a->display_control.pid&&!a->display_input_blocked);
-        screen(a,DISPLAY_SETTINGS);render(a);DCHECK(!display_slider_usable(a)&&!test_button(a,A_DISPLAY_BRIGHTNESS)->enabled);goto done;
+        /* No light control at all: Power blacks the screen out in software (2026-11-20, a tester's
+           Tianma), with no helper started, and Power again brings it back. */
+        display_test_power(a,100);DCHECK(!a->display_control.pid&&!a->display_input_blocked&&a->soft_blanked);
+        a->now+=3000;display_test_power(a,100);DCHECK(!a->soft_blanked&&!a->display_control.pid);
+        screen(a,DISPLAY_SETTINGS);render(a);Button*brightness=test_button(a,A_DISPLAY_BRIGHTNESS);
+        DCHECK(!display_slider_usable(a)&&(!brightness||!brightness->enabled));goto done;
     }
     DCHECK(a->display_brightness_supported&&a->display_blank_supported&&a->display_blank_known&&a->display_max==255&&a->display_last_percent==64);
     if(!strcmp(which,"startup-blank")){
@@ -58,7 +123,8 @@ int main(int argc,char**argv){
         DCHECK(json_parse(&doc,listing,tokens,64)>0);usb_repositories(a,&doc);DCHECK(a->store==1&&!a->job.pid);
         a->device=true;a->store=0;copy(a->repositories[0],sizeof(a->repositories[0]),folder);DCHECK(destination_ready(a)&&a->screen==HOME);
         copy(a->repositories[0],sizeof(a->repositories[0]),"/nonexistent/A22xBackups");DCHECK(!destination_ready(a)&&a->screen==STORAGE&&!strcmp(a->toast,"Choose storage first"));a->device=false;a->store=1;
-        DCHECK(json_parse(&doc,"{\"volumes\":[]}",tokens,64)>0);complete_usb_eject(a,&doc,true);
+        DCHECK(json_parse(&doc,"{\"volumes\":[]}",tokens,64)>0);
+        a->preview=true;complete_usb_eject(a,&doc,true);a->preview=false;
         DCHECK(a->repository_count==1&&a->store==0&&!strcmp(a->toast,"You can remove the USB stick now"));goto done;
     }
     if(!strcmp(which,"password")){
@@ -164,12 +230,13 @@ int main(int argc,char**argv){
         goto done;
     }
     if(!strcmp(which,"animation-styles")){
+        a->preview=true;
         size_t bytes=(size_t)NW*NH*sizeof(uint32_t);a->tr.from=malloc(bytes);a->tr.to=malloc(bytes);DCHECK(a->tr.from&&a->tr.to);a->animate=true;
-        screen(a,HOME);render(a);Rect tile=test_button(a,A_STORAGE)->r;
+        screen(a,HOME);render(a);Rect tile=test_button(a,A_POWER)->r;
         static const struct{unsigned int style;enum TransitionKind forward,back;bool blur;}styles[]={{ANIM_ZOOM,TR_OPEN,TR_CLOSE,false},{ANIM_BLUR,TR_OPEN,TR_CLOSE,true},{ANIM_SLIDE,TR_SLIDE,TR_SLIDE_BACK,false},{ANIM_FADE,TR_FADE,TR_FADE,false},{ANIM_DISSOLVE,TR_DISSOLVE,TR_DISSOLVE,false}};
         for(unsigned int n=0;n<sizeof(styles)/sizeof(styles[0]);n++){
-            a->animation=styles[n].style;a->tr_depth=0;a->pressed_rect=tile;a->pressed_glyph=A_STORAGE;tap_action(a,A_STORAGE);
-            DCHECK(a->screen==STORAGE&&a->tr.armed&&a->tr.kind==styles[n].forward&&a->tr.blur==styles[n].blur);
+            a->animation=styles[n].style;a->tr_depth=0;a->pressed_rect=tile;a->pressed_glyph=A_POWER;tap_action(a,A_POWER);
+            DCHECK(a->screen==POWER&&a->tr.armed&&a->tr.kind==styles[n].forward&&a->tr.blur==styles[n].blur);
             transition_start(a);transition_compose(a,1.f);DCHECK(!memcmp(a->pixels,a->tr.to,bytes));transition_compose(a,.5f);DCHECK(memcmp(a->pixels,a->tr.to,bytes)&&memcmp(a->pixels,a->tr.from,bytes));
             /* Zoom with blur is told from the plain zoom at a glance (2026-11-10, on the phone: it could
                not be). A third of the way in, the page behind is its frosted copy and the page itself is
@@ -189,8 +256,8 @@ int main(int argc,char**argv){
             a->tr.active=false;render(a);
         }
         /* Off means no animation of any kind, the theme circle included. */
-        a->animation=ANIM_OFF;a->pressed_rect=tile;tap_action(a,A_STORAGE);DCHECK(a->screen==STORAGE&&!a->tr.armed);render(a);tap_action(a,A_BACK);DCHECK(!a->tr.armed);
-        screen(a,THEME);render(a);a->pressed_rect=test_button(a,A_THEME_ITEM+1)->r;tap_action(a,A_THEME_ITEM+1);DCHECK(!a->tr.armed);goto done;
+        a->animation=ANIM_OFF;a->pressed_rect=tile;tap_action(a,A_POWER);DCHECK(a->screen==POWER&&!a->tr.armed);render(a);tap_action(a,A_BACK);DCHECK(!a->tr.armed);
+        screen(a,THEME);render(a);a->pressed_rect=test_button(a,A_THEME_ITEM+1)->r;tap_action(a,A_THEME_ITEM+1);DCHECK(!a->tr.armed);a->preview=false;goto done;
     }
     if(!strcmp(which,"pad")){
         settings_helper=getenv("A22X_TEST_SETTINGS");DCHECK(settings_helper!=NULL);
@@ -315,6 +382,32 @@ int main(int argc,char**argv){
         DCHECK(complete_files_job(a,&doc,J_FS_FORMAT)==J_FS_INVENTORY&&a->fs_inventory_destination==FILE_VOLUME&&!strcmp(a->fs_status,"Formatted"));
         goto done;
     }
+    if(!strcmp(which,"wipe")){
+        const char*helper=getenv("A22X_TEST_FILESYSTEM");DCHECK(helper&&*helper);
+        copy(a->filesystem_helper,sizeof(a->filesystem_helper),helper);
+        screen(a,WIPE);DCHECK(test_press(a,A_WIPE_VOLUMES,50)&&await_job(a)&&a->screen==WIPE_VOLUMES);
+        int sd=-1;render(a);DCHECK(a->volume_count==3);
+        for(int index=0;index<a->volume_count;index++){
+            const char*id=a->volumes[index].id;
+            if(!strcmp(id,"sdcard-p1"))sd=index;
+            DCHECK((test_button(a,A_FS_VOLUME_ITEM+index)!=NULL)==(strcmp(id,"super-system")!=0));
+        }
+        DCHECK(sd>=0&&test_press(a,A_FS_VOLUME_ITEM+sd,50)&&a->screen==WIPE_VOLUME);
+        render(a);DCHECK(test_button(a,A_FS_UNMOUNT)&&!test_button(a,A_FS_FORMAT_VFAT)&&!test_button(a,A_FS_OPEN));
+        DCHECK(test_press(a,A_FS_UNMOUNT,50)&&await_job(a)&&a->successful&&a->screen==WIPE_VOLUME);
+        /* 2026-11-20: erasing holds 2 seconds (it asks 5), clearing a cache 1 second (it asks 3). */
+        render(a);DCHECK(test_button(a,A_FS_FORMAT_VFAT)->hold_ms==2000);
+        DCHECK(test_press(a,A_FS_FORMAT_VFAT,1999)&&!a->job.pid);
+        DCHECK(test_press(a,A_FS_FORMAT_VFAT,2000)&&await_job(a)&&a->successful&&a->screen==WIPE_VOLUME);
+        DCHECK(!strcmp(current_volume(a)->fs_type,"vfat")&&!strcmp(a->fs_status,"Formatted"));
+        DCHECK(test_press(a,A_BACK,50)&&a->screen==WIPE_VOLUMES);
+        DCHECK(test_press(a,A_BACK,50)&&a->screen==WIPE);
+        DCHECK(test_press(a,A_WIPE_DALVIK,50)&&await_job(a)&&a->screen==WIPE_DALVIK&&dalvik_target(a));
+        DCHECK(test_press(a,A_WIPE_CONFIRM,999)&&!a->job.pid);
+        DCHECK(test_press(a,A_WIPE_CONFIRM,1000)&&await_job(a)&&a->successful&&a->screen==RESULT);
+        DCHECK(!strcmp(a->status,"Dalvik / ART cache cleared")&&test_press(a,A_DONE,50)&&a->screen==WIPE);
+        goto done;
+    }
     if(!strcmp(which,"check-done")){
         /* 2026-11-09: a check reports clean or repaired, then reads the volumes again. */
         static const char repaired[]="{\"ok\":true,\"operation\":\"check\",\"checked\":\"ext4\",\"result\":\"repaired\",\"exit_code\":1}";
@@ -345,7 +438,8 @@ int main(int argc,char**argv){
         static const char joined[]="{\"ok\":true,\"operation\":\"connect\",\"available\":true,\"on\":true,\"connected\":true,\"ssid\":\"Home\",\"ssid_hex\":\"486f6d65\",\"address\":\"10.42.0.23\"}";
         static const char refused[]="{\"ok\":false,\"operation\":\"connect\",\"error\":{\"code\":\"WIFI_AUTH_FAILED\",\"message\":\"The password is wrong.\"}}";
         Json doc;JsonToken tokens[128];a->wifi_helper[0]=0;
-        screen(a,TOOLS);render(a);DCHECK(test_button(a,A_WIFI));
+        /* Settings grew (sound, flashlight sliders): the Wi-Fi row may sit below the first screen. */
+        screen(a,TOOLS);render(a);for(int64_t at=0;!test_button(a,A_WIFI)&&at<=tools_max_scroll(a);at+=300){a->tools_scroll=at;render(a);}DCHECK(test_button(a,A_WIFI));
         screen(a,WIFI);DCHECK(json_parse(&doc,scan,tokens,128)>0&&complete_wifi_job(a,&doc,J_WIFI_SCAN,true)==0);
         DCHECK(a->wifi_count==4&&a->wifi_on&&!a->wifi_connected&&!strcmp(a->wifi_nets[0].hex,"486f6d65")&&a->wifi_nets[3].saved);
         render(a);Button*b=test_button(a,A_WIFI_NET+0);DCHECK(b&&b->enabled);b=test_button(a,A_WIFI_NET+2);DCHECK(b&&!b->enabled);
@@ -366,9 +460,10 @@ int main(int argc,char**argv){
         DCHECK(json_parse(&doc,refused,tokens,128)>0&&complete_wifi_job(a,&doc,J_WIFI_CONNECT,false)==0&&!strcmp(a->wifi_error,"The password is wrong."));
         action(a,A_WIFI_HIDDEN);DCHECK(a->screen==FILE_PROMPT&&a->fs_prompt_kind==J_WIFI_SSID&&!a->wifi_edit_fixed);
         action(a,A_BACK);DCHECK(a->screen==WIFI);action(a,A_BACK);DCHECK(a->screen==TOOLS);
-        /* The home page: Wi-Fi and theme at hand, the browser waits for its program. Back returns home. */
-        screen(a,HOME);render(a);DCHECK(test_button(a,A_WIFI)&&test_button(a,A_HOME_THEME)&&test_button(a,A_HOME_CATALOG));
-        action(a,A_HOME_THEME);DCHECK(a->screen==THEME);action(a,A_BACK);DCHECK(a->screen==HOME);
+        /* The home page: Wi-Fi, the browser and the player at hand (2026-11-22: the theme is a setting of the
+           Tools tab). Back returns where the page was opened. */
+        screen(a,HOME);render(a);DCHECK(test_button(a,A_WIFI)&&test_button(a,A_HOME_CATALOG)&&test_button(a,A_PLAYER));
+        screen(a,TOOLS);render(a);action(a,A_THEME);DCHECK(a->screen==THEME);action(a,A_BACK);DCHECK(a->screen==TOOLS);
         screen(a,WIFI);a->wifi_from_home=true;action(a,A_BACK);DCHECK(a->screen==HOME);
         goto done;
     }
@@ -422,6 +517,19 @@ int main(int argc,char**argv){
         render(a);Button*b=test_button(a,A_CATALOG_ITEM+1);DCHECK(b&&!b->enabled);b=test_button(a,A_CATALOG_ITEM+0);DCHECK(b&&b->enabled);
         /* No pages: every image is in one list. */
         DCHECK(!test_button(a,A_CATALOG_NEXT)&&!test_button(a,A_CATALOG_PREV));
+        int fixed_y=test_button(a,A_CATALOG_FAMILY+1)->r.y;
+        int item_y=test_button(a,A_CATALOG_ITEM)->r.y;
+        for(unsigned int n=2;n<16;n++)a->catalog[n]=a->catalog[0];
+        a->catalog_count=16;render(a);
+        DCHECK(page_max_scroll(a)>40);
+        page_scroll_to(a,40);render(a);
+        DCHECK(test_button(a,A_CATALOG_FAMILY+1)->r.y==fixed_y);
+        DCHECK(test_button(a,A_CATALOG_ITEM)->r.y==item_y-40);
+        a->job.pid=42;a->job.kind=J_CATALOG_CHECK;
+        DCHECK(scroll_candidate(a,360,fixed_y+10)==SCROLL_NONE);
+        DCHECK(scroll_candidate(a,360,a->catalog_list_top+10)==SCROLL_PAGE);
+        a->job.pid=0;a->job.kind=J_NONE;
+        a->catalog_count=2;page_scroll_to(a,0);
         action(a,A_CATALOG_FAMILY+1);DCHECK(a->catalog_family==1&&catalog_visible(a)==1);render(a);DCHECK(!test_button(a,A_CATALOG_ITEM+0)&&!test_button(a,A_CATALOG_FAMILY+4)&&test_button(a,A_CATALOG_FAMILY+2));
         action(a,A_CATALOG_FAMILY+0);action(a,A_CATALOG_ITEM+1);DCHECK(a->screen==SYSTEMS_CATALOG);
         /* Recovery joined "Test" from its saved list: the plan takes the saved key, not an open network. */
@@ -451,7 +559,7 @@ int main(int argc,char**argv){
         a->systems_mounted=true;
         screen(a,SYSTEMS_CATALOG);action(a,A_BACK);DCHECK(a->screen==SYSTEMS_NEW);action(a,A_BACK);DCHECK(a->screen==SYSTEMS);
         action(a,A_SYS_IMPORT);DCHECK(!a->systems_remote_id[0]&&!a->systems_wipe);await_job(a);
-        screen(a,HOME);render(a);DCHECK(test_button(a,A_HOME_CATALOG));action(a,A_HOME_CATALOG);DCHECK(a->screen==SYSTEMS_CATALOG);
+        screen(a,HOME);render(a);DCHECK(test_button(a,A_HOME_CATALOG));action(a,A_HOME_CATALOG);DCHECK(a->screen==WEB_BROWSER);render(a);action(a,A_WEB_CATALOG);DCHECK(a->screen==SYSTEMS_CATALOG);
         goto done;
     }
     if(!strcmp(which,"systems-mount")){
@@ -563,11 +671,12 @@ int main(int argc,char**argv){
         SWIPE(6,800,140,804);DCHECK(a->screen==TOOLS&&!a->nav_settle_end);
         /* Unsaved text is asked about first. */
         a->fs_dirty=true;copy(a->fs_text,sizeof(a->fs_text),"draft");screen(a,FILE_EDIT);render(a);SWIPE(360,1590,360,1400);DCHECK(a->screen==FILE_DISCARD);a->fs_dirty=false;a->fs_text[0]=0;
-        /* Up and held: the terminal. */
+        /* Up and held: the open pages (recents; it opened the terminal before they came). */
         screen(a,TOOLS);render(a);at+=500;pointer(a,true,360,1590,at);pointer(a,true,360,1400,at+30);a->now=at+30+NAV_HOLD_MS-1;held_tick(a,false);DCHECK(!a->gesture_terminal);a->now=at+30+NAV_HOLD_MS;held_tick(a,false);DCHECK(a->gesture_terminal);render(a);pointer(a,false,360,1400,at+600);
-        DCHECK(a->screen==TERMINAL||a->job.pid);DCHECK(await_job(a));
-        /* The gestures rest while the page cannot be left, or while the phone is locked. */
-        screen(a,TOOLS);render(a);a->job.pid=1;a->job.kind=J_BACKUP;SWIPE(6,800,140,800);DCHECK(a->screen==TOOLS);a->job.pid=0;a->job.kind=J_NONE;
+        DCHECK(a->screen==RECENTS);DCHECK(await_job(a));
+        /* The gestures rest while the phone is locked. Beside running work they leave the page and the work goes
+           on (2026-11-22, the owner: a way out of every page while an operation runs). */
+        screen(a,TOOLS);render(a);a->job.pid=1;a->job.kind=J_BACKUP;SWIPE(6,800,140,800);DCHECK(a->screen!=TOOLS&&a->job.pid==1);a->job.pid=0;a->job.kind=J_NONE;
         a->locked=true;a->screen=LOCKSCREEN;render(a);SWIPE(360,1590,360,1500);DCHECK(a->screen==LOCKSCREEN);a->locked=false;
         /* Buttons: back, home and the terminal at the right. */
         a->nav_mode=NAV_BUTTONS;screen(a,THEME);render(a);DCHECK(test_press(a,A_NAV_BACK,40)&&a->screen==TOOLS);render(a);DCHECK(test_press(a,A_NAV_HOME,40)&&a->screen==HOME);render(a);DCHECK(!test_button(a,A_NAV_BACK)->enabled&&test_button(a,A_NAV_TERMINAL)->r.x>400);
@@ -626,7 +735,7 @@ int main(int argc,char**argv){
         /* A theme of the image goes the same way, and can be asked back. */
         int bundled=theme_index("beaver");action(a,A_THEME_ITEM+THEME_COUNT+bundled);DCHECK(!strcmp(ui_theme->code,"beaver"));a->now=milliseconds();
         action(a,A_THEME_REMOVE+bundled);action(a,A_THEME_REMOVE+bundled);DCHECK(await_job(a));DCHECK(theme_index("beaver")<0&&ui_theme==&themes[0]&&theme_files_hidden&&theme_file_count==2);
-        render(a);DCHECK(test_button(a,A_THEME_RESTORE));action(a,A_THEME_RESTORE);DCHECK(await_job(a));DCHECK(theme_index("beaver")>=0&&!theme_files_hidden&&theme_file_count==3&&a->screen==THEME);render(a);
+        page_scroll_to(a,100000);render(a);DCHECK(test_button(a,A_THEME_RESTORE));action(a,A_THEME_RESTORE);DCHECK(await_job(a));DCHECK(theme_index("beaver")>=0&&!theme_files_hidden&&theme_file_count==3&&a->screen==THEME);render(a);
         /* Removed from the terminal list, the colors in use go back to following the theme. */
         int colors=theme_index("green-tty");a->page_scroll=0;screen(a,TERMINAL_THEME);action(a,A_TERMINAL_THEME_ITEM+TERMINAL_SCHEME_COUNT+colors);DCHECK(ui_terminal==&theme_files[colors].scheme);
         a->now=milliseconds();action(a,A_THEME_REMOVE+colors);action(a,A_THEME_REMOVE+colors);DCHECK(await_job(a));DCHECK(ui_terminal==&terminal_schemes[0]&&a->screen==TERMINAL_THEME&&theme_index("green-tty")<0&&!strcmp(a->toast,"Colors removed"));render(a);goto done;
@@ -655,10 +764,10 @@ int main(int argc,char**argv){
     }
     if(!strcmp(which,"transitions")){
         size_t bytes=(size_t)NW*NH*sizeof(uint32_t);a->tr.from=malloc(bytes);a->tr.to=malloc(bytes);DCHECK(a->tr.from&&a->tr.to);a->animate=true;
-        /* A tile opens its page out of its own rectangle and glyph. */
-        screen(a,HOME);render(a);Button*tile=test_button(a,A_STORAGE);DCHECK(tile&&tile->glyph==A_STORAGE);Rect origin=tile->r;uint64_t at=milliseconds();
+        /* A tile opens its page out of its own rectangle and glyph (Power: a tool of Home since 2026-11-22). */
+        screen(a,HOME);render(a);Button*tile=test_button(a,A_POWER);DCHECK(tile&&tile->glyph==A_POWER);Rect origin=tile->r;uint64_t at=milliseconds();
         pointer(a,true,origin.x+30,origin.y+30,at);render(a);pointer(a,false,origin.x+30,origin.y+30,at+60);
-        DCHECK(a->screen==STORAGE&&a->tr.armed&&a->tr.kind==TR_OPEN&&a->tr.glyph==A_STORAGE&&a->tr.origin.x==origin.x&&a->tr_depth==1);
+        DCHECK(a->screen==POWER&&a->tr.armed&&a->tr.kind==TR_OPEN&&a->tr.glyph==A_POWER&&a->tr.origin.x==origin.x&&a->tr_depth==1);
         transition_start(a);DCHECK(a->tr.active&&!a->tr.armed&&test_button(a,A_BACK));
         /* The first frame is still the old page around the tile, and the last is exactly the new page. */
         transition_compose(a,0.f);DCHECK(a->pixels[10]==a->tr.from[10]&&a->pixels[(size_t)2300*NW+540]==a->tr.from[(size_t)2300*NW+540]);
@@ -670,7 +779,7 @@ int main(int argc,char**argv){
         DCHECK(!transition_frame(a,a->tr.started+TRANSITION_OPEN_MS+1)&&!a->tr.active);render(a);
         /* Back closes the page into the same tile. */
         Button*back=test_button(a,A_BACK);DCHECK(back);at+=1000;pointer(a,true,back->r.x+10,back->r.y+10,at);render(a);pointer(a,false,back->r.x+10,back->r.y+10,at+60);
-        DCHECK(a->screen==HOME&&a->tr.armed&&a->tr.kind==TR_CLOSE&&a->tr.origin.x==origin.x&&a->tr.glyph==A_STORAGE&&!a->tr_depth);
+        DCHECK(a->screen==HOME&&a->tr.armed&&a->tr.kind==TR_CLOSE&&a->tr.origin.x==origin.x&&a->tr.glyph==A_POWER&&!a->tr_depth);
         transition_start(a);transition_compose(a,1.f);DCHECK(a->pixels[10]==a->tr.to[10]);
         /* A touch during the animation lands on the live page at once. */
         at+=1000;pointer(a,true,300,1420,at);DCHECK(!a->tr.active&&!a->tr.armed&&a->dirty);pointer(a,false,300,1420,at+400);render(a);
@@ -830,8 +939,8 @@ int main(int argc,char**argv){
     }
     DCHECK(false);
 done:
-    /* The Backup page reads the systems status once (2026-11-11); a case that ends there lets it end. */
-    {uint64_t deadline=milliseconds()+12000;while(a->job.pid&&a->job.kind==J_SYS_STATUS&&milliseconds()<deadline){a->now=milliseconds();poll_job(a);struct timespec pause={0,1000000};nanosleep(&pause,NULL);}}
+    /* Navigation can leave a read still running. Let it finish before freeing the fixture. */
+    {uint64_t deadline=milliseconds()+12000;while(a->job.pid&&(a->job.kind==J_SYS_STATUS||a->job.kind==J_FS_INVENTORY)&&milliseconds()<deadline){a->now=milliseconds();poll_job(a);struct timespec pause={0,1000000};nanosleep(&pause,NULL);}}
     DCHECK(!a->display_control.pid&&!a->job.pid&&a->running&&!a->exit_code);
     close(sentinel);unsetenv("A22X_RECOVERY_LOCK_FD");unsetenv("A22X_DISPLAY_FIXTURE_SENTINEL_FD");display_test_stop(a);
     printf("{\"ok\":true,\"case\":\"%s\",\"checks\":%u,\"helper_double\":true,\"device_io\":false}\n",which,checks);return 0;

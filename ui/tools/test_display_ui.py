@@ -18,7 +18,7 @@ CASES = ('busy-backup', 'power-focus-hold', 'wake-contact', 'terminal-mtp',
          'restore-boot', 'restore-tap', 'restore-locked', 'restore-refused',
          'restore-set-error', 'restore-unavailable', 'stick-choice', 'rate-change', 'transitions',
          'password', 'lock-guard', 'lock-keeps-text', 'access', 'animation-styles', 'blur', 'pad', 'prompt-field', 'settings-retry', 'theme-files', 'phone-details',
-         'vblank-stays', 'lock-dark', 'pad-dots', 'pad-round', 'power-menu', 'navigation', 'restore-image', 'account-page', 'clean-install', 'systems-mount', 'format-done', 'check-done', 'wifi', 'installer', 'packages', 'adb')
+         'vblank-stays', 'lock-dark', 'pad-dots', 'pad-round', 'power-menu', 'navigation', 'restore-image', 'account-page', 'clean-install', 'systems-mount', 'format-done', 'wipe', 'check-done', 'wifi', 'installer', 'packages', 'adb')
 
 
 def flaky_settings(root, env):
@@ -73,6 +73,20 @@ def phone_details(root, env):
     env.update(A22X_RECOVERY_SYSINFO_HELPER=str(UI.parent/'sysinfo.py'), A22X_SYSINFO_ROOT=str(root/'phone'))
 
 
+def wipe_volumes(root, env):
+    volumes = [('userdata', 'data', 'f2fs', True), ('super-system', 'system', 'erofs', False),
+               ('sdcard-p1', 'sd', 'ext4', True)]
+    for _, name, _, _ in volumes:
+        (root/name).mkdir()
+    (root/'data/dalvik-cache').mkdir()
+    (root/'data/dalvik-cache/boot.art').write_bytes(b'runtime cache')
+    (root/'data/keep.txt').write_bytes(b'userdata')
+    (root/'filesystem-fixture.json').write_text(json.dumps({'schema': 'a22x.filesystem.fixture.v1', 'volumes': [
+        {'id': ident, 'path': name, 'fs_type': kind, 'mounted': mounted, 'read_only': not mounted}
+        for ident, name, kind, mounted in volumes]}))
+    env.update(A22X_TEST_FILESYSTEM=str(UI.parent/'filesystem.py'))
+
+
 def main():
     binary = os.environ.get('A22X_DISPLAY_UI_TEST_BINARY', str(UI/'display-ui-test'))
     prefix = os.environ.get('A22X_DISPLAY_UI_TEST_PREFIX', 'display-controls')
@@ -115,6 +129,8 @@ def main():
                 theme_files(root, env)
             if case == 'phone-details':
                 phone_details(root, env)
+            if case == 'wipe':
+                wipe_volumes(root, env)
             run = subprocess.run([binary, str(root), str(UI/'tools/display_fixture.py'), case, sys.executable],
                                  capture_output=True, text=True, timeout=60, env=env)
             (UI/f'{prefix}-{case}.stdout.log').write_text(run.stdout)
@@ -129,7 +145,7 @@ def main():
             assert ops[0] == 'status'
             if case in ('unavailable', 'malformed', 'strict-readback', 'stick-choice', 'transitions', 'password', 'lock-guard',
                         'lock-keeps-text', 'access', 'animation-styles', 'blur', 'pad', 'prompt-field', 'settings-retry', 'theme-files', 'phone-details',
-                        'vblank-stays', 'lock-dark', 'pad-dots', 'pad-round', 'power-menu', 'navigation', 'restore-image', 'account-page', 'clean-install', 'systems-mount', 'format-done', 'check-done', 'wifi', 'installer', 'packages', 'adb'):
+                        'vblank-stays', 'lock-dark', 'pad-dots', 'pad-round', 'power-menu', 'navigation', 'restore-image', 'account-page', 'clean-install', 'systems-mount', 'format-done', 'wipe', 'check-done', 'wifi', 'installer', 'packages', 'adb'):
                 expected = ['status']
             elif case in ('slider', 'no-drm'):
                 expected = ['status', 'brightness', 'status', 'brightness', 'status']
@@ -161,6 +177,9 @@ def main():
             assert 'R5PRIVATESERIAL' not in run.stdout + run.stderr, 'The serial number reached a log'
             if case == 'settings-retry':
                 assert (root/'tries').read_text() == 'xxx', 'The save was not repeated until it worked'
+            if case == 'wipe':
+                assert (root/'data/keep.txt').read_bytes() == b'userdata'
+                assert list((root/'data/dalvik-cache').iterdir()) == []
             if case != 'phone-details':
                 assert 'BACKEND_EXEC_FAILED' not in run.stderr
             reports.append({**outcome, 'operations': ops, 'requests': requests,

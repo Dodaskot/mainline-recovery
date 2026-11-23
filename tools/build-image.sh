@@ -25,7 +25,6 @@ if ! [[ "$NN" =~ ^[0-9]{1,5}(-[a-z0-9]{1,16})?$ ]]; then
     echo "build-image.sh: NN must be a build number such as 199 or 199-public, not '$NN'" >&2
     exit 2
 fi
-VERSION=${VERSION:-0.6.$NN}
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 WORK=${A22X_RECOVERY_WORK:-$(dirname "$SRC")}
 BASE=${BASE:-$WORK/base}
@@ -36,10 +35,37 @@ if [ -z "$WORK" ] || [ "$WORK" = / ] || [ ! -d "$WORK" ] || [ "$SRC" = "$S" ]; t
     echo "build-image.sh: A22X_RECOVERY_WORK must be the folder that holds this source tree" >&2
     exit 2
 fi
+# The password runtime requires the exact qualified #145 base. Use the
+# preservation builder instead of the legacy kernel/base replacement path.
+if [ -n "${A22X_ANDROID_DECRYPT:-}" ]; then
+    if [ "$A22X_ANDROID_DECRYPT" != 1 ]; then
+        echo "build-image.sh: A22X_ANDROID_DECRYPT must be 1 when set" >&2
+        exit 2
+    fi
+    if [ "${PUBLIC:-}" = 1 ]; then
+        echo "build-image.sh: the qualified password base belongs to this phone; PUBLIC=1 is not qualified" >&2
+        exit 2
+    fi
+    if [ -z "${A22X_ANDROID_DECRYPT_BASE_IMAGE:-}" ] || [ -z "${A22X_ANDROID_DECRYPT_RUNTIME_ARCHIVE:-}" ] || [ -z "${A22X_ANDROID_DECRYPT_WIFI_MODULES:-}" ]; then
+        echo "build-image.sh: password mode requires A22X_ANDROID_DECRYPT_BASE_IMAGE, A22X_ANDROID_DECRYPT_RUNTIME_ARCHIVE and A22X_ANDROID_DECRYPT_WIFI_MODULES; see ANDROID_DECRYPT_API.md" >&2
+        exit 2
+    fi
+    exec python3 -B "$SRC/tools/build_decrypt_image.py" \
+        --base "$A22X_ANDROID_DECRYPT_BASE_IMAGE" \
+        --runtime "$A22X_ANDROID_DECRYPT_RUNTIME_ARCHIVE" \
+        --wifi-modules "$A22X_ANDROID_DECRYPT_WIFI_MODULES" \
+        --output "$WORK/build-password-$NN" --version "${VERSION:-1.1.$NN}"
+fi
+VERSION=${VERSION:-0.6.$NN}
 cd "$WORK"
 
-ADD=()
+ADD=(--remove opt/a22x-recovery/themes/beaver.theme)
 add() { ADD+=(--add "$1=$2"); }
+# Files imports the adapter even in a legacy image. Ship these modules in
+# every build; no qualified profile means ordinary volumes remain unchanged.
+for f in "$S/android_decrypt.py" "$S/decrypt_prepare.py" "$S/decrypt_bootstrap.py" "$S/decrypt_session.py" "$S"/decrypt_runtime/*.py; do
+    add "opt/a22x-recovery/${f#"$S"/}" "$f"
+done
 for f in glibc-runtime/lib/* glibc-runtime/bin/*; do add "opt/a22x-recovery/glibc/${f#glibc-runtime/}" "$f"; done
 for t in make_f2fs lz4 unsquashfs fsck.f2fs fsck.fat; do add "bin/$t" "rt-wrappers/$t"; done
 # The Brotli decoder for block-based ROM packages (*.new.dat.br): tools/brotli_dec.c with c/common and
@@ -140,7 +166,6 @@ fi
 
 rm -rf "build-v06-$NN" build-themes
 mkdir build-themes
-python3 -B "$S/themes.py" compile "$S/themes/beaver.a22xtheme" build-themes/beaver.theme >/dev/null
 
 R=opt/a22x-recovery
 python3 -B "$S/tools/build_v06_image.py" --base "$BASE" --output "build-v06-$NN" --version "$VERSION" \
@@ -158,11 +183,10 @@ python3 -B "$S/tools/build_v06_image.py" --base "$BASE" --output "build-v06-$NN"
     --replace "$R/backend/qualification.py=$S/backend/qualification.py" \
     --replace "etc/a22x-recovery/distro-platform.json=$PRIVATE/distro-platform-v2.json" \
     --add "$R/settings.py=$S/settings.py" --add "$R/misc_store.py=$S/misc_store.py" --add "$R/themes.py=$S/themes.py" --add "$R/sysinfo.py=$S/sysinfo.py" \
-    --add "$R/themes/beaver.theme=build-themes/beaver.theme" --add "$R/flash.py=$S/flash.py" \
     --add "$R/image_import.py=$S/image_import.py" --add "$R/a22x_adapter.py=$S/a22x_adapter.py" \
     --add "$R/platform/a22x-wmt=helpers/a22x-wmt" --add "$R/platform/conn-start.sh=$S/platform/conn-start.sh" \
     --add "$R/platform/a22x-firstboot.sh=$S/platform/a22x-firstboot.sh" --add "$R/adbd.py=$S/adbd.py" --add "$R/handoff.py=$S/handoff.py" --add "$R/bootimage.py=$S/bootimage.py" --add "$R/install_plan.py=$S/install_plan.py" --add "$R/restart_intent.py=$S/restart_intent.py" --add "$R/lp_metadata.py=$S/lp_metadata.py" --add "$R/dm_linear.py=$S/dm_linear.py" --add "$R/updates.py=$S/updates.py" \
-    --add "$R/samsung_firmware.py=$S/samsung_firmware.py" --add "$R/android_gsi.py=$S/android_gsi.py" --add "$R/android_rom.py=$S/android_rom.py" --add "$R/saved_boot.py=$S/saved_boot.py" --add "$R/zip_install.py=$S/zip_install.py" --add "$R/sdcard.py=$S/sdcard.py" --add "$R/sevenzip.py=$S/sevenzip.py" --add "$R/root.py=$S/root.py" --add "$R/clock.py=$S/clock.py" --add "$R/bcb.py=$S/bcb.py" --add "$R/android_log.py=$S/android_log.py" --replace "$R/management.py=$S/management.py" --replace "$R/operation_lock.py=$S/operation_lock.py" \
+    --add "$R/samsung_firmware.py=$S/samsung_firmware.py" --add "$R/android_gsi.py=$S/android_gsi.py" --add "$R/android_compat.py=$S/android_compat.py" --add "$R/android_transitions.py=$S/android_transitions.py" --add "$R/android_modules.py=$S/android_modules.py" --add "$R/android_rom.py=$S/android_rom.py" --add "$R/saved_boot.py=$S/saved_boot.py" --add "$R/zip_install.py=$S/zip_install.py" --add "$R/sdcard.py=$S/sdcard.py" --add "$R/sevenzip.py=$S/sevenzip.py" --add "$R/root.py=$S/root.py" --add "$R/clock.py=$S/clock.py" --add "$R/bcb.py=$S/bcb.py" --add "$R/android_log.py=$S/android_log.py" --replace "$R/management.py=$S/management.py" --replace "$R/operation_lock.py=$S/operation_lock.py" \
     --bytecode "$S/tools/python_bytecode_modules.txt" --link "$R/platform/busybox=/bin/busybox" \
     "${ADD[@]}" | tail -1 | cut -c1-90
 

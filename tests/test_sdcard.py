@@ -27,7 +27,7 @@ SIZE = 512 * MIB  # The fixture card: sparse, and small enough to hash in a mome
 class Layout(unittest.TestCase):
     def test_files_take_what_linux_and_swap_leave_on_four_mebibyte_borders(self):
         parts = sdcard.layout(64 * GIB)
-        self.assertEqual(parts, [{'kind': 'files', 'start': 4 * MIB, 'bytes': 64 * GIB - 4 * MIB}])
+        self.assertEqual(parts, [{'kind': 'files', 'start': 4 * MIB, 'bytes': 64 * GIB - 4 * MIB, 'fs': 'vfat'}])
         parts = sdcard.layout(64 * GIB + 12345, linux_mib=16 * 1024, swap_mib=2048)
         self.assertEqual([p['kind'] for p in parts], ['files', 'linux', 'swap'])
         self.assertEqual((parts[1]['bytes'], parts[2]['bytes']), (16 * GIB, 2 * GIB))
@@ -41,6 +41,16 @@ class Layout(unittest.TestCase):
         self.assertEqual(sdcard.layout(8 * GIB, linux_mib=1, swap_mib=5)[1:], [
             {'kind': 'linux', 'start': 8 * GIB - 12 * MIB, 'bytes': 4 * MIB},
             {'kind': 'swap', 'start': 8 * GIB - 8 * MIB, 'bytes': 8 * MIB}])
+
+    def test_the_files_partition_may_be_exfat_ext4_or_f2fs_and_its_type_follows(self):
+        # 2026-11-20, the owner: every filesystem the recovery makes, with the MBR type each is read by.
+        for fs_type, code in (('vfat', 0x0c), ('exfat', 0x07), ('ext4', 0x83), ('f2fs', 0x83)):
+            parts = sdcard.layout(8 * GIB, linux_mib=1024, files_fs=fs_type)
+            self.assertEqual((parts[0]['fs'], sdcard.part_fs(parts[1])), (fs_type, 'ext4'))
+            self.assertEqual(sdcard.mbr(parts, b'abcd')[446 + 4], code)
+            self.assertEqual(sdcard.mkfs(parts[0])[-1], 'A22X')
+        with self.assertRaises(sdcard.fs.FilesystemError):
+            sdcard.layout(8 * GIB, files_fs='btrfs')
 
     def test_a_card_too_small_and_sizes_out_of_range_are_refused(self):
         for size, linux, swap in ((200 * MIB, 0, 0), (8 * GIB, 8 * 1024, 0), (8 * GIB, 7 * 1024, 1024), (8 * GIB, -1, 0),
@@ -144,6 +154,14 @@ class Card(unittest.TestCase):
         code, refused, _ = self.run_helper('apply', '--disk', 'card', '--expected-token', disk['token'], '--confirm')
         self.assertEqual((code, refused['error']['code']), (2, 'DISK_CHANGED'))
         self.assertEqual(self.digest(), data)
+
+    def test_an_exfat_card_for_files_reads_back_as_exfat(self):
+        disk = self.listed()
+        code, done, _ = self.run_helper('apply', '--disk', 'card', '--expected-token', disk['token'],
+                                        '--files-fs', 'exfat', '--linux-mib', '128', '--confirm')
+        self.assertEqual(code, 0, done)
+        after = self.listed()
+        self.assertEqual([(p['number'], p['fs_type']) for p in after['partitions']], [(1, 'exfat'), (2, 'ext4')])
 
     def test_nothing_is_written_without_the_confirmation_the_token_or_a_free_card(self):
         disk = self.listed()

@@ -28,6 +28,10 @@ static bool start_samsung_job(App*a,int kind){
     args[n++]=kind==J_SAMSUNG_INSPECT?"inspect":(kind==J_STOCK_BOOT?"extract-boot":(kind==J_SAMSUNG_UNPACK?"unpack":"install"));
     args[n++]="--volume";args[n++]=a->samsung_volume;args[n++]="--volume-token";args[n++]=a->samsung_token;args[n++]="--path";args[n++]=a->samsung_path;
     if(kind==J_SAMSUNG_INSTALL){if(!a->samsung_plan[0])return false;args[n++]="--expected-plan";args[n++]=a->samsung_plan;args[n++]="--confirm";}
+    /* The update that keeps the data, for a qualified pair (2026-11-21): its review and its install. */
+    if(a->android_gsi&&a->gsi_keep_data&&(kind==J_SAMSUNG_INSPECT||kind==J_SAMSUNG_INSTALL))args[n++]="--keep-data";
+    /* Android's data without encryption (2026-11-21, goal item 5): the vendor's fstab asks for none. */
+    else if(a->android_nofbe&&(kind==J_SAMSUNG_INSPECT||kind==J_SAMSUNG_INSTALL))args[n++]="--no-fbe";
     if(kind==J_SAMSUNG_UNPACK)args[n++]="--confirm";
     args[n]=NULL;
     if(!launch_job(a,kind,args))return false;
@@ -35,6 +39,13 @@ static bool start_samsung_job(App*a,int kind){
 }
 static const char*samsung_blocker_text(const char*code){
     if(!strcmp(code,"AP_INCOMPLETE"))return "The AP file has no super or no BOOT image.";
+    /* The update that keeps the data (android_gsi.py --keep-data, 2026-11-21). */
+    if(!strcmp(code,"PAIR_NOT_QUALIFIED"))return "This system and this image are not a pair checked on this phone: install it with the data erased.";
+    /* The pair matches, the platform does not (2026-11-22: kernel and root in BOOT, vendor, vbmeta, encryption). */
+    if(!strcmp(code,"PLATFORM_NOT_QUALIFIED"))return "This pair was checked with another BOOT, vendor or encryption than this phone has now: install it with the data erased.";
+    if(!strcmp(code,"ROLLBACK_NEEDED")||!strcmp(code,"ROLLBACK_COPY_NEEDS_CARD"))return "There is no way back yet: insert an SD card or a USB drive with room for a copy of the system.";
+    if(!strcmp(code,"KEEP_DATA_NEEDS_ANDROID"))return "Android's BOOT is not on the phone: an update needs the system it updates.";
+    if(!strcmp(code,"NO_FBE_NEEDS_VERIFICATION_OFF"))return "vbmeta still verifies the vendor: Android's data without encryption needs verification off (Root prepares it).";
     if(!strcmp(code,"OTHER_MODEL"))return "This firmware is made for another phone.";
     if(!strcmp(code,"DUPLICATE_IMAGE"))return "Two files bring the same partition. Keep one firmware in the folder.";
     if(!strcmp(code,"STOCK_ANDROID_FIRST"))return "Flash the Samsung firmware first: a GSI starts with Samsung's BOOT and vendor.";
@@ -63,14 +74,14 @@ static void complete_samsung_job(App*a,const Json*j,int kind,bool ok){
             return;
         }
         if(!strcmp(what,"samsung")||!strcmp(what,"gsi")){
-            a->android_gsi=a->gsi_file=!strcmp(what,"gsi");a->samsung_known=false;
+            a->android_gsi=a->gsi_file=!strcmp(what,"gsi");a->samsung_known=a->gsi_keep_data=a->gsi_keep_offer=a->android_nofbe=false;
             size_t length=strlen(a->samsung_path);bool zip=!a->android_gsi&&length>4&&!strcasecmp(a->samsung_path+length-4,".zip");
             if(!start_samsung_job(a,zip?J_SAMSUNG_UNPACK:J_SAMSUNG_INSPECT))files_problem(a,"ANDROID_IMAGE_UNAVAILABLE","Wait for the current operation to finish.",ANDROID_MENU);
             return;
         }
         /* Nothing this recovery installs: back to the folder, to choose another. */
         enum Screen back=samsung_repick(a,nav_top(a),false)?FILE_BROWSER:ANDROID_MENU;
-        files_problem(a,"NOT_A_ROM",!strcmp(what,"payload")?"This is an update for phones with two system slots (payload.bin). This phone has one: choose a ROM made for it, or a system image.":
+        files_problem(a,"NOT_A_ROM",!strcmp(what,"payload")?"This is an update_engine package (payload.bin). Its partitions are flashed one by one: open Flash a partition and choose this file; an incremental update is built from the partitions installed here.":
                       "This file is no ROM this recovery installs. Choose a ZIP with an installer, a system image or Samsung's firmware.",back);
         return;
     }
@@ -110,6 +121,7 @@ static void complete_samsung_job(App*a,const Json*j,int kind,bool ok){
         a->samsung_row_count=0;a->samsung_warnings[0]=a->samsung_blockers[0]=a->samsung_files[0]=0;
         jstring(j,0,"build",a->samsung_build,sizeof(a->samsung_build));jstring(j,0,"plan_sha256",a->samsung_plan,sizeof(a->samsung_plan));
         a->samsung_write_bytes=json_uint(j,json_get(j,0,"write_bytes"),0);
+        a->gsi_keep_offer=a->android_gsi&&json_bool(j,json_get(j,0,"keep_data_offer"),0)==1;
         int rows=json_get(j,0,"rows");
         if(rows>=0&&j->tokens[rows].type==J_ARRAY)for(int i=rows+1;i<json_next(j,rows)&&a->samsung_row_count<SAMSUNG_ROWS;i=json_next(j,i)){
             SamsungRow*r=&a->samsung_rows[a->samsung_row_count];memset(r,0,sizeof(*r));
@@ -132,12 +144,28 @@ static void complete_samsung_job(App*a,const Json*j,int kind,bool ok){
         }
         a->samsung_known=a->samsung_plan[0]!=0;a->page_scroll=0;screen(a,SAMSUNG_REVIEW);return;
     }
-    unsigned int written=0;int list=json_get(j,0,"written");
-    if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list);i=json_next(j,i))written++;
+    /* Partitions the bootloader locks (dtbo, vbmeta) that already held this image are listed as kept:
+       they are not counted as written (2026-11-20, on the owner's phone: "7 written" when 5 were). */
+    unsigned int written=0,kept=0;int list=json_get(j,0,"written");
+    if(list>=0&&j->tokens[list].type==J_ARRAY)for(int i=list+1;i<json_next(j,list);i=json_next(j,i)){
+        char kind[16]={0};jstring(j,i,"kind",kind,sizeof(kind));if(!strcmp(kind,"kept"))kept++;else written++;}
     char saved[192]={0};jstring(j,0,"saved_boot",saved,sizeof(saved));
+    if(a->android_gsi&&json_bool(j,json_get(j,0,"kept_data"),0)==1){
+        /* The update that kept the data: what was written, and the way back with its bounds. */
+        char next[400]={0},back[PATH_LEN]={0};jstring(j,0,"next",next,sizeof(next));
+        int copy_=json_get(j,0,"rollback_copy");if(copy_>=0)jstring(j,copy_,"path",back,sizeof(back));
+        a->successful=true;copy(a->status,sizeof(a->status),"Android updated, data kept");
+        snprintf(a->message,sizeof(a->message),"%s\n\n%s %s",tr("The system was written and checked; apps, their data and root stay. The first start takes a few minutes."),
+                 tr(next[0]?next:"Restart into Android."),back);
+        a->android_installed=true;a->samsung_known=a->gsi_keep_data=a->gsi_keep_offer=a->android_nofbe=false;a->systems_reboot_blocked=a->install.reboot_blocked=false;
+        a->result_return=ANDROID_MENU;screen(a,RESULT);return;
+    }
     a->successful=true;copy(a->status,sizeof(a->status),a->android_gsi?"Android image installed":"Stock Android installed");
     snprintf(a->message,sizeof(a->message),T("%u partitions written and checked. userdata is ready for Android, and this recovery stays. The first start of Android takes several minutes."),written);
+    if(kept){char more[160];snprintf(more,sizeof(more),T("%u already held this firmware's image (dtbo, vbmeta) and were kept."),kept);append(a->message,sizeof(a->message),"\n");append(a->message,sizeof(a->message),more);}
     if(saved[0]){append(a->message,sizeof(a->message),"\n\n");append(a->message,sizeof(a->message),tr("The previous BOOT is kept on cache:"));append(a->message,sizeof(a->message)," ");append(a->message,sizeof(a->message),saved);}
+    {int nofbe=json_get(j,0,"no_fbe");if(nofbe>=0&&j->tokens[nofbe].type==J_OBJECT){append(a->message,sizeof(a->message),"\n\n");
+        append(a->message,sizeof(a->message),tr("Android's data stays unencrypted: the vendor's fstab asks for no encryption (no-FBE)."));}}
     /* userdata is Android's now: no Linux switch or installation is pending on it any more. */
     a->android_installed=true;a->samsung_known=false;a->systems_reboot_blocked=a->install.reboot_blocked=false;
     a->result_return=ANDROID_MENU;screen(a,RESULT);
@@ -160,6 +188,18 @@ static void open_android_image(App*a,int n){
 static void android_fact(App*a,int y,const char*label,const char*value){
     text(a,52,y,0,MUTED,label);raw_text(true);ellipsis(a,300,y,370,0,TEXT,value);raw_text(false);
 }
+/* The same build of a ROM with and without Google's apps (2026-11-21, the owner: chosen while
+   installing, as the Linux installer chooses a desktop): the catalog's entries of one name and
+   version, in the order none, microG, Google. Up to 4 indexes into the catalog; their number. */
+static unsigned int android_variants(const App*a,const CatalogImage*c,int out[4]){
+    static const char*const order[]={"vanilla","aosp","microg","gms"};unsigned int count=0;
+    for(unsigned int k=0;k<4;k++)for(unsigned int n=0;n<a->catalog_count&&count<4;n++){const CatalogImage*o=&a->catalog[n];
+        if(catalog_android(o)&&!strcmp(o->name,c->name)&&!strcmp(o->version,c->version)&&!strcmp(o->category,c->category)&&!strcmp(o->variant,order[k]))out[count++]=(int)n;}
+    return count;
+}
+static const char*android_variant_short(const char*variant){
+    return !strcmp(variant,"gms")?"Google":(!strcmp(variant,"microg")?"microG":(!strcmp(variant,"aosp")?"AOSP":"None"));
+}
 static void render_android_image(App*a){
     if(a->android_selected<0||(unsigned int)a->android_selected>=a->catalog_count){heading(a,"Android image","",true);return;}
     const CatalogImage*c=&a->catalog[a->android_selected];bool free_ui=ui_free(a),card=store_on_card(a),ready=systems_ready(a)||card;
@@ -173,6 +213,12 @@ static void render_android_image(App*a){
     rounded(a,(Rect){28,y,664,296},24,PANEL);
     android_fact(a,y+24,"Build",c->build);android_fact(a,y+78,"Security patch",c->patch);android_fact(a,y+132,"Region",c->region[0]?c->region:"Global");
     android_fact(a,y+186,"Download",size);android_fact(a,y+240,"System image",system);y+=312;
+    {int sibling[4];unsigned int count=android_variants(a,c,sibling);
+     if(count>1){rounded(a,(Rect){28,y,664,150},24,PANEL);text(a,52,y+18,0,ORANGE,"GOOGLE APPS");
+        int w=(616-(int)(count-1)*12)/(int)count;
+        for(unsigned int k=0;k<count;k++){const CatalogImage*o=&a->catalog[sibling[k]];bool on=sibling[k]==a->android_selected;
+            button(a,(Rect){52+(int)k*(w+12),y+58,w,72},android_variant_short(o->variant),A_ANDROID_VARIANT+(int)k,free_ui&&!on,on,0);}
+        y+=166;}}
     /* What a start on this phone model showed comes before the rule (2026-11-11). */
     int box=c->fits&&c->tried<=0?168:200;rounded(a,(Rect){28,y,664,box},24,PANEL);
     text(a,52,y+20,0,c->tried<0?RED:(c->fits?GREEN:ORANGE),c->tried<0?"DID NOT START ON THIS PHONE":(c->tried>0?"STARTED ON THIS PHONE":(c->fits?"FITS THIS PHONE":"MAY NOT START")));
@@ -292,11 +338,23 @@ static void complete_root_job(App*a,const Json*j,int kind,bool ok){
     }
     char name[32]={0},version[24]={0},kept[PATH_LEN]={0},apk[64]={0},tool[24]={0};jstring(j,0,"name",name,sizeof(name));jstring(j,0,"version",version,sizeof(version));
     jstring(j,0,"kept_boot",kept,sizeof(kept));jstring(j,0,"apk",apk,sizeof(apk));jstring(j,0,"root",tool,sizeof(tool));
+    /* KernelSU Next (2026-11-21): its kernel ZIP was downloaded and checked; the ZIP installer's review
+       shows what it does, and its run offers the manager app afterwards. */
+    int zip=json_get(j,0,"zip");
+    if(zip>=0){
+        jstring(j,zip,"volume",a->zip_volume,sizeof(a->zip_volume));jstring(j,zip,"volume_token",a->zip_token,sizeof(a->zip_token));
+        jstring(j,zip,"path",a->zip_path,sizeof(a->zip_path));a->zip_known=false;a->zip_count=0;a->zip_adding=false;
+        copy(a->root_app,sizeof(a->root_app),tool);a->zip_root_app=true;a->root_known=false;
+        if(!start_zip_job(a,J_ZIP_INSPECT)){a->zip_root_app=false;files_problem(a,"ZIP_UNAVAILABLE","Wait for the current operation to finish.",ROOT_PAGE);}
+        return;
+    }
+    copy(a->root_app,sizeof(a->root_app),"magisk");
     a->successful=true;copy(a->status,sizeof(a->status),"Root installed");
     /* Magisk 31 puts no app into BOOT: root works at once, and the app that manages it comes from GitHub.
        APatch is the same: its app in Android asks for the SuperKey the kernel was patched with. */
     if(!strcmp(tool,"apatch"))snprintf(a->message,sizeof(a->message),T("%s (%s) is in BOOT. In Android, install the APatch app from github.com/bmax121/APatch and enter your SuperKey in it."),name,version);
-    else snprintf(a->message,sizeof(a->message),T("%s %s is in BOOT. In Android, install the Magisk app that manages root: %s from github.com/topjohnwu/Magisk."),name,version,apk[0]?apk:"Magisk.apk");
+    /* 2026-11-21: the app can be queued for Android's next start from here (apk_queue.py). */
+    else{snprintf(a->message,sizeof(a->message),T("%s %s is in BOOT. The Magisk app that manages root can be installed by Android at its next start: the button below gets it from github.com/topjohnwu/Magisk."),name,version);a->root_app_offer=true;}
     if(json_get(j,0,"data")>=0){append(a->message,sizeof(a->message),"\n\n");
         append(a->message,sizeof(a->message),tr("Verification is off in vbmeta and Android's data was erased: Android sets itself up again at its first start."));}
     if(kept[0]){append(a->message,sizeof(a->message),"\n\n");append(a->message,sizeof(a->message),tr("The BOOT that was there is kept on cache:"));
@@ -359,7 +417,9 @@ static void render_root(App*a){
     for(unsigned int i=0;i<a->root_count;i++){
         const RootTool*t=&a->root_tools[i];
         /* Magisk lives in the ramdisk and APatch in the kernel: one BOOT carries one of them. */
-        bool other=a->root_boot_root[0]&&strcmp(a->root_boot_root,t->id),usable=t->supported&&!other;
+        /* KernelSU Next's kernel says KernelSU: the same root, updated over itself. */
+        const char*own=!strcmp(t->id,"kernelsu-next")?"kernelsu":t->id;
+        bool other=a->root_boot_root[0]&&strcmp(a->root_boot_root,own),usable=t->supported&&!other;
         int height=!usable?190:(t->needs_key?410:250);
         rounded(a,(Rect){28,y,664,height},24,PANEL);
         char title[96];snprintf(title,sizeof(title),"%s  %s",t->name,t->version[0]?t->version:"");
@@ -378,7 +438,7 @@ static void render_root(App*a){
                 wrapped(a,52,at+96,616,0,MUTED,"The APatch app in Android asks for this SuperKey.",2);
                 ready=ready&&keyed;at+=160;
             }
-            button(a,(Rect){46,at,628,96},a->root_needs_reset?"Hold 5 seconds: erase data, install root":(t->bundled?"Hold 3 seconds: install":"Hold 3 seconds: download and install"),
+            button(a,(Rect){46,at,628,96},a->root_needs_reset?"Hold 2 seconds: erase data, install root":(t->bundled?"Hold 1 second: install":"Hold 1 second: download and install"),
                    A_ROOT_INSTALL+(int)i,ready,true,a->root_needs_reset?5000:3000);
         }
         y+=height+16;
@@ -386,7 +446,11 @@ static void render_root(App*a){
     if(a->root_known&&a->root_boot_root[0]&&a->root_stock_path[0]){
         button(a,(Rect){28,y,664,96},"Remove root: flash the stock BOOT back",A_ROOT_REMOVE,free_ui,false,0);y+=112;
     }
-    y+=text_tile(a,y,0,MUTED,"The BOOT there is kept on cache before it is replaced. Magisk lives in the ramdisk and APatch in the kernel; their modules are installed in their apps in Android.",5)+16;
+    y+=text_tile(a,y,0,MUTED,"The BOOT there is kept on cache before it is replaced. Magisk lives in the ramdisk and APatch in the kernel. A module's ZIP for Magisk or KernelSU Next is installed from its page in Files; APatch modules in its app.",5)+16;
+    /* The root's app, fetched from its release and installed by Android at its next start (2026-11-21, the owner). */
+    text(a,40,y+8,0,ORANGE,"ROOT APP FOR ANDROID");y+=48;
+    button(a,(Rect){28,y,212,84},"Magisk",A_APK_FETCH+0,free_ui,false,0);button(a,(Rect){254,y,212,84},"KSU Next",A_APK_FETCH+1,free_ui,false,0);button(a,(Rect){480,y,212,84},"APatch",A_APK_FETCH+2,free_ui,false,0);y+=100;
+    y+=text_tile(a,y,0,MUTED,"Downloaded from its GitHub release and installed by Android at its next start.",3)+16;
     a->page_content=y+a->page_scroll-230+16;a->clip_active=false;scroll_indicator(a,(Rect){698,230,5,page_height(a)},a->page_scroll,a->page_content,ORANGE);
 }
 static bool root_action(App*a,int id){
@@ -440,28 +504,24 @@ static void rom_chosen(App*a){
     FileVolume*v=current_volume(a);
     copy(a->samsung_volume,sizeof(a->samsung_volume),v->id);copy(a->samsung_token,sizeof(a->samsung_token),v->token);
     copy(a->samsung_path,sizeof(a->samsung_path),a->fs_selected.path);a->flash_pick=a->rom_pick=false;a->samsung_known=false;a->android_gsi=a->gsi_file=false;a->rom_origin=true;
+    if(a->compat_pick){a->compat_pick=false;a->compat_known=false;a->page_scroll=0;screen(a,ANDROID_COMPAT);if(!start_android_tools_job(a,J_ANDROID_COMPAT))files_problem(a,"ANDROID_ANALYZER_UNAVAILABLE",T("The compatibility report could not be read."),ANDROID_MENU);return;}
     if(!start_rom_kind(a))files_problem(a,"ANDROID_IMAGE_UNAVAILABLE","Wait for the current operation to finish.",ANDROID_MENU);
 }
 static void render_android_menu(App*a){
-    heading(a,"Android","Stock Android, a custom ROM, or an Android image from the internet.",true);bool free_ui=ui_free(a);
-    installer_card(a,(Rect){28,236,664,142},3,ICON_PHONE,"Samsung firmware","Stock Android from the AP and CSC files, as Odin flashes it",A_SAMSUNG,free_ui);
-    installer_card(a,(Rect){28,388,664,142},2,ICON_BROWSER,"Android images","GSIs from the internet: choose the Android version and type",A_ANDROID_CATALOG,free_ui);
-    /* A ROM on a card (2026-11-11, the owner's request): a custom ROM's ZIP, a system image or the
-       firmware, chosen on an SD card or a USB stick; what it is decides which review opens. */
-    installer_card(a,(Rect){28,540,664,142},1,A_FILES,"ROM from a file","A custom ROM or a system image on an SD card or USB stick",A_ANDROID_FILE,free_ui);
-    /* Samsung's BOOT out of the firmware (2026-11-10): the way back from a custom kernel. */
-    installer_card(a,(Rect){28,692,664,142},1,ICON_FLASH,"Stock BOOT","Take Samsung's BOOT out of the firmware: the way back from a custom kernel",A_STOCK_BOOT,free_ui);
-    /* Root (2026-11-10): the newest Magisk from the internet into Android's BOOT. */
-    installer_card(a,(Rect){28,844,664,142},4,ICON_LOCK,"Root","Magisk or APatch, into Android's BOOT",A_ROOT,free_ui);
-    /* A ZIP that installs itself (2026-11-11): TWRP's Install, in a room of its own. */
-    installer_card(a,(Rect){28,996,664,142},5,ICON_FLASH,"ZIP with an installer","Magisk, a kernel or another flashable ZIP runs its own script",A_ZIP,free_ui);
-    int y=1154;
-    /* The older installer of a bundle prepared on a computer (install.py): no qualified profile is in the
-       phone's image, so only the fixture and the previews offer it. */
+    heading(a,"Android","Install images, inspect compatibility, or recover modules.",true);bool free_ui=ui_free(a);
+    a->page_scroll=(int64_t)scroll_clamp((double)a->page_scroll,(double)page_max_scroll(a));int y=236-(int)a->page_scroll;
+    a->clip_active=true;a->clip=page_viewport(a);
+    installer_card(a,(Rect){28,y,664,142},2,ICON_PHONE,"Check data preservation","Read a package and show compatibility checks before any installation",A_ANDROID_COMPAT,free_ui);y+=152;
+    installer_card(a,(Rect){28,y,664,142},4,ICON_TUNE,"Android modules","Inspect root modules or recover from a module boot problem",A_MODULES,free_ui);y+=152;
+    installer_card(a,(Rect){28,y,664,142},3,ICON_PHONE,"Samsung firmware","Stock Android from the AP and CSC files, as Odin flashes it",A_SAMSUNG,free_ui);y+=152;
+    installer_card(a,(Rect){28,y,664,142},2,ICON_BROWSER,"Android images","GSIs from the internet: choose the Android version and type",A_ANDROID_CATALOG,free_ui);y+=152;
+    installer_card(a,(Rect){28,y,664,142},1,A_FILES,"ROM from a file","A custom ROM or a system image on an SD card or USB stick",A_ANDROID_FILE,free_ui);y+=152;
+    installer_card(a,(Rect){28,y,664,142},1,ICON_FLASH,"Stock BOOT","Take Samsung's BOOT out of the firmware: the way back from a custom kernel",A_STOCK_BOOT,free_ui);y+=152;
+    installer_card(a,(Rect){28,y,664,142},4,ICON_LOCK,"Root","Magisk or APatch, into Android's BOOT",A_ROOT,free_ui);y+=152;
+    installer_card(a,(Rect){28,y,664,142},5,ICON_FLASH,"ZIP with an installer","Magisk, a kernel or another flashable ZIP runs its own script",A_ZIP,free_ui);y+=182;
     if(!a->device){installer_card(a,(Rect){28,y,664,150},1,ICON_FLASH,"Prepared stock bundle","A bundle made on a computer, with its manifest",A_INSTALL,free_ui);y+=166;}
-    rounded(a,(Rect){28,y,664,196},24,PANEL);text(a,52,y+20,0,RED,"USERDATA IS ERASED");
-    wrapped(a,52,y+58,616,0,TEXT,"Installing Android needs userdata for Android: every Linux system and saved image there is erased. This recovery stays, and so does the SD card.",4);
-    text_tile(a,y+224,0,MUTED,"The bootloader, the modem and the partition table are never written here.",3);
+    y+=text_tile(a,y,0,ORANGE,"Clean Android installation erases userdata. Check data preservation is a separate report and does not install anything.",5)+16;
+    a->page_content=y+a->page_scroll-230+16;a->clip_active=false;scroll_indicator(a,(Rect){698,230,5,page_height(a)},a->page_scroll,a->page_content,ORANGE);
     if(a->source_sheet)render_source_sheet(a);
 }
 static void samsung_section(App*a,int*y,const char*title,uint32_t ink,const char*action){
@@ -490,19 +550,32 @@ static void render_samsung_review(App*a){
         snprintf(line,sizeof(line),T("Files: %s  /  %s to write"),a->samsung_files,size);raw_text(true);ellipsis(a,40,y,640,0,MUTED,line);raw_text(false);y+=48;
         if(a->samsung_blockers[0]){y+=text_tile(a,y,0,RED,a->samsung_blockers,6)+16;}
         if(a->samsung_warnings[0]){y+=text_tile(a,y,0,ORANGE,a->samsung_warnings,8)+16;}
+        /* Encryption of Android's data, chosen here (no-FBE): only for an install that erases the data. */
+        if(!a->gsi_keep_data){
+            rounded(a,(Rect){28,y,664,a->android_nofbe?250:150},24,PANEL);text(a,52,y+18,0,ORANGE,"ANDROID'S DATA");
+            button(a,(Rect){52,y+58,298,72},"Encrypted",A_ANDROID_NOFBE+0,free_ui&&a->android_nofbe,!a->android_nofbe,0);
+            button(a,(Rect){366,y+58,302,72},"No encryption",A_ANDROID_NOFBE+1,free_ui&&!a->android_nofbe,a->android_nofbe,0);
+            if(a->android_nofbe)wrapped(a,52,y+146,616,0,MUTED,"The vendor's fstab is changed to ask for no encryption: anyone holding the phone can read Android's data, and this recovery copies it without a password.",3);
+            y+=(a->android_nofbe?250:150)+16;
+        }
         samsung_section(a,&y,"WRITTEN",GREEN,"write");
+        if(a->gsi_keep_data){samsung_section(a,&y,"THE WAY BACK",ORANGE,"copy");}
+        else{
         rounded(a,(Rect){28,y,664,276},24,PANEL);text(a,52,y+18,0,RED,"ERASED");
         text(a,52,y+60,1,TEXT,"userdata");wrapped(a,300,y+66,370,0,MUTED,"Formatted for Android: every Linux system and saved image is erased",3);
         text(a,52,y+152,1,TEXT,"metadata");wrapped(a,300,y+158,370,0,MUTED,"Android creates it again",2);
-        text(a,52,y+212,1,TEXT,"cache");wrapped(a,300,y+218,370,0,MUTED,"The recovery's own folder stays",2);y+=292;
+        text(a,52,y+212,1,TEXT,"cache");wrapped(a,300,y+218,370,0,MUTED,"The recovery's own folder stays",2);y+=292;}
         samsung_section(a,&y,"KEPT",TEXT,"kept");
         samsung_section(a,&y,"INSTEAD",TEXT,"instead");
         samsung_section(a,&y,"NOT WRITTEN",MUTED,"refused");
+        if(a->gsi_keep_data)y+=text_tile(a,y,0,ORANGE,"An update of this system that was checked on this phone: only the system is written. The way back is checked before anything is written; data the new system changes after its first start does not go back with it.",6)+16;
         y+=text_tile(a,y,0,MUTED,a->android_gsi?"Everything is checked as it is read and read back after writing. It takes a few minutes; then restart into Android.":
                    "Everything is checked as it is read and read back after writing. The BOOT there now is kept on cache first. It takes about ten minutes; then restart into Android.",5)+24;
     }
     a->page_content=y+a->page_scroll-230+16;a->clip_active=false;scroll_indicator(a,(Rect){698,230,5,page_height(a)},a->page_scroll,a->page_content,ORANGE);
-    button(a,(Rect){28,1320,664,104},"Hold 5 seconds to install",A_SAMSUNG_CONFIRM,free_ui&&a->samsung_known&&!a->samsung_blockers[0],true,5000);
+    /* A qualified update of the system there: offered beside the install that erases (2026-11-21). */
+    if(a->gsi_keep_offer&&!a->gsi_keep_data&&a->samsung_known)button(a,(Rect){28,1206,664,96},"Update and keep the data",A_GSI_KEEP_DATA,free_ui,false,0);
+    button(a,(Rect){28,1320,664,104},a->gsi_keep_data?"Hold 2 seconds to update":"Hold 2 seconds to install",A_SAMSUNG_CONFIRM,free_ui&&a->samsung_known&&!a->samsung_blockers[0],true,5000);
 }
 /* A ZIP that installs itself (zip_install.py, 2026-11-11): chosen with the picker of images, reviewed
    (what it is, what its installer can reach), run after a hold; the result names what changed. */
@@ -514,6 +587,11 @@ static void zip_item_from_review(const App*a,ZipItem*it){
     copy(it->volume,sizeof(it->volume),a->zip_volume);copy(it->token,sizeof(it->token),a->zip_token);copy(it->path,sizeof(it->path),a->zip_path);
     copy(it->name,sizeof(it->name),a->zip_name);copy(it->sha,sizeof(it->sha),a->zip_sha);copy(it->title,sizeof(it->title),a->zip_title);
     copy(it->what,sizeof(it->what),a->zip_what);copy(it->installer,sizeof(it->installer),a->zip_installer);it->size=a->zip_size;it->files=a->zip_files;
+}
+static bool zip_ran_magisk(const App*a){
+    if(!a->zip_count)return !strcmp(a->zip_what,"magisk");
+    for(unsigned int n=0;n<a->zip_count;n++)if(a->zip_queue[n].state==1&&!strcmp(a->zip_queue[n].what,"magisk"))return true;
+    return false;
 }
 static void zip_item_to_review(App*a,const ZipItem*it){
     copy(a->zip_volume,sizeof(a->zip_volume),it->volume);copy(a->zip_token,sizeof(a->zip_token),it->token);copy(a->zip_path,sizeof(a->zip_path),it->path);
@@ -654,7 +732,9 @@ static void complete_zip_job(App*a,const Json*j,int kind,bool ok){
             if(start_zip_job(a,J_ZIP_RUN))return;
             a->zip_queue[a->zip_at].state=2;ok=false;copy(code,sizeof(code),"ZIP_UNAVAILABLE");
         }
-        zip_result(a,ok,code,changed,log);return;
+        zip_result(a,ok,code,changed,log);
+        if(a->zip_root_app){a->zip_root_app=false;if(ok&&a->successful)a->root_app_offer=true;}
+        return;
     }
     if(!ok||!j){
         char code[96]="ZIP_FAILED",message[384]="The ZIP helper did not return a result.";
@@ -712,7 +792,7 @@ static void render_zip_review(App*a){
     y+=root+16;
     button(a,(Rect){28,y,664,76},a->zip_restart?"Afterwards: restart the system":"Afterwards: stay in recovery",A_ZIP_RESTART,free_ui&&a->allow_power,a->zip_restart,0);y+=88;
     if(a->zip_warnings[0]&&1304-y>=120)y+=text_tile(a,y,0,ORANGE,a->zip_warnings,many?3:5)+12;
-    button(a,(Rect){28,1320,664,104},many?"Hold 5 seconds: run the installers":"Hold 5 seconds: run the installer",A_ZIP_CONFIRM,free_ui&&a->zip_known&&a->zip_count>0,true,5000);
+    button(a,(Rect){28,1320,664,104},many?"Hold 2 seconds: run the installers":"Hold 2 seconds: run the installer",A_ZIP_CONFIRM,free_ui&&a->zip_known&&a->zip_count>0,true,5000);
 }
 static bool zip_action(App*a,int id){
     if(id==A_ZIP&&a->screen==ANDROID_MENU){
@@ -755,12 +835,12 @@ static bool zip_action(App*a,int id){
     return false;
 }
 static bool samsung_action(App*a,int id){
-    if(id==A_ANDROID){if(ui_free(a))screen(a,ANDROID_MENU);return true;}
+    if(id==A_ANDROID){if(ui_free(a)){a->compat_pick=false;a->page_scroll=0;screen(a,ANDROID_MENU);}return true;}
     if(a->screen==ANDROID_MENU){
         if(id==A_BACK){reopen(a,came_from(a,OS_MENU));return true;}
         if(id==A_SAMSUNG||id==A_STOCK_BOOT){
             if(!ui_free(a))return true;
-            a->android_gsi=a->gsi_file=a->rom_origin=a->rom_pick=false;a->stock_boot_pick=id==A_STOCK_BOOT;
+            a->compat_pick=false;a->android_gsi=a->gsi_file=a->rom_origin=a->rom_pick=false;a->stock_boot_pick=id==A_STOCK_BOOT;
             /* The same picker as Flash a partition; the chosen file is the AP. */
             a->flash_pick=a->samsung_pick=true;a->flash_restore=false;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;
             screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
@@ -768,11 +848,12 @@ static bool samsung_action(App*a,int id){
         if(id==A_ANDROID_FILE){
             if(!ui_free(a))return true;
             /* The sheet asks where the ROM is; the file chosen there is looked into (rom_chosen). */
-            a->android_gsi=a->gsi_file=a->rom_origin=false;a->samsung_pick=a->stock_boot_pick=a->zip_pick=a->flash_restore=false;a->flash_pick=a->rom_pick=true;
+            a->compat_pick=false;a->android_gsi=a->gsi_file=a->rom_origin=false;a->samsung_pick=a->stock_boot_pick=a->zip_pick=a->flash_restore=false;a->flash_pick=a->rom_pick=true;
             source_open(a);return true;
         }
         if(id==A_ANDROID_CATALOG){
             if(!ui_free(a))return true;
+            a->compat_pick=false;
             a->catalog_saving=true;a->catalog_only=2;a->catalog_category=CATEGORY_ANDROID;a->catalog_family=0;a->catalog_page=0;a->page_scroll=0;
             a->catalog_checked=a->catalog_check_done=false;a->catalog_return=ANDROID_MENU;screen(a,SYSTEMS_CATALOG);start_catalog_job(a);return true;
         }
@@ -790,13 +871,15 @@ static bool samsung_action(App*a,int id){
         if(a->systems_mount_sheet)return false; /* The sheet's own buttons, in systems_action. */
         if(id==A_BACK){screen(a,SYSTEMS_CATALOG);return true;}
         if(!c)return id==A_ANDROID_DOWNLOAD||id==A_ANDROID_INSTALL||id==A_ANDROID_DELETE;
+        if(id>=A_ANDROID_VARIANT&&id<A_ANDROID_VARIANT+4){int sibling[4];unsigned int count=android_variants(a,c,sibling),k=(unsigned int)(id-A_ANDROID_VARIANT);
+            if(k<count&&ui_free(a)){a->android_selected=sibling[k];a->saved_note[0]=0;a->dirty=true;}return true;}
         if(id==A_ANDROID_DOWNLOAD){if(ui_free(a)&&(systems_ready(a)||store_on_card(a))&&c->reachable){a->saved_note[0]=0;start_images_job(a,J_IMAGES_DOWNLOAD,c->id);}return true;}
         if(id==A_ANDROID_DELETE){const StoredImage*s=android_saved(a,c);if(s&&ui_free(a))start_images_job(a,J_IMAGES_DELETE,s->file);return true;}
         if(id==A_ANDROID_INSTALL){
             const StoredImage*s=android_saved(a,c);if(!s||!ui_free(a))return true;
             /* The saved file, on userdata or on the card, is reviewed by android_gsi.py, like Samsung's firmware. */
             bool card=store_on_card(a);
-            a->android_gsi=true;a->gsi_file=a->rom_origin=false;a->samsung_known=false;copy(a->samsung_volume,sizeof(a->samsung_volume),card?a->store_volume:"userdata");
+            a->android_gsi=true;a->gsi_file=a->rom_origin=false;a->samsung_known=a->gsi_keep_data=a->gsi_keep_offer=a->android_nofbe=false;copy(a->samsung_volume,sizeof(a->samsung_volume),card?a->store_volume:"userdata");
             copy(a->samsung_token,sizeof(a->samsung_token),card?a->store_token:a->systems_volume_token);copy(a->samsung_path,sizeof(a->samsung_path),s->path);
             if(!start_samsung_job(a,J_SAMSUNG_INSPECT))files_problem(a,"ANDROID_IMAGE_UNAVAILABLE","Wait for the current operation to finish.",ANDROID_IMAGE);
             return true;
@@ -804,8 +887,23 @@ static bool samsung_action(App*a,int id){
     }
     if(a->screen==SAMSUNG_REVIEW){
         if(id==A_BACK){
+            /* From the update that keeps the data, back to the install that erases it. */
+            if(a->gsi_keep_data){a->gsi_keep_data=false;a->samsung_known=false;if(!start_samsung_job(a,J_SAMSUNG_INSPECT))screen(a,gsi_of_catalog(a)?ANDROID_IMAGE:ANDROID_MENU);return true;}
             /* Back to the folder the firmware was chosen in (2026-11-10: it left for the Android menu). */
+            a->gsi_keep_offer=false;
             if(samsung_repick(a,came_from(a,ANDROID_MENU),false))reopen(a,FILE_BROWSER);else screen(a,gsi_of_catalog(a)?ANDROID_IMAGE:ANDROID_MENU);
+            return true;
+        }
+        if(id==A_ANDROID_NOFBE||id==A_ANDROID_NOFBE+1){
+            bool want=id==A_ANDROID_NOFBE+1;
+            if(ui_free(a)&&want!=a->android_nofbe){a->android_nofbe=want;a->samsung_known=false;
+                if(!start_samsung_job(a,J_SAMSUNG_INSPECT)){a->android_nofbe=!want;files_problem(a,"ANDROID_IMAGE_UNAVAILABLE","Wait for the current operation to finish.",SAMSUNG_REVIEW);}}
+            return true;
+        }
+        /* The update that keeps the data: reviewed again with its pair and its way back (2026-11-21). */
+        if(id==A_GSI_KEEP_DATA){
+            if(ui_free(a)&&a->gsi_keep_offer){a->gsi_keep_data=true;a->samsung_known=false;
+                if(!start_samsung_job(a,J_SAMSUNG_INSPECT)){a->gsi_keep_data=false;files_problem(a,"ANDROID_IMAGE_UNAVAILABLE","Wait for the current operation to finish.",SAMSUNG_REVIEW);}}
             return true;
         }
         if(id==A_SAMSUNG_CONFIRM){

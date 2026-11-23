@@ -33,6 +33,7 @@ def phone(root, serial='R5ONE', ram='4G', sectors=122142720, maker='0x000015', b
     for policy, cpus, khz in (('policy0', '0 1 2 3 4 5', 2000000), ('policy6', '6 7', 2203000)):
         write(root, f'sys/devices/system/cpu/cpufreq/{policy}/related_cpus', cpus)
         write(root, f'sys/devices/system/cpu/cpufreq/{policy}/cpuinfo_max_freq', str(khz))
+        write(root, f'sys/devices/system/cpu/cpufreq/{policy}/scaling_cur_freq', str(khz // 2))
     card = 'sys/class/mmc_host/mmc0/mmc0:0001/'
     for name, value in (('name', 'DC6DMB'), ('manfid', maker), ('date', '01/2022'), ('life_time', '0x03 0x02')):
         write(root, card + name, value)
@@ -75,8 +76,9 @@ class Details(unittest.TestCase):
         self.assertEqual(value(report, 'Voltage'), ('4.02', 'V'))
         self.assertEqual(value(report, 'Design capacity'), ('5000', 'mAh'))
         self.assertEqual(value(report, 'Bootloader lock'), ('Unlocked', ''))
-        self.assertEqual(value(report, 'Temperature'), ('31', '°C'))
-        self.assertEqual(value(report, 'Running for'), ('1:02', ''))
+        self.assertEqual(value(report, 'Temperature'), ('31.2', '°C'))
+        self.assertEqual(value(report, 'Uptime'), ('1h 2m 5s', ''))
+        self.assertEqual([sysinfo.running_for(n) for n in (5, 65, 3725, 90061)], ['0m 5s', '1m 5s', '1h 2m 5s', '1d 1h 1m 1s'])
         self.assertEqual(report['summary'], [['Processor', '2.2', 'GHz'], ['Cores', '8', ''], ['Memory', '4', 'GB'], ['Storage size', '64', 'GB']])
 
     def test_another_unit_reads_differently(self):
@@ -93,6 +95,20 @@ class Details(unittest.TestCase):
         report = sysinfo.describe(self.root)
         self.assertEqual((report['name'], report['model']), ('SM-A225F', 'SM-A225F'))
         self.assertIsNone(value(report, 'Name'))
+
+    def test_the_readings_that_move_say_where_they_come_from(self):
+        """2026-11-21, a tester (#11): the interface reads them again every second."""
+        phone(self.root)
+        rows = {row[0]: row for section in sysinfo.describe(self.root)['sections'] for row in section['rows']}
+        root = str(self.root)
+        self.assertEqual(rows['Performance cores now'], ['Performance cores now', '1.10', 'GHz',
+                                                         f'clock:{root}/sys/devices/system/cpu/cpufreq/policy6/scaling_cur_freq'])
+        self.assertEqual(rows['Efficiency cores now'][1:3], ['1.00', 'GHz'])
+        self.assertEqual(rows['Temperature'][3], f'temp:{root}/sys/class/thermal/thermal_zone0/temp')
+        self.assertEqual(rows['Level'][3], 'level')
+        self.assertEqual(rows['Voltage'][3], f'volt:{root}/sys/class/power_supply/battery/voltage_now')
+        self.assertEqual(rows['Refresh rate'], ['Refresh rate', '', 'Hz', 'refresh'])  # the interface knows it
+        self.assertEqual(len(rows['Chip']), 3)  # what does not move has no source
 
     def test_what_is_missing_is_left_out(self):
         report = sysinfo.describe(self.root)

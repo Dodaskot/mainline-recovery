@@ -12,6 +12,16 @@ build.prop), or one system image (raw, sparse, xz):
   userdata       formatted for Android, metadata erased, cache wiped (the recovery's folder stays):
                  a GSI never starts on the data of another system
 
+Keeping the data (--keep-data, 2026-11-21): an update of the system already there to a build it
+was qualified with on the phone (android_transitions): super/system is written, and userdata,
+metadata, cache, BOOT (and its root), vendor and the rest of super stay. The way back is checked
+first: the earlier system's own image (--rollback-image-*: the file it was installed from, decoded
+and compared with what super/system holds, then flashed back from Files), or a copy of BOOT, the
+vbmetas and super made on a card or USB drive and verified (--rollback-volume, identity_backup,
+kind android; Restore puts it back). Its bounds: data the new system has changed after its first
+start (an app's database it upgraded) does not go back with it. --qualification-run allows
+a pair not yet qualified, from the command line only: how a pair is qualified.
+
 The review uses the plan format of samsung_firmware.py, so the same page shows both.
 
     android_gsi.py --device|--fixture DIR inspect --volume V --volume-token T --path GSI
@@ -37,9 +47,14 @@ import filesystem as fs
 import flash
 import install
 from install import require
+import android_transitions
+from operation_lock import lease
 import samsung_firmware as sf
 import saved_boot
 import sevenzip
+
+KEEP_DATA_PARTITIONS = ('boot', 'vbmeta', 'vbmeta_system', 'vbmeta_vendor')
+ROLLBACK_LABELS = ','.join((*KEEP_DATA_PARTITIONS, 'super'))
 
 # The vendor interface levels (FCM) each Android supports; this phone's vendor is level 5
 # (distro.VENDOR_FCM_LEVEL). Android 16 dropped level 5.
@@ -49,6 +64,21 @@ VENDOR_FCM_LEVEL = 5
 AVB_VERIFICATION_DISABLED = 2
 PROPS = ('ro.build.version.release', 'ro.build.version.sdk', 'ro.build.id', 'ro.build.version.security_patch',
          'ro.system.build.fingerprint', 'ro.product.system.name')
+
+# SDK metadata independently read from the exact crDroid 12.12 XZ archives and retained
+# LineageOS 20 vendor. Pin the content, not a name, size, or future version of the catalog.
+# These values describe the reviewed inputs. android_transitions still admits the pair.
+VERIFIED_PACKAGE_VERSIONS = {
+    'b0797c0c93b7fbfbae4cec0e7440fd6f0527abbbc891cc57ac186445d5ef5871': (36, '16'),
+    '1afddd51b6f457f02046cdd0e15abd7d5bd5480a789ac3fb0aa05da040ecf076': (36, '16'),
+}
+VERIFIED_SYSTEM_SDKS = {
+    '5595851f2f6a1f341000d085276bbe28ca584f25ab04236270ece828c27005d0': 36,
+    '79a6a0d8c1a092534682558594e55045fc37752a9c114d87325564dfd7b8f2cb': 36,
+}
+VERIFIED_VENDOR_VERSIONS = {
+    '99a3e0ffe51745a0a5003fd4db6f1bf30e8e233bc16e183123f4219933d706bd': (31, 31),
+}
 
 
 def gsi_source(context, volume, token, path):
@@ -252,7 +282,214 @@ def kernel_older(release, floor):
     return not match or (int(match.group(1)), int(match.group(2))) < floor
 
 
-def inspect(context, volume, token, path):
+def quiet(*unused):
+    pass
+
+
+def system_digest(context, progress=quiet):
+    """The SHA-256 of what super/system holds now."""
+    with flash.list_super(context) as found:
+        size, digest, done = found.size_of(found.partition('system')), hashlib.sha256(), 0
+        for data in found.chunks('system'):
+            digest.update(data)
+            done += len(data)
+            progress('Reading the system on the phone', {'label': 'super/system', 'size_bytes': size}, done)
+        return digest.hexdigest()
+
+
+def file_digest(context, volume, token, path, progress=quiet):
+    with flash.source_file(context, volume, token, path) as fd:
+        digest, at, size = hashlib.sha256(), 0, os.fstat(fd).st_size
+        while True:
+            data = os.pread(fd, 4 << 20, at)
+            if not data:
+                return digest.hexdigest(), at
+            digest.update(data)
+            at += len(data)
+            progress('Checking the image file', {'label': path.rsplit('/', 1)[-1], 'size_bytes': size}, at)
+
+
+def image_matches_system(context, volume, path, progress=None):
+    """Whether the image file at VOLUME:PATH, decoded and padded with zeros to the size of super/system,
+    is exactly what super/system holds: then it is the way back to this system."""
+    token = context.fs.volume(volume)['volume_token']
+    with flash.list_super(context) as found:
+        size, held = found.size_of(found.partition('system')), found.read_partition('system')
+    with flash.source_file(context, volume, token, path) as fd:
+        compression = flash.container(fd)
+        image_format = flash.layout(fd, compression, size)
+        reader = flash.open_reader(fd, compression, size)
+        digest, count = hashlib.sha256(), 0
+        try:
+            for data in install.decode_image(reader, image_format, size):
+                if reader.payload_bytes is not None:
+                    break
+                digest.update(data)
+                count += len(data)
+                if progress:
+                    progress('Checking the way back', {'label': 'super/system', 'size_bytes': size}, count)
+        finally:
+            flash.close_reader(reader)
+    if not count or count > size:
+        return False
+    left = size - count
+    while left:
+        digest.update(bytes(min(left, 1 << 20)))
+        left -= min(left, 1 << 20)
+    return digest.hexdigest() == held
+
+
+IMAGE_FOLDERS = ('.a22x-images', 'A22xImages')
+
+
+def find_package(context, size, sha256, progress=quiet):
+    """(volume, path) of a saved rollback image of SIZE bytes and SHA256 on a card or USB drive,
+    in the folders the catalog's downloads go to, or None."""
+    for volume in context.fs.volumes():
+        if not volume.get('mounted') or not fs.backup_partition(volume['id']):
+            continue
+        for folder in IMAGE_FOLDERS:
+            place = Path(volume['mountpoint']) / folder
+            try:
+                names = sorted(os.listdir(place))
+            except OSError:
+                continue
+            for name in names:
+                try:
+                    if os.stat(place / name, follow_symlinks=False).st_size != size:
+                        continue
+                    if file_digest(context, volume['id'], volume['volume_token'], '/' + folder + '/' + name, progress)[0] == sha256:
+                        return volume['id'], '/' + folder + '/' + name
+                except (OSError, fs.FilesystemError):
+                    continue
+    return None
+
+
+def way_back(context, pair, progress=quiet):
+    """The way back an update of PAIR takes without being told: the earlier system's own image when
+    it is saved, else a partitions copy on the first card or USB drive that is mounted for writing."""
+    if pair and pair.get('source_package_bytes'):
+        found = find_package(context, pair['source_package_bytes'], pair['source_package_sha256'], progress)
+        if found:
+            return found, None
+    card = next((v['id'] for v in context.fs.volumes() if fs.backup_partition(v['id']) and v.get('mounted')
+                 and not v.get('read_only') and v.get('write_supported')), None)
+    return None, card
+
+
+def platform_facts(context, progress=quiet):
+    """The qualification facts and exact partition hashes for a keep-data review.
+
+    Pair qualification compares the platform facts. The plan also pins BOOT and the complete
+    vbmeta chain so changes with the same kernel, root and verification flags require a new review.
+    """
+    facts = dict.fromkeys(android_transitions.PLATFORM_KEYS)
+    partition_sha256 = {'boot': None}
+    try:
+        target = context.target('boot')
+        data = install.target_bytes(context, target)
+        partition_sha256['boot'] = hashlib.sha256(data).hexdigest()
+        facts['kernel'] = (bootimage.inspect_boot(data)['kernel'].get('release') or None)
+        facts['root'] = saved_boot.describe_boot(data).get('root') or ''
+    except (OSError, ValueError, KeyError, bootimage.ImageError, fs.FilesystemError):
+        pass
+    for label in KEEP_DATA_PARTITIONS[1:]:
+        try:
+            partition_sha256[label] = install.target_hash(context, context.target(label))
+        except (OSError, ValueError, KeyError, fs.FilesystemError) as error:
+            if (context.mode == 'fixture' and label != 'vbmeta'
+                    and getattr(error, 'code', None) == 'TARGET_UNAVAILABLE'):
+                continue  # Host fixtures can model only one vbmeta partition.
+            partition_sha256[label] = None
+    try:
+        with flash.list_super(context) as found:
+            size, digest, done = found.size_of(found.partition('vendor')), hashlib.sha256(), 0
+            for data in found.chunks('vendor'):
+                digest.update(data)
+                done += len(data)
+                progress('Reading the vendor on the phone', {'label': 'super/vendor', 'size_bytes': size}, done)
+            facts['vendor_sha256'] = digest.hexdigest()
+    except (OSError, ValueError, KeyError, fs.FilesystemError):
+        pass
+    try:
+        facts['vbmeta_flags'] = vbmeta_flags(context)
+    except (OSError, KeyError, struct.error, fs.FilesystemError):
+        pass
+    try:
+        import nofbe
+        facts['data_encrypted'] = bool(nofbe.read_vendor(context)[0]['encrypted'])
+    except Exception:  # noqa: BLE001 - unread is None: it then differs from every qualified platform
+        pass
+    return facts, partition_sha256
+
+
+def keep_data_facts(context, volume, token, path, size, boot, qualification_run, rollback_volume, rollback_image=None, progress=quiet):
+    """(facts, blockers) of an update that keeps the data: the pair, and its way back."""
+    blockers = []
+    if boot != 'android':
+        blockers.append('KEEP_DATA_NEEDS_ANDROID')
+    sizes = {bytes_ for bytes_, _ in android_transitions.targets()}
+    facts = {'qualified': False, 'pair': None, 'source_system_sha256': None, 'target_sha256': None,
+             'rollback_volume': rollback_volume, 'rollback_image': rollback_image,
+             'rollback_labels': ROLLBACK_LABELS.split(',') if rollback_volume else []}
+    if size in sizes or qualification_run:
+        facts['target_sha256'], _ = file_digest(context, volume, token, path, progress)
+        facts['source_system_sha256'] = system_digest(context, progress)
+        pair = android_transitions.lookup(facts['source_system_sha256'], facts['target_sha256'])
+        facts['qualified'], facts['pair'] = pair is not None, pair
+        # The platform is read for a qualification run too: it is what the qualified pair then names.
+        facts['platform'], facts['platform_partition_sha256'] = platform_facts(context, progress)
+        target_sdk, target_release = VERIFIED_PACKAGE_VERSIONS.get(facts['target_sha256'], (None, None))
+        vendor_sdk, vendor_vndk = VERIFIED_VENDOR_VERSIONS.get(facts['platform']['vendor_sha256'], (None, None))
+        facts['versions'] = {
+            'source_sdk': VERIFIED_SYSTEM_SDKS.get(facts['source_system_sha256']),
+            'target_sdk': target_sdk, 'target_release': target_release,
+            'vendor_sdk': vendor_sdk, 'vendor_vndk': vendor_vndk,
+        }
+        if pair is not None:
+            # The pair's files match; the platform must be one it was checked on too (2026-11-22).
+            facts['platform_differences'] = android_transitions.platform_differences(pair, facts['platform'])
+            if facts['platform_differences']:
+                facts['qualified'] = False
+                if not qualification_run:
+                    blockers.append('PLATFORM_NOT_QUALIFIED')
+        unread = [label for label, sha in facts['platform_partition_sha256'].items() if sha is None]
+        if unread:
+            blockers.append('PLATFORM_NOT_QUALIFIED')
+            facts['qualified'] = False
+            facts.setdefault('platform_differences', []).extend(unread)
+        # Vendor's fstab describes what it asks Android to create. The live userdata
+        # can still hold encrypted data from another installation.
+        import format_authorization
+        userdata = context.fs.volume('userdata')
+        protected = format_authorization.protected(userdata)
+        facts['userdata'] = {'volume_token': userdata['volume_token'],
+                             'protection': 'protected_or_unknown' if protected else 'unprotected'}
+        if protected:
+            blockers.append('PLATFORM_NOT_QUALIFIED')
+            facts['qualified'] = False
+            facts.setdefault('platform_differences', []).append('userdata_encryption')
+        if pair is not None and not rollback_image and not rollback_volume:
+            rollback_image, rollback_volume = way_back(context, pair, progress)
+            facts['rollback_image'], facts['rollback_volume'] = rollback_image, rollback_volume
+            facts['rollback_labels'] = ROLLBACK_LABELS.split(',') if rollback_volume else []
+    if facts['pair'] is None and not qualification_run:
+        blockers.append('PAIR_NOT_QUALIFIED')
+    if rollback_image:
+        if rollback_image[0] in ('userdata', 'cache', 'metadata') or \
+                not any(v['id'] == rollback_image[0] for v in context.fs.volumes()):
+            blockers.append('ROLLBACK_COPY_NEEDS_CARD')
+    elif rollback_volume:
+        copy_to = next((v for v in context.fs.volumes() if v['id'] == rollback_volume), None)
+        if copy_to is None or rollback_volume in ('userdata', 'cache', 'metadata'):
+            blockers.append('ROLLBACK_COPY_NEEDS_CARD')
+    else:
+        blockers.append('ROLLBACK_NEEDED')
+    return facts, blockers
+
+
+def inspect(context, volume, token, path, keep_data=False, rollback_volume=None, qualification_run=False, rollback_image=None,
+            progress=quiet, no_fbe=False):
     relative = '/' + fs.clean_path(path).lstrip('/')
     name = relative.rsplit('/', 1)[-1]
     source = gsi_source(context, volume, token, relative)
@@ -269,19 +506,6 @@ def inspect(context, volume, token, path):
             stock = None
         if stock is None:
             blockers.append('STOCK_ANDROID_FIRST')
-    sdk = int(props.get('ro.build.version.sdk', '0') or 0) if props.get('ro.build.version.sdk', '').isdigit() else 0
-    fits = VENDOR_FCM_LEVEL in SUPPORTED_LEVELS.get(sdk, ())
-    if sdk and not fits:
-        warnings.append('Made for newer vendors: it may not start on this phone')
-    if not sdk:
-        warnings.append('The image does not say its Android version')
-    # 2026-11-12, on the owner's phone: Google's Android 15 restarted for ever. Its network loader
-    # refuses a kernel older than 4.19 ("NetBpfLoad: Android V requires kernel 4.19"), and this
-    # phone's Android kernel is 4.14. ROMs made for older phones take that check out (crDroid and
-    # AlphaDroid, both Android 16, started here), and a file does not say which kind it is: so
-    # this is said, and never refused.
-    if sdk >= KERNEL_FLOOR_SDK and kernel_older(release if boot == 'android' else (stock or {}).get('release', ''), KERNEL_FLOOR):
-        warnings.append(OLD_KERNEL_WARNING)
     system_name, system_bytes = source['members']['system']
     targets = {t['label']: t for t in flash.targets(context)['targets']}
     room = flash.targets(context).get('super_free_bytes', 0)
@@ -292,11 +516,16 @@ def inspect(context, volume, token, path):
                  'reason': None})
     writes.append({'target': 'super/system', 'path': relative, 'member': system_name, 'size': system_bytes})
     flags = vbmeta_flags(context)
-    if 'vbmeta' in flash.write_protected(context):
+    verification_disabled = flags is not None and bool(flags & AVB_VERIFICATION_DISABLED)
+    if keep_data:
+        if verification_disabled:
+            rows.append({'file': 'PHONE', 'name': 'vbmeta', 'size': 0, 'action': 'kept', 'target': None,
+                         'reason': 'Verification is already disabled'})
+    elif 'vbmeta' in flash.write_protected(context):
         # 2026-11-10: LK write-protects vbmeta while the phone runs. Verification already off (the
         # vbmeta Root prepares, or one flashed in Download mode): kept. Otherwise it is flashed
         # in Download mode first - Root on the Android page prepares it.
-        if flags is not None and flags & AVB_VERIFICATION_DISABLED:
+        if verification_disabled:
             rows.append({'file': 'GSI', 'name': 'vbmeta', 'size': 0, 'action': 'kept', 'target': None,
                          'reason': 'Verification is already disabled'})
         else:
@@ -306,7 +535,7 @@ def inspect(context, volume, token, path):
         rows.append({'file': 'GSI', 'name': vb_name, 'size': vb_bytes, 'action': 'write', 'target': 'vbmeta', 'reason': None})
         writes.append({'target': 'vbmeta', 'path': relative, 'member': vb_name, 'size': vb_bytes})
     else:
-        if flags is None or not flags & AVB_VERIFICATION_DISABLED:
+        if not verification_disabled:
             # No vbmeta of its own: an empty one with verification disabled goes there instead.
             data = disabled_vbmeta()
             rows.append({'file': 'RECOVERY', 'name': VBMETA_NAME, 'size': len(data), 'action': 'write', 'target': 'vbmeta', 'reason': None})
@@ -315,23 +544,95 @@ def inspect(context, volume, token, path):
         else:
             rows.append({'file': 'GSI', 'name': 'vbmeta', 'size': 0, 'action': 'kept', 'target': None,
                          'reason': 'Verification is already disabled'})
-    if stock is not None:
+    if stock is not None and not keep_data:
         rows.append({'file': 'CACHE', 'name': stock['name'], 'size': stock['bytes'], 'action': 'write', 'target': 'boot', 'reason': None})
         writes.append({'target': 'boot', 'volume': 'cache', 'path': stock['path'], 'member': None, 'size': stock['bytes'],
                        'sha256': stock['sha256']})
     else:
         rows.append({'file': 'PHONE', 'name': 'boot', 'size': 0, 'action': 'kept', 'target': None,
                      'reason': "Samsung's Android BOOT stays" if boot == 'android' else 'Not Android: flash the Samsung firmware first'})
+    erase, keep = ['userdata', 'metadata', 'cache'], None
+    vendor_review = None
+    # Android's data without encryption (nofbe.py, 2026-11-21): a GSI keeps the vendor there, whose fstab
+    # then asks for none. Only with the data erased: data already encrypted stays so.
+    if no_fbe:
+        require(not keep_data, 'INVALID_ARGUMENT', 'Data that is kept keeps its encryption')
+        import nofbe
+        encryption_blockers = sf.no_fbe_blockers(context)
+        blockers += encryption_blockers
+        if not encryption_blockers:
+            # GSI keeps the installed vendor, so its actual patch can be reviewed before any flash.
+            # The mapping uses a fixed name and must share the installation's exclusive lease.
+            try:
+                with lease(context.lock_path, context.mode):
+                    vendor, extents = nofbe.read_vendor(context)
+                require(vendor['files'], 'VENDOR_UNREADABLE', 'No vendor fstab could be reviewed for a no-FBE install')
+                vendor_review = fs.digest({
+                    'files': vendor['files'], 'extents': extents,
+                    'writes': [(row['offset'], row['old'].hex(), row['new'].hex()) for row in vendor['writes']],
+                })
+            except fs.FilesystemError as error:
+                blockers.append(error.code)
+    if keep_data:
+        keep, more = keep_data_facts(context, volume, token, relative, source['size'], boot, qualification_run, rollback_volume,
+                                     rollback_image, progress)
+        blockers += more
+        if not verification_disabled:
+            blockers.append('PLATFORM_NOT_QUALIFIED')
+            keep['qualified'] = False
+            differences = keep.setdefault('platform_differences', [])
+            if 'vbmeta_flags' not in differences:
+                differences.append('vbmeta_flags')
+        rollback_image, rollback_volume = keep['rollback_image'], keep['rollback_volume']
+        erase = []
+        if rollback_image:
+            rows.insert(0, {'file': 'CARD', 'name': rollback_image[1].rsplit('/', 1)[-1], 'size': 0, 'action': 'kept',
+                            'target': None, 'reason': "The way back: this system's own image, checked first"})
+        else:
+            rows.insert(0, {'file': 'PHONE', 'name': ROLLBACK_LABELS.replace(',', ', '), 'size': 0, 'action': 'copy',
+                            'target': rollback_volume, 'reason': 'Kept first, to return to this system'})
+        rows.append({'file': 'PHONE', 'name': 'userdata', 'size': 0, 'action': 'kept', 'target': None,
+                     'reason': 'Apps and their data stay'})
+    sdk = int(props.get('ro.build.version.sdk', '0') or 0) if props.get('ro.build.version.sdk', '').isdigit() else 0
+    android = props.get('ro.build.version.release', '')
+    verified_versions = (keep or {}).get('versions', {})
+    if verified_versions.get('target_sdk') is not None:
+        sdk, android = verified_versions['target_sdk'], verified_versions['target_release']
+    verified_fit = bool(keep and keep['qualified'] and verified_versions.get('target_sdk') is not None)
+    fits = verified_fit or VENDOR_FCM_LEVEL in SUPPORTED_LEVELS.get(sdk, ())
+    if sdk and not fits:
+        warnings.append('Made for newer vendors: it may not start on this phone')
+    if not sdk:
+        warnings.append('The image does not say its Android version')
+    # 2026-11-12, on the owner's phone: Google's Android 15 restarted for ever. Its network loader
+    # refuses a kernel older than 4.19 ("NetBpfLoad: Android V requires kernel 4.19"), and this
+    # phone's Android kernel is 4.14. ROMs made for older phones take that check out (crDroid and
+    # AlphaDroid, both Android 16, started here), and a file does not say which kind it is: so
+    # this is said, and never refused.
+    if not verified_fit and sdk >= KERNEL_FLOOR_SDK:
+        boot_kernel = release if boot == 'android' else (stock or {}).get('release', '')
+        if kernel_older(boot_kernel, KERNEL_FLOOR):
+            warnings.append(OLD_KERNEL_WARNING)
     plan = {'file': {'path': relative, 'identity': source['identity'], 'size': source['size']},
             'writes': [{k: w.get(k) for k in ('target', 'member', 'size', 'volume', 'path', 'sha256')} for w in writes],
-            'erase': ['userdata', 'metadata', 'cache']}
+            'erase': erase}
+    if no_fbe:
+        plan['no_fbe'] = True
+        plan['no_fbe_vendor_review_sha256'] = vendor_review
+    if keep_data:
+        plan['keep_data'] = {k: keep.get(k) for k in ('source_system_sha256', 'target_sha256', 'rollback_volume', 'rollback_image',
+                                                     'qualified', 'platform', 'platform_partition_sha256', 'userdata',
+                                                     'versions')}
+        plan['qualification_run'] = bool(qualification_run)
     digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     build = props.get('ro.build.id', '')
-    return {'volume': volume, 'path': relative, 'build': build, 'android': props.get('ro.build.version.release', ''), 'sdk': sdk,
+    return {'volume': volume, 'path': relative, 'build': build, 'android': android, 'sdk': sdk,
             'patch': props.get('ro.build.version.security_patch', ''), 'fits': fits, 'boot': boot or 'unknown', 'boot_release': release,
             'files': [{'name': name, 'path': relative, 'kind': 'GSI', 'build': build, 'size': source['size'], 'md5': None}],
             'rows': rows, 'writes': writes, 'erase': plan['erase'], 'warnings': warnings, 'blockers': sorted(set(blockers)),
-            'plan_sha256': digest, 'write_bytes': sum(w['size'] for w in writes)}
+            'plan_sha256': digest, 'write_bytes': sum(w['size'] for w in writes), 'keep_data': keep,
+            'keep_data_offer': (not keep_data and boot == 'android' and android_transitions.offered(source['size'])),
+            'no_fbe': bool(no_fbe)}
 
 
 def flash_gsi(context, volume, token, write, progress):
@@ -357,23 +658,75 @@ def flash_gsi(context, volume, token, write, progress):
     if write['target'].startswith('super/'):
         args.image_bytes = checked['image']['payload_bytes']
     done = flash.write(context, args, progress)
-    return {'target': write['target'], 'sha256': done['sha256'], 'kept_boot': done.get('kept_boot')}
+    return {'target': write['target'], 'sha256': done['sha256'], 'partition_sha256': done.get('partition_sha256'),
+            'kept_boot': done.get('kept_boot')}
 
 
-def install_gsi(context, volume, token, path, expected_plan, confirmed, progress):
+def rollback_copy(volume, progress):
+    """BOOT, the vbmetas and super copied to VOLUME and verified (identity_backup, kind android): the way
+    back to the system an update replaces. It takes the operation lock itself, so before the update's."""
+    import identity_backup as ib
+    ib.use('android', ROLLBACK_LABELS)
+    copier = ib.Device()
+    step = lambda phase, label, done, total: progress(phase, {'label': label, 'size_bytes': total}, done)
+    made = ib.backup(copier, argparse.Namespace(volume=volume), step)
+    checked = ib.verify(copier, argparse.Namespace(volume=volume, path=made['path']), step)
+    require(checked.get('verified') and checked.get('restorable'), 'ROLLBACK_COPY_FAILED',
+            'The copy of this system could not be verified: nothing was written')
+    return {'volume': volume, 'path': made['path'], 'manifest_sha256': checked['manifest_sha256']}
+
+
+def install_gsi(context, volume, token, path, expected_plan, confirmed, progress, keep_data=False, rollback_volume=None,
+                qualification_run=False, rollback_image=None, no_fbe=False):
     require(confirmed, 'CONFIRMATION_REQUIRED', 'Installing a GSI must be confirmed')
+    checked = dict(keep_data=keep_data, rollback_volume=rollback_volume, qualification_run=qualification_run,
+                   rollback_image=rollback_image, no_fbe=no_fbe)
+    copy = None
+    if keep_data:
+        # Reviewed again before the copy (minutes of work for nothing otherwise), and again after it.
+        first = inspect(context, volume, token, path, progress=progress, **checked)
+        require(first['plan_sha256'] == expected_plan, 'PLAN_CHANGED', 'The system or the image changed since the review. Review it again')
+        require(not first['blockers'], 'PLAN_BLOCKED', 'This update cannot keep the data', blockers=first['blockers'])
+        rollback_image = tuple(first['keep_data']['rollback_image']) if first['keep_data']['rollback_image'] else None
+        rollback_volume = first['keep_data']['rollback_volume']
+        if not rollback_image:
+            copy = rollback_copy(rollback_volume, progress)
     with sf.held_lock(context):
-        plan = inspect(context, volume, token, path)
+        import format_authorization
+        format_authorization.require_unprotected(context.fs)
+        plan = inspect(context, volume, token, path, progress=progress, **checked)
         require(plan['plan_sha256'] == expected_plan, 'PLAN_CHANGED', 'The image changed since it was reviewed. Review it again')
         require(not plan['blockers'], 'PLAN_BLOCKED', 'This image cannot be installed', blockers=plan['blockers'])
+        if keep_data and rollback_image:
+            # Check while holding the installation lock, which prevents another recovery job replacing the file.
+            card, earlier = rollback_image
+            try:
+                matches = image_matches_system(context, card, earlier, progress)
+            except FileNotFoundError:
+                matches = False
+            require(matches, 'ROLLBACK_IMAGE_DIFFERS',
+                    "This image is missing or differs from the system on the phone. Nothing was written")
+            copy = {'volume': card, 'path': earlier, 'image': True}
         token = context.fs.volume(volume)['volume_token']
         if any(w.get('generate') == 'vbmeta-disabled' for w in plan['writes']):
             saved_boot.save_on_cache(context, VBMETA_NAME, disabled_vbmeta(), {'kind': 'vbmeta', 'flags': AVB_VERIFICATION_DISABLED},
                                      progress, keep_mounted=True, folder_name=VBMETA_DIR)
         written = [flash_gsi(context, volume, token, write, progress) for write in plan['writes']]
+        if keep_data:
+            return {'build': plan['build'], 'android': plan['android'], 'written': written, 'kept_data': True,
+                    'pair': plan['keep_data']['pair'], 'qualification_run': qualification_run, 'rollback_copy': copy,
+                    'saved_boot': None,
+                    'next': ('Restart into Android. To return to the earlier system: its image in Files, Flash to a partition, '
+                             'super/system' if rollback_image else
+                             'Restart into Android. To return to the earlier system: Restore, this copy of the partitions')
+                            + '; data the new system changed after its first start does not go back with it.'}
+        unencrypted = None
+        if no_fbe:
+            import nofbe
+            unencrypted = nofbe.patch(context, True, progress)
         reset = sf.android_data(context, progress)
         return {'build': plan['build'], 'android': plan['android'], 'written': written, **reset, 'saved_boot': None,
-                'next': 'Restart into Android. The first start takes several minutes.'}
+                'no_fbe': unencrypted, 'next': 'Restart into Android. The first start takes several minutes.'}
 
 
 def parser():
@@ -389,6 +742,14 @@ def parser():
         command.add_argument('--path', required=True)
     commands.choices['install'].add_argument('--expected-plan', required=True)
     commands.choices['install'].add_argument('--confirm', action='store_true')
+    for name in ('inspect', 'install'):
+        commands.choices[name].add_argument('--keep-data', action='store_true')
+        commands.choices[name].add_argument('--rollback-volume')
+        commands.choices[name].add_argument('--rollback-image-volume')
+        commands.choices[name].add_argument('--no-fbe', action='store_true', help="Android's data without encryption (nofbe.py)")
+        commands.choices[name].add_argument('--rollback-image-path')
+        commands.choices[name].add_argument('--qualification-run', action='store_true',
+                                            help='Allow a pair not yet qualified (how a pair is qualified; not offered by the UI)')
     return result
 
 
@@ -405,12 +766,16 @@ def main(argv=None):
 
     try:
         context = install.FixtureContext(args.fixture) if args.fixture else install.DeviceContext()
+        checked = {} if args.command == 'classify' else dict(
+            keep_data=args.keep_data, rollback_volume=args.rollback_volume, qualification_run=args.qualification_run,
+            rollback_image=(args.rollback_image_volume, '/' + fs.clean_path(args.rollback_image_path).lstrip('/'))
+            if args.rollback_image_volume and args.rollback_image_path else None, no_fbe=args.no_fbe)
         if args.command == 'inspect':
-            result = inspect(context, args.volume, args.volume_token, args.path)
+            result = inspect(context, args.volume, args.volume_token, args.path, progress=progress, **checked)
         elif args.command == 'classify':
             result = classify(context, args.volume, args.volume_token, args.path)
         else:
-            result = install_gsi(context, args.volume, args.volume_token, args.path, args.expected_plan, args.confirm, progress)
+            result = install_gsi(context, args.volume, args.volume_token, args.path, args.expected_plan, args.confirm, progress, **checked)
         print(json.dumps({'ok': True, 'operation': args.command, **result}, separators=(',', ':')), flush=True)
         return 0
     except Exception as error:  # noqa: BLE001 - every refusal reaches the page as JSON

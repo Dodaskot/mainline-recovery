@@ -44,6 +44,8 @@ STORE_DIR = '.a22x-images'
 STORE_META = '.a22x.json'
 STORE_FILE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._+-]{0,199}')
 SCRIPT_STORE = 'a22x-recovery/scripts/'
+SCRIPT_RAM_VOLUME = 'recovery-ram'
+SCRIPT_RAM_NAME = re.compile(r'linux-script-[0-9]+-[0-9]+\.sh')
 PROFILE_PATH = Path('/etc/a22x-recovery/distro-platform.json')
 # The exact files the profile names, kept in the recovery for a system that lost them.
 PLATFORM_BUNDLE = Path('/opt/a22x-recovery/platform/platform-files.tar.xz')
@@ -66,7 +68,10 @@ BOOT_K122_SHA256 = '9701f48ddced60c648e79a502885778935d1cb5610a011d77fc1898eea01
 # BOOT v1r7 (2026-11-12, published as v147): kernel 138 keeps the battery percent in the PMIC, shared
 # with the recovery's kernel and Android's gauge; only the kernel differs, the same modules serve it.
 BOOT_K138_SHA256 = '5faafaa0035bff7bd77251ab01e2b4c395798755ad24db7b3240cc3d6139ad0f'
-ALLOWED_BOOTS = frozenset((BOOT_SHA256, BOOT_K108_SHA256, BOOT_CHARGER_OFF_SHA256, BOOT_K116_SHA256, BOOT_K121_SHA256, BOOT_K122_SHA256, BOOT_K138_SHA256))
+# Kernel 165 (BOOT v1r8, 2026-11-22): k138 with the recovery kernel #164's fixes (panels, touch, display
+# select), a neutral banner; same modules (release 7.2.0-a22x+). Live: Debian 13 boots, Wi-Fi, BT, sound, sleep.
+BOOT_K165_SHA256 = 'c09c126596d7bd4180706135543d439dfa353a0685fed277da0241e29f49524c'
+ALLOWED_BOOTS = frozenset((BOOT_SHA256, BOOT_K108_SHA256, BOOT_CHARGER_OFF_SHA256, BOOT_K116_SHA256, BOOT_K121_SHA256, BOOT_K122_SHA256, BOOT_K138_SHA256, BOOT_K165_SHA256))
 BOOT_BYTES = 33554432
 # userdata: stock, or grown to the end of the eMMC by an image's first start (Manjaro ARM's sfdisk,
 # 2026-11-08); on every SM-A226B, 64 GB or 128 GB (install.userdata_sizes).
@@ -968,12 +973,23 @@ def home_binding(live, target):
         require({n for n, v in old_users.items() if v['uid'] == item['uid']} ==
                 {n for n, v in new_users.items() if v['uid'] == item['uid']},
                 'HOME_UID_ALIAS_MISMATCH', 'A shared UID is assigned to a different account', uid=item['uid'])
+    # An account the new system makes, with its home in the shared /home (installed beside the others with a new
+    # user), is known only to it until a switch carries it to the others, as a switch carries any account
+    # (2026-11-22, live: Mobian beside Debian stopped at HOME_UNKNOWN_UID for its own new user). Its UID and
+    # group must be free in the current system: one used there by another account stays refused.
+    old_uids, old_gids = {v['uid'] for v in old_users.values()}, set(old_groups.values())
+    added_uids = {v['uid'] for n, v in new_users.items() if n not in old_users and v['uid'] not in old_uids}
+    added_gids = {g for n, g in new_groups.items() if n not in old_groups and g not in old_gids}
     for uid in uids:
+        if uid in added_uids:
+            continue
         require(any(v['uid'] == uid for v in required.values()), 'HOME_UNKNOWN_UID',
                 'Shared files have an owner absent from the current account database', uid=uid)
     for gid in gids:
         old_names = {name for name, value in old_groups.items() if value == gid}
         new_names = {name for name, value in new_groups.items() if value == gid}
+        if gid in added_gids and not old_names:
+            continue
         require(old_names and old_names == new_names, 'HOME_GROUP_MISMATCH',
                 'Shared files require the same group names and GIDs', gid=gid,
                 current=sorted(old_names), target=sorted(new_names))
@@ -1638,9 +1654,8 @@ def verify_plan(context, plan, operation):
             'PLAN_EXPIRED', 'Create and review a fresh operation plan')
 
 
-def save_plan_result(context, result, output):
-    """Write the full plan to one new private RAM file; return a bounded UI summary."""
-    path = fs.absolute_no_symlinks(output, missing=True)
+def private_output_path(context, output, *, missing=False):
+    path = fs.absolute_no_symlinks(output, missing=missing)
     require(path.is_absolute() and path.parent.is_dir(), 'INVALID_PLAN_OUTPUT', 'Use a new file in an existing private directory')
     if context.mode == 'device':
         st = path.parent.stat()
@@ -1651,6 +1666,12 @@ def save_plan_result(context, result, output):
     else:
         require(context.root in path.parents and all(Path(v['path']) not in path.parents and Path(v['path']) != path
                 for v in context.volumes()), 'INVALID_PLAN_OUTPUT', 'Fixture plans belong outside its volume directories')
+    return path
+
+
+def save_plan_result(context, result, output):
+    """Write the full plan to one new private RAM file; return a bounded UI summary."""
+    path = private_output_path(context, output, missing=True)
     data = canonical(result) + b'\n'
     require(len(data) <= MAX_JSON, 'PLAN_TOO_LARGE', 'The full operation plan exceeds its bound')
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
@@ -2412,8 +2433,79 @@ def has_linux_root(tree):
     return tree.exists('usr') and tree.exists('sbin') and (tree.exists('etc/os-release') or tree.exists('usr/lib/os-release'))
 
 
+def staged_script_path(context, path, *, missing=False):
+    path = private_output_path(context, path, missing=missing)
+    require(SCRIPT_RAM_NAME.fullmatch(path.name) and (context.mode == 'fixture' or fs.RAM_STATE in path.parents),
+            'INVALID_SCRIPT', 'Choose the setup script again')
+    parent = path.parent.stat()
+    require(parent.st_uid == os.geteuid() and not stat.S_IMODE(parent.st_mode) & 0o077,
+            'INVALID_SCRIPT', 'A private recovery directory is required for this script')
+    return path
+
+
+def script_bytes(fd, before):
+    require(before.st_size <= SCRIPT_LIMIT, 'SCRIPT_TOO_LARGE', 'A setup script can be at most 1 MiB')
+    data = os.pread(fd, SCRIPT_LIMIT + 1, 0)
+    require(len(data) == before.st_size and fs.stamp(os.fstat(fd)) == fs.stamp(before),
+            'SCRIPT_CHANGED', 'The setup script changed while it was read')
+    require(b'\0' not in data, 'SCRIPT_NOT_TEXT', 'The setup script must be a text file')
+    return data
+
+
+def stage_android_script(context, source, volume_token, entry_token, output, confirmed):
+    context.confirm(confirmed)
+    fs.require_hash(volume_token, 'expected-volume-token')
+    target = staged_script_path(context, output, missing=True)
+    with fs.PinnedVolume(context, 'userdata', volume_token, writing=True) as pin:
+        volume = pin.volume
+        verified = (volume.get('mount_owner') == 'android-decrypt' and volume.get('decrypt_state') == 'mounted'
+                    and volume.get('ce_authenticated') is True and volume.get('fscrypt_policy_verified') is True
+                    and volume.get('android_user_id') == 0)
+        fixture_android = context.mode == 'fixture' and volume.get('fs_type') == 'f2fs' and not volume.get('fscrypt_feature')
+        require(verified or fixture_android, 'ANDROID_CE_REQUIRED',
+                'Unlock Android data and enable write access before choosing the setup script.')
+        path = fs.clean_path(source)
+        with pin.parent(path) as (directory, name):
+            fd = fs.open_regular(name, dir_fd=directory)
+            try:
+                pin.check_fd(fd)
+                before = os.fstat(fd)
+                fs.expect_entry(fs.entry_record(pin, path, before), entry_token, required=True)
+                data = script_bytes(fd, before)
+                fs.verify_named(directory, name, fs.stamp(before))
+                pin.recheck()
+            finally:
+                os.close(fd)
+        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        try:
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except BaseException:
+            target.unlink()
+            raise
+    return {'script': {'volume': SCRIPT_RAM_VOLUME, 'path': str(target),
+                       'token': hashlib.sha256(data).hexdigest()}, 'bytes': len(data)}
+
+
 def script_stamp(context, script):
     """The chosen setup script: its bytes, hash and identity. Recovery only copies it."""
+    if script['volume'] == SCRIPT_RAM_VOLUME:
+        path = staged_script_path(context, script['path'])
+        fs.require_hash(script['token'], 'expected-script-token')
+        fd = fs.open_regular(path)
+        try:
+            st = os.fstat(fd)
+            require(st.st_uid == os.geteuid() and stat.S_IMODE(st.st_mode) == 0o600 and st.st_nlink == 1,
+                    'INVALID_SCRIPT', 'The staged setup script is not a private file.')
+            data = script_bytes(fd, st)
+            digest_ = hashlib.sha256(data).hexdigest()
+            require(digest_ == script['token'] and fs.stamp(path.lstat()) == fs.stamp(st),
+                    'SCRIPT_CHANGED', 'The setup script changed since it was selected')
+            return data, {'bytes': len(data), 'sha256': digest_, 'identity': list(fs.stamp(st))}
+        finally:
+            os.close(fd)
     with fs.PinnedVolume(context, script['volume'], script['token']) as pin, Tree(pin) as tree:
         path = logical_path(script['path'])
         # Or one saved on the phone (2026-11-10): cache:/a22x-recovery/scripts, by an Android app or the recovery.
@@ -2422,12 +2514,13 @@ def script_stamp(context, script):
                 'Setup scripts must be on external SD/USB storage')
         fd = tree.regular(path)
         try:
-            stamp = fs.stamp(os.fstat(fd))
+            before = os.fstat(fd)
+            data = script_bytes(fd, before)
+            stamp = fs.stamp(before)
+            require(fs.stamp(tree.lstat(path)) == stamp, 'SCRIPT_CHANGED', 'The setup script changed while it was read')
+            pin.recheck()
         finally:
             os.close(fd)
-        require(stamp[3] <= SCRIPT_LIMIT, 'SCRIPT_TOO_LARGE', 'A setup script can be at most 1 MiB')
-        data = tree.read(path, SCRIPT_LIMIT)
-    require(b'\0' not in data, 'SCRIPT_NOT_TEXT', 'The setup script must be a text file')
     return data, {'bytes': len(data), 'sha256': hashlib.sha256(data).hexdigest(), 'identity': list(stamp)}
 
 
@@ -2868,11 +2961,70 @@ def downloaded_differently(context, remote, error):
 SEARCH_SITES = {'debian': ('https://packages.debian.org', 'trixie'), 'mobian': ('https://packages.debian.org', 'trixie'),
                 'ubuntu': ('https://packages.ubuntu.com', 'resolute')}
 PACKAGE_NAME = r'[a-z0-9][a-z0-9+._-]{0,99}'
+FEDORA_KOJI_HUB = 'https://koji.fedoraproject.org/kojihub'
+
+
+def fedora_rpm_batch(context, release, sources):
+    """Read only published aarch64 and noarch RPMs from the release and its stable updates."""
+    import urllib.request
+    from xml.parsers.expat import ExpatError
+    from xmlrpc import client
+
+    calls = [{'methodName': 'listTaggedRPMS', 'params': [f'f{release}-updates', {
+        'package': source, 'arch': ['aarch64', 'noarch'], 'latest': True, 'inherit': True,
+        'extra': False, '__starstar': True,
+    }]} for source in sources]
+    body = client.dumps((calls,), methodname='system.multicall').encode('utf-8')
+    request = urllib.request.Request(FEDORA_KOJI_HUB, body, headers={
+        'Content-Type': 'text/xml', 'User-Agent': USER_AGENT,
+    })
+    limit = 4 << 20
+    try:
+        with url_opener(context, True).open(request, timeout=10) as response:
+            payload = response.read(limit + 1)
+        if len(payload) > limit:
+            return {}
+        reply, _ = client.loads(payload)
+    except (OSError, http.client.HTTPException, ValueError, ExpatError, client.Error) as error:
+        if hasattr(error, 'close'):
+            error.close()
+        return {}
+    if len(reply) != 1 or not isinstance(reply[0], list) or len(reply[0]) != len(sources):
+        return {}
+    packages = {}
+    for source, row in zip(sources, reply[0]):
+        # A successful multicall result contains the RPMs and their source builds.
+        if not (isinstance(row, list) and len(row) == 1 and isinstance(row[0], list)
+                and len(row[0]) == 2 and isinstance(row[0][0], list) and isinstance(row[0][1], list)):
+            continue
+        if any(not isinstance(rpm, dict) or rpm.get('arch') not in ('aarch64', 'noarch')
+               or not isinstance(rpm.get('name'), str) for rpm in row[0][0]):
+            continue
+        packages[source] = {rpm['name']: rpm for rpm in row[0][0]}
+    return packages
+
+
+def fedora_package_availability(context, release, sources, results):
+    # The search can return several subpackages of the same build. Query each source only once.
+    from concurrent.futures import ThreadPoolExecutor
+
+    names = list(dict.fromkeys(sources[entry['name']] for entry in results))
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        batches = pool.map(lambda at: fedora_rpm_batch(context, release, names[at:at + 8]), range(0, len(names), 8))
+        packages = {source: rpms for batch in batches for source, rpms in batch.items()}
+    for entry in results:
+        rpms = packages.get(sources[entry['name']])
+        if rpms is None:
+            continue
+        rpm = rpms.get(entry['name'])
+        entry['available'] = rpm is not None
+        if rpm and all(isinstance(rpm.get(field), str) for field in ('version', 'release')):
+            entry['version'] = f"{rpm['version']}-{rpm['release']}"[:80]
 
 
 def package_search(context, family, release, query, limit=24):
     """[{name, version, summary, available}] for QUERY in FAMILY's repositories; available means
-    built for arm64 (Debian, Ubuntu) or listed by Arch Linux ARM; None when it cannot be told."""
+    compatible with arm64, or None when compatibility could not be checked."""
     import html as markup
     import urllib.parse
     require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9+._-]{1,39}', query or '') is not None, 'INVALID_QUERY',
@@ -2901,10 +3053,10 @@ def package_search(context, family, release, query, limit=24):
     elif family == 'fedora':
         number = release if release and re.fullmatch(r'\d{2}', release) else '45'
         page = remote_text(context, 'https://packages.fedoraproject.org/search?query=%s&releases=Fedora+%s' % (term, number), 4 << 20)
-        seen = set()
-        for name, summary in re.findall(r'href="/pkgs/[^/"]+/([^/"]+)/?">\s*<span>[^<]*</span></a>\s*-\s*([^<\n]*)', page):
-            if name not in seen and re.fullmatch(PACKAGE_NAME, name):
-                seen.add(name)
+        sources = {}
+        for source, name, summary in re.findall(r'href="/pkgs/([^/"]+)/([^/"]+)/?">\s*<span>[^<]*</span></a>\s*-\s*([^<\n]*)', page):
+            if name not in sources and re.fullmatch(PACKAGE_NAME, name) and re.fullmatch(PACKAGE_NAME, source, re.I):
+                sources[name] = source
                 results.append({'name': name, 'version': '', 'summary': markup.unescape(summary).strip()[:120], 'available': None})
     else:
         data = json.loads(remote_text(context, 'https://archlinux.org/packages/search/json/?q=%s' % term, 4 << 20))
@@ -2933,8 +3085,10 @@ def package_search(context, family, release, query, limit=24):
     # The name asked for first, then names that start with it or have it as a word, then the rest.
     word = query.lower()
     rank = lambda r: (r['name'] != word, not r['name'].startswith(word), word not in re.split(r'[-+._]', r['name']))
-    results = sorted(results, key=rank)
-    return {'family': family, 'query': query, 'results': results[:limit]}
+    results = sorted(results, key=rank)[:limit]
+    if family == 'fedora' and results:
+        fedora_package_availability(context, number, sources, results)
+    return {'family': family, 'query': query, 'results': results}
 
 
 def linux_entry(context, image_id):
@@ -3892,6 +4046,10 @@ def install_image_system(context, plan, confirmed=False):
     fresh = image_plan(context, plan['source_volume'], plan['manifest_path'], options,
                        plan['binding']['source_volume_token'], wipe=wipe, remote=entry)['plan']
     require(fresh['binding'] == plan['binding'], 'PLAN_STALE', 'The image or installation state changed since planning')
+    script = None
+    if options.get('script'):
+        script, seen = script_stamp(context, options['script'])
+        require(seen == plan['binding']['script'], 'SCRIPT_CHANGED', 'The setup script changed since planning')
     profile = load_profile(context)
     clean = plan['binding'].get('clean') is True
     saved = store_name(plan.get('manifest_path')) if remote is None and plan.get('source_volume') == 'userdata' else None
@@ -3917,10 +4075,6 @@ def install_image_system(context, plan, confirmed=False):
         # status and boot-check refuse the new system with SENTINEL_UNRESOLVED.
         clear_sentinel(context)
         progress('image-erase', 1, 1)
-    script = None
-    if options.get('script'):
-        script, seen = script_stamp(context, options['script'])
-        require(seen == plan['binding']['script'], 'SCRIPT_CHANGED', 'The setup script changed since planning')
     helpers = Path(os.environ.get('A22X_PLATFORM_HELPERS', '/opt/a22x-recovery/platform'))
     with contextlib.ExitStack() as stack:
         # A formatted userdata is a new filesystem: its token is the one it has now.
@@ -3954,6 +4108,15 @@ def install_image_system(context, plan, confirmed=False):
                         'plan_seal': plan['seal'], 'status': 'extracting'}), create=True)
         stage_path = real_path(live) / stage
         discard = real_path(live) / setup if clean else stage_path
+        homes_before = []
+
+        def homes_back():
+            if homes_before:
+                before, folder = homes_before
+                for name in sorted(set(os.listdir(folder)) - set(before)):
+                    path = folder / name
+                    with contextlib.suppress(OSError):
+                        shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
         root = stage_path / 'root'
         try:
             if remote is not None and predownload is not None:
@@ -4068,6 +4231,10 @@ def install_image_system(context, plan, confirmed=False):
             if not clean and live.exists('home'):
                 shared_home = real_path(live) / 'home'
                 (root / 'home').mkdir(mode=0o755, exist_ok=True)
+                # What the shared /home held before: a failed install takes back the homes it made there
+                # (2026-11-22, live: the new user's home of a refused install stayed and would have refused
+                # the next switch).
+                homes_before[:] = [sorted(os.listdir(shared_home)), shared_home]
             provisioned = provision(context, root, progress, PROVISION_RUNNER,
                                     desktop not in ('console', 'image') or bool(options.get('apps')) or bool(options.get('packages'))
                                     or script is not None, home=shared_home)
@@ -4086,10 +4253,12 @@ def install_image_system(context, plan, confirmed=False):
                 activate_clean(live, setup, stage, slot, record, profile)
         except (image_import.ImageError, AdaptError) as exc:
             shutil.rmtree(discard, ignore_errors=True)
+            homes_back()
             fail(getattr(exc, 'code', 'IMAGE_NOT_INSTALLABLE'), str(exc))
         except BaseException:
             # Includes Cancel from the UI: SIGTERM arrives here as SystemExit.
             shutil.rmtree(discard, ignore_errors=True)
+            homes_back()
             raise
         result = {'installed_slot': slot, 'name': name, 'desktop': desktop, 'apps': options.get('apps') or [],
                   'shells': options.get('shells') or [], 'greeter': options.get('greeter') or 'auto',
@@ -4220,6 +4389,47 @@ def switch_binding(context, live, slot, profile):
         return binding
 
 
+def refresh_platform(context, live, slot, profile):
+    """The recovery's platform files for SLOT when its record names another profile (2026-11-22, live: after a
+    recovery update every other installed system was refused with PLATFORM_PROFILE_MISMATCH, "set up for another
+    kernel and firmware", though the kernel release was the same: the new recovery's modules and firmware differ
+    in content only). A system made here, not an adopted one, gets the files as an installation lays them down,
+    from the recovery's verified bundle; they are checked against the profile and the record then names it. SLOT
+    is not running. Returns whether it was refreshed."""
+    from a22x_adapter import AdaptError, install_platform
+    path = MANAGER + '/slots/' + slot + '/slot.json'
+    if not live.exists(path):
+        return False
+    meta = live.json(path, sealed=True)
+    if meta.get('platform_profile_sha256') == digest(profile) or meta.get('origin') == 'adopted-existing-root':
+        return False
+    require(profile.get('kernel_release') == KERNEL_RELEASE, 'PLATFORM_PROFILE_MISMATCH',
+            'This system was set up for another kernel and firmware. Install it again, or remove it')
+    root = MANAGER + '/slots/' + slot + '/root'
+    stage = real_path(live) / MANAGER / 'staging' / ('platform-' + os.urandom(5).hex())
+    stage.mkdir(parents=True, mode=0o700)
+    try:
+        source = bundled_platform(context, stage / 'platform', profile)
+        paths = [e['path'] for e in profile['entries'] if e['kind'] != 'directory' and e['path'] != 'lib']
+        paths += ['opt/a22x-conn/' + p.name for p in (source / 'opt/a22x-conn').glob('*.ko')]
+        args = types.SimpleNamespace(platform=str(source), platform_paths=sorted(set(paths)) + list(PLATFORM_EXTRAS),
+                                     platform_optional=PLATFORM_OPTIONAL,
+                                     platform_fallback=optional_platform(context, stage / 'platform-optional'))
+        try:
+            install_platform(real_path(live) / root, args)
+        except AdaptError as error:
+            fail('PLATFORM_REFRESH_FAILED', str(error))
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    with Tree(live.pin, root) as target:
+        require(platform_matches(target, profile), 'PLATFORM_REFRESH_FAILED',
+                "The recovery could not bring this system's device files up to date. Install it again, or remove it")
+    value = {key: item for key, item in meta.items() if key != 'seal'}
+    value.update(platform_profile_sha256=digest(profile), platform_refreshed_utc=int(time.time()))
+    live.write_json(path, seal(value))
+    return True
+
+
 def share_accounts(live, slot):
     """2026-11-12 review: /home is shared, and a switch requires every account with a home there to
     exist the same in the system switched to. An account made for one system ("New user" of an
@@ -4293,6 +4503,7 @@ def switch_plan(context, slot):
         require_userdata(pin)
         state = read_state(live) if live.exists(MANAGER) else None
         if state and slot != state['active'] and not read_transaction(live):
+            refresh_platform(context, live, slot, profile)
             share_accounts(live, slot)
         binding = switch_binding(context, live, slot, profile)
         return {'plan': plan_envelope(context, 'switch', binding, slot=slot, name=slot,
@@ -4520,6 +4731,20 @@ def check_platform(context):
                 'writes_userdata': False, 'programs_executed': False}
 
 
+def unmount_android_for_review(context):
+    data = context.volume('userdata')
+    linux = data.get('fs_type') == 'ext4' and not data.get('fscrypt_feature')
+    if not data['mounted'] or linux:
+        return False
+    owner = data.get('mount_owner')
+    require(owner == 'android-decrypt' or (context.mode == 'fixture' and owner == 'filesystem'),
+            'VOLUME_BUSY', 'Unmount Android data in Files before reviewing the installation.')
+    context.unmount('userdata', data['volume_token'])
+    require(not context.volume('userdata')['mounted'], 'VOLUME_BUSY',
+            'Unmount Android data in Files before reviewing the installation.')
+    return True
+
+
 def parser():
     p = fs.Parser(description=__doc__)
     kind = p.add_mutually_exclusive_group(required=True)
@@ -4543,6 +4768,12 @@ def parser():
     search.add_argument('--family', required=True)
     search.add_argument('--release', default='')
     search.add_argument('--query', required=True)
+    script = commands.add_parser('stage-android-script')
+    script.add_argument('--path', required=True)
+    script.add_argument('--expected-volume-token', required=True)
+    script.add_argument('--expected-entry-token', required=True)
+    script.add_argument('--output', required=True, type=Path)
+    script.add_argument('--confirm', action='store_true')
     commands.add_parser('images')
     keep = commands.add_parser('images-download')
     keep.add_argument('--remote', required=True, help='An image of the catalog, saved on the phone')
@@ -4576,6 +4807,7 @@ def parser():
     imp.add_argument('--script-volume')
     imp.add_argument('--script')
     imp.add_argument('--expected-script-token')
+    imp.add_argument('--unmount-android-for-review', action='store_true')
     imp.add_argument('--output', type=Path, help='New private RAM file for the full sealed plan; stdout is a compact summary')
     for action in ('import', 'switch'):
         ap = commands.add_parser(action)
@@ -4605,7 +4837,10 @@ def main(argv=None):
         args = parser().parse_args(argv)
         operation = args.operation
         context = fs.FixtureContext(args.fixture) if args.fixture else fs.DeviceContext()
-        with context.operation_lock():
+        # Reading the catalog, the images and the state works beside USB files and the terminal (2026-11-21, #3);
+        # so does the charging screen switch, one file written on the mounted system (#3: it said storage is busy).
+        with context.operation_lock(shared=operation in ('status', 'catalog', 'images', 'boot-check', 'package-search',
+                                                         'images-download', 'images-delete', 'charger-mode')):
             if operation == 'status':
                 result = status(context)
             elif operation == 'boot-check':
@@ -4627,10 +4862,17 @@ def main(argv=None):
                 result = charger_mode(context, args.set)
             elif operation == 'package-search':
                 result = package_search(context, args.family, args.release, args.query)
+            elif operation == 'stage-android-script':
+                result = stage_android_script(context, args.path, args.expected_volume_token,
+                                              args.expected_entry_token, args.output, args.confirm)
             elif operation == 'import-plan':
                 require(args.remote or (args.source_volume and args.manifest), 'INVALID_ARGUMENT',
                         'Choose an image file or an image of the catalog')
-                if not args.remote and args.manifest.endswith('.json'):
+                bundle_manifest = not args.remote and args.manifest.endswith('.json')
+                if args.unmount_android_for_review:
+                    require(args.wipe and not bundle_manifest, 'INVALID_ARGUMENT',
+                            'Only a clean Linux installation review can unmount Android data.')
+                if bundle_manifest:
                     result = import_plan(context, args.source_volume, args.manifest, args.expected_source_token)
                 else:
                     secret = args.password_file.read_text().rstrip('\n') if args.password_file else None
@@ -4644,12 +4886,15 @@ def main(argv=None):
                             wifi['password'] = saved_key(context, wifi['ssid'])
                     script = {'volume': args.script_volume or args.source_volume, 'token': args.expected_script_token,
                               'path': args.script} if args.script else None
-                    result = image_plan(context, args.source_volume, args.manifest,
-                                        image_options(args.desktop, args.account, args.username, secret,
-                                                      args.trial_seconds, key, wifi, args.app, script, args.package,
-                                                      args.shell, args.greeter, args.locale, args.timezone, hashed),
-                                        args.expected_source_token, wipe=args.wipe,
-                                        remote=linux_entry(context, args.remote) if args.remote else None)
+                    options = image_options(args.desktop, args.account, args.username, secret, args.trial_seconds,
+                                            key, wifi, args.app, script, args.package, args.shell, args.greeter,
+                                            args.locale, args.timezone, hashed)
+                    remote = linux_entry(context, args.remote) if args.remote else None
+                    unmounted = args.unmount_android_for_review and unmount_android_for_review(context)
+                    result = image_plan(context, args.source_volume, args.manifest, options,
+                                        args.expected_source_token, wipe=args.wipe, remote=remote)
+                    if unmounted:
+                        result['unmounted_android_data'] = True
             elif operation == 'remove-slot':
                 result = remove_slot(context, args.slot, args.confirm)
             elif operation == 'switch-plan':

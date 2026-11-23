@@ -45,6 +45,9 @@ static bool start_copy_job(App*a,int kind){
         args[n++]=kind==J_COPY_VERIFY?"verify":(kind==J_COPY_RESTORE?"restore":"delete");
         args[n++]="--volume";args[n++]=c->volume;args[n++]="--path";args[n++]=c->path;
         if(kind!=J_COPY_VERIFY){args[n++]="--expected-manifest-sha256";args[n++]=c->sha;args[n++]="--confirm";}
+        /* 2026-11-21, on the phone: the review says userdata is replaced and the hold confirms it, so a copy of
+           Android's data formats userdata itself (after checking the copy) instead of stopping at USERDATA_NOT_EMPTY. */
+        if(kind==J_COPY_RESTORE&&!strncmp(c->path,"/A22xUserdataBackups/",21))args[n++]="--replace-data";
     }
     args[n]=NULL;if(!launch_job(a,kind,args))return false;
     a->result_return=kind==J_COPY_LIST||kind==J_COPY_DELETE?LIST:COPY_DETAIL;return true;
@@ -164,7 +167,8 @@ static void render_copies(App*a,int top){
         }
         raw_text(true);ellipsis(a,122,y+60,480,0,MUTED,line);raw_text(false);
         snprintf(line,sizeof(line),"%s%s%s",c->place[0]?c->place:c->volume,c->writable?"":"  /  ",c->writable?"":tr("read-only"));
-        raw_text(true);ellipsis(a,122,y+96,480,0,c->same?MUTED:ORANGE,c->same?line:tr("Another phone"));raw_text(false);
+        const char*whose=c->same?line:tr("Another phone");  /* tr() keeps raw text as it is */
+        raw_text(true);ellipsis(a,122,y+96,480,0,c->same?MUTED:ORANGE,whose);raw_text(false);
         icon(a,ICON_CHEVRON,646,y+54,30,MUTED);register_button(a,r,A_COPY_ITEM+(int)n,free_ui,0);y+=152;
     }
     /* A card that is there but not mounted may hold copies: a tap mounts it read-only and looks. */
@@ -219,9 +223,9 @@ static void render_copy_detail(App*a){
     else if(with_data)text_tile(a,y,0,ORANGE,"userdata and metadata are written whole: everything on userdata now, Linux systems too, is replaced. Android opens the data only while this phone's secure chip keeps the same keys.",5);
     else text_tile(a,y,0,MUTED,"Recovery and cache are in no copy and stay. The copy is checked first; only what differs is written, and each partition is read back.",4);
     bool verify_first=a->list_for_verify;
-    button(a,(Rect){28,1088,664,80},"Hold 3 seconds: delete this copy",A_COPY_DELETE,free_ui&&c->writable,false,3000);
+    button(a,(Rect){28,1088,664,80},"Hold 1 second: delete this copy",A_COPY_DELETE,free_ui&&c->writable,false,3000);
     button(a,(Rect){28,1192,664,92},"Verify this copy",A_COPY_VERIFY,free_ui,verify_first,0);
-    button(a,(Rect){28,1318,664,96},"Hold 3 seconds: restore Android",A_COPY_RESTORE,free_ui&&c->same&&copy_chosen(a,c)>0&&(c->archive||c->writable),!verify_first,3000);
+    button(a,(Rect){28,1318,664,96},"Hold 1 second: restore Android",A_COPY_RESTORE,free_ui&&c->same&&copy_chosen(a,c)>0&&(c->archive||c->writable),!verify_first,3000);
 }
 static bool copies_action(App*a,int id){
     if(a->screen==LIST&&!a->install.pick_backup&&(id==A_LIST_CATEGORY||id==A_LIST_CATEGORY+1)){

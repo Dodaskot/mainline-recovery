@@ -201,8 +201,10 @@ partition → recovery.
 
 ## Limitations
 
-- Decrypting Android's data is not available yet, so there is no file-level backup of
-  `/data` ([status](docs/ANDROID_CRYPTO_STATUS.md)).
+- Encrypted userdata writes are qualified only for the current Evolution X 16
+  password profile in the development build described in
+  [RW and format validation](docs/permanent-rw-ui-20261116.uk.md). Other RW profiles
+  and a complete Android app/system backup/restore are not hardware-qualified.
 - A restart sometimes lands in the previous mode; the recovery notices this and
   restarts once more by itself.
 - With a computer attached the phone does not stay in deep sleep.

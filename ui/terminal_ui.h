@@ -31,8 +31,9 @@ static void terminal_continue_view(App*a){
     tm_feed(&a->terminal,"\r\n",2);a->terminal_scroll=terminal_max_scroll(a);
 }
 /* Leaving never asks: what is running stays in the background, an idle shell closes. */
+static void terminal_queue(App*a,const void*bytes,size_t length);
 static void terminal_leave(App*a){
-    bool lost=a->terminal_paused;
+    bool lost=a->terminal_paused;a->terminal_command[0]=0;
     a->terminal_left=true;a->terminal_left_busy=a->terminal_autostart=a->terminal_paused=false;a->terminal_reason[0]=0;a->terminal_next_poll=0;
     if(lost){a->terminal_pending=J_TERM_STATUS;a->terminal_pending_after=0;}
     else if(strcmp(a->terminal_state,"active")&&strcmp(a->terminal_state,"exited")&&strcmp(a->terminal_state,"starting"))a->terminal_close_requested=true;
@@ -291,6 +292,8 @@ static void complete_terminal_job(App*a,const Json*j,int kind,bool ok){
         else a->terminal_next_poll=0;
     }
     a->dirty=true;
+    /* A script started from its file page: typed once the shell runs (2026-11-21). */
+    if(a->terminal_command[0]&&terminal_input_ready(a)){size_t length=strlen(a->terminal_command);if(length<=sizeof(a->terminal_input)-a->terminal_input_length){terminal_queue(a,a->terminal_command,length);}a->terminal_command[0]=0;}
     terminal_left_check(a,false);
 }
 static void terminal_queue(App*a,const void*bytes,size_t length){
@@ -318,7 +321,7 @@ static bool terminal_action(App*a,int id){
     if(id==A_TERM_REFRESH){a->terminal_pending=J_TERM_STATUS;a->terminal_pending_after=0;a->terminal_paused=false;a->terminal_reason[0]=0;a->terminal_expected=0;terminal_pump(a);return true;}
     if(id==A_TERM_START){
         if(a->fs_dirty||a->fs_new_file){terminal_failure(a,"UNSAVED_EDITS","Save or discard the file editor before starting this shell.");return true;}
-        if(a->usb_known&&usb_session_open(a)){terminal_failure(a,"USB_EXPORT_ACTIVE","Stop USB file sharing before starting the local shell.");return true;}
+        /* The shell runs beside USB sharing: both hold the storage lease shared (2026-11-21). */
         if(a->terminal_known&&a->terminal_available&&!strcmp(a->terminal_state,"stopped")&&!terminal_session_open(a)){
             if(a->terminal_resume)terminal_continue_view(a);else terminal_reset_view(a);
             a->terminal_paused=false;a->terminal_reason[0]=0;start_terminal_job(a,J_TERM_START);

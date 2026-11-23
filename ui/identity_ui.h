@@ -150,8 +150,13 @@ static void render_identity(App*a){
             rounded(a,r,19,on?ORANGE_DARK:BG);raw_text(true);ellipsis(a,r.x+18,r.y+6,r.w-36,0,on?TEXT:MUTED,a->id_labels[n]);raw_text(false);
             register_button(a,r,A_ID_PART+(int)n,ui_free(a),0);
         }
-        uint64_t bytes;unsigned int chosen=identity_chosen(a,&bytes);char size[48],note[128];human_bytes(bytes,size,sizeof(size));
-        snprintf(note,sizeof(note),T("%u of %u partitions, %s"),chosen,a->id_count,size);text(a,52,top+260,0,MUTED,note);
+        uint64_t bytes;unsigned int chosen=identity_chosen(a,&bytes);char size[48],note[160];
+        /* Android data that encrypts nothing goes by its files (2026-11-21): its partition's size is not what is copied. */
+        bool files=false;
+        if(identity_android(a))for(unsigned int n=0;n<a->id_count;n++)if(!(a->id_off&(1u<<n))&&!strcmp(a->id_labels[n],"userdata"))
+            for(int v=0;v<a->volume_count;v++)if(!strcmp(a->volumes[v].id,"userdata")&&a->volumes[v].android_plain){files=true;bytes-=a->id_sizes[n];}
+        human_bytes(bytes,size,sizeof(size));
+        snprintf(note,sizeof(note),T(files?"%u of %u partitions, %s + userdata as its files":"%u of %u partitions, %s"),chosen,a->id_count,size);text(a,52,top+260,0,MUTED,note);
     }else{
         char line[512]="";size_t used=0;for(unsigned int n=0;n<a->id_count&&used<sizeof(line)-40;n++)used+=(size_t)snprintf(line+used,sizeof(line)-used,"%s%s",n?", ":"",a->id_labels[n]);
         wrapped(a,52,top+98,606,1,TEXT,a->id_count?line:"None found",3);
@@ -172,7 +177,7 @@ static void render_identity(App*a){
     else if(v&&a->backup_encrypt)text_tile(a,1000,0,ORANGE,"This copy is saved without the password: a folder of partition images that Download Mode tools can write back. Keep the card somewhere safe.",5);
     else text_tile(a,1000,0,MUTED,v?"A new folder A22xIdentityBackups is written with every partition and its checksum. Keep it off the phone too: no image or firmware download contains it.":(card?"The card is not open for writing yet: the button above opens it.":"Mount an SD card or USB drive with write access in Files, then come back."),5);
     button(a,(Rect){28,1212,664,84},"Restore from a copy",A_ID_RESTORE_OPEN,ui_free(a)&&(android||(v&&a->id_known&&a->id_count>0)),false,0);
-    button(a,(Rect){28,1320,664,104},"Hold 2 seconds to back up",A_ID_BACKUP,ui_free(a)&&identity_writable(v)&&a->id_known&&identity_chosen(a,NULL)>0,true,2000);
+    button(a,(Rect){28,1320,664,104},"Hold 1 second to back up",A_ID_BACKUP,ui_free(a)&&identity_writable(v)&&a->id_known&&identity_chosen(a,NULL)>0,true,2000);
 }
 /* Copies on the chosen volume; an identity copy goes back only to the phone it came from. */
 /* Copies on the chosen volume; an identity copy goes back only to the phone it came from. */
@@ -192,8 +197,8 @@ static void render_identity_restore(App*a){
     }
     text_tile(a,1094,0,MUTED,"The partitions that differ are saved to a new copy first, then written and read back.",3);
     bool picked=a->id_pick>=0&&a->id_pick<(int)a->id_backup_count,ok=picked&&a->id_backups[a->id_pick].same,writable=identity_writable(identity_volume(a));
-    button(a,(Rect){28,1212,664,84},"Hold 3 seconds: delete this copy",A_ID_DELETE,ui_free(a)&&picked&&writable,false,3000);
-    button(a,(Rect){28,1320,664,104},"Hold 3 seconds to restore",A_ID_RESTORE,ui_free(a)&&ok&&writable,true,3000);
+    button(a,(Rect){28,1212,664,84},"Hold 1 second: delete this copy",A_ID_DELETE,ui_free(a)&&picked&&writable,false,3000);
+    button(a,(Rect){28,1320,664,104},"Hold 1 second to restore",A_ID_RESTORE,ui_free(a)&&ok&&writable,true,3000);
 }
 static bool identity_action(App*a,int id){
     if(id==A_IDENTITY){identity_open(a);return true;}

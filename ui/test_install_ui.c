@@ -20,14 +20,15 @@ int main(int argc,char**argv){
     screen(a,TOOLS);render(a);
     a->tools_scroll=200;render(a);ICHECK(!test_button(a,A_INSTALL)&&test_button(a,A_DISPLAY));a->tools_scroll=0;render(a);
     /* A drag originating on a real button must not activate it. */
-    uint64_t now=milliseconds();int drag_y=test_button(a,A_DISPLAY)->r.y+50;pointer(a,true,188,drag_y,now);pointer(a,true,188,drag_y-70,now+30);pointer(a,false,188,drag_y-70,now+45);
+    /* the Language row: the first of the settings, under the Tools tab's utilities (2026-11-22) */
+    uint64_t now=milliseconds();int drag_y=test_button(a,A_LANGUAGE)->r.y+50;pointer(a,true,188,drag_y,now);pointer(a,true,188,drag_y-70,now+30);pointer(a,false,188,drag_y-70,now+45);
     ICHECK(a->screen==TOOLS&&!a->job.pid&&a->tools_scroll==70&&a->kinetic.active&&a->motion_surface==SCROLL_TOOLS);
     tick_inertia(a,now+60);ICHECK(a->tools_scroll>70&&a->tools_scroll<=tools_max_scroll(a));int64_t before=a->tools_scroll;
     render(a);pointer(a,true,532,1290,now+65);pointer(a,false,532,1290,now+90);ICHECK(!a->kinetic.active&&a->screen==TOOLS&&!a->job.pid&&a->tools_scroll==before);
     tools_scroll_to(a,INT64_MAX);render(a);ICHECK(a->tools_scroll==tools_max_scroll(a));
     a->fs_dirty=true;copy(a->fs_text,sizeof(a->fs_text),"unsaved installer editor ґ");
-    screen(a,ANDROID_MENU);render(a);ICHECK(test_press(a,A_INSTALL,50)&&a->screen==RESULT&&a->result_return==FILE_EDIT&&!a->job.pid);
-    a->fs_dirty=false;screen(a,ANDROID_MENU);render(a);ICHECK(test_press(a,A_INSTALL,50)&&install_settle(a)&&a->screen==INSTALL&&a->install.known);
+    screen(a,ANDROID_MENU);render(a);a->page_scroll=page_max_scroll(a);render(a);ICHECK(test_press(a,A_INSTALL,50)&&a->screen==RESULT&&a->result_return==FILE_EDIT&&!a->job.pid);
+    a->fs_dirty=false;screen(a,ANDROID_MENU);render(a);a->page_scroll=page_max_scroll(a);render(a);ICHECK(test_press(a,A_INSTALL,50)&&install_settle(a)&&a->screen==INSTALL&&a->install.known);
     if(!strcmp(which,"guard-missing")){
         ICHECK(!a->install.pending_count&&a->install.status_blockers[0]&&a->install.reboot_blocked&&!install_ready(a));
         a->allow_power=true;screen(a,POWER);ICHECK(!test_press(a,A_REBOOT,50));action(a,A_REBOOT);ICHECK(a->screen==POWER&&a->running);
@@ -78,7 +79,9 @@ int main(int argc,char**argv){
     pointer(a,true,360,1370,start+170);pointer(a,false,360,1370,start+7000);ICHECK(!a->job.pid);
     install_scroll_to(a,false,0);install_review_end(a);ICHECK(a->install.review_bottom_seen&&a->install.review_scroll==install_review_max_scroll(a));
     if(!strcmp(which,"blocked")){ICHECK(!a->install.can_execute&&!test_press(a,A_INSTALL_CONFIRM,6000)&&!a->job.pid);goto done;}
-    unsigned hold=a->install.hold_ms;ICHECK(hold==(!strcmp(a->install.operation,"install-stock")?5000u:3000u));
+    /* The plan asks 5 s for stock and 3 s for BOOT; since 2026-11-20 the button holds 2 s and 1 s, as its label says. */
+    bool stock_plan=!strcmp(a->install.operation,"install-stock");ICHECK(a->install.hold_ms==(stock_plan?5000u:3000u));
+    unsigned hold=stock_plan?2000u:1000u;render(a);Button*confirm=test_button(a,A_INSTALL_CONFIRM);ICHECK(confirm&&confirm->hold_ms==(int)hold);
     ICHECK(test_press(a,A_INSTALL_CONFIRM,hold-1)&&!a->job.pid&&a->install.plan_valid);
     render(a);now=milliseconds();pointer(a,true,360,1370,now);pointer(a,true,10,1370,now+100);pointer(a,true,360,1370,now+hold);pointer(a,false,360,1370,now+hold+100);ICHECK(!a->job.pid&&a->install.plan_valid);
     if(!strcmp(which,"tamper")){int fd=open(a->install.plan_path,O_WRONLY|O_APPEND|O_NOFOLLOW|O_CLOEXEC);ICHECK(fd>=0);ssize_t written=write(fd," ",1);int closed=close(fd);ICHECK(written==1&&closed==0);}

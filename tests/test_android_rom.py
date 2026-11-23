@@ -81,6 +81,149 @@ def payload(partitions, groups=(), incremental=(), partial=False):
     return head + manifest + bytes(blobs)
 
 
+def offtout(value):
+    return (abs(value) | ((1 << 63) if value < 0 else 0)).to_bytes(8, 'little')
+
+
+def bsdiff_patch(control, diff, extra, new_size, kind='BSDIFF40'):
+    """A patch in bsdiff's format from its three streams: BSDIFF40 (bzip2) or BSDF2 with raw streams."""
+    raw = b''.join(offtout(a) + offtout(c) + offtout(k) for a, c, k in control)
+    streams = [raw, diff, extra]
+    if kind == 'BSDIFF40':
+        streams, magic = [bz2.compress(x) for x in streams], b'BSDIFF40'
+    else:
+        magic = b'BSDF2\x00\x00\x00'
+    return magic + offtout(len(streams[0])) + offtout(len(streams[1])) + offtout(new_size) + b''.join(streams)
+
+
+def minus(new, old):
+    return bytes((n - o) & 0xff for n, o in zip(new, old))
+
+
+def incremental_payload(old, new, ops, old_hash=True, name=b'system'):
+    """A payload.bin updating 'system' from OLD to NEW by OPS: [(kind, data, src_extents, dst_extents)], extents
+    [(start block, blocks)]."""
+    blobs, body = bytearray(), b''
+    for kind, data, src, dst in ops:
+        op = field(1, kind)
+        if data:
+            op += field(2, len(blobs)) + field(3, len(data)) + field(8, hashlib.sha256(data).digest())
+            blobs += data
+        for start, blocks in src:
+            op += field(4, extent(start, blocks))
+        for start, blocks in dst:
+            op += field(6, extent(start, blocks))
+        if src:
+            op += field(9, hashlib.sha256(b''.join(old[s * BLOCK:(s + n) * BLOCK] for s, n in src)).digest())
+        body += field(8, op)
+    old_info = field(1, len(old)) + (field(2, hashlib.sha256(old).digest()) if old_hash else b'')
+    new_info = field(1, len(new)) + field(2, hashlib.sha256(new).digest())
+    part = field(1, name) + field(6, old_info) + field(7, new_info) + body
+    manifest = field(3, BLOCK) + field(13, part)
+    return b'CrAU' + struct.pack('>QQI', 2, len(manifest), 0) + manifest + bytes(blobs)
+
+
+class Incremental(unittest.TestCase):
+    """2026-11-22: an incremental payload applied to a copy on this single-slot phone."""
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix='a22x-rom-inc-', dir=os.environ.get('TMPDIR')))
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.old = os.urandom(6 * BLOCK)
+        old = self.old
+        changed = bytearray(old[0:2 * BLOCK])
+        changed[100:110] = b'0123456789'
+        changed[BLOCK + 7] ^= 0xff
+        tail = old[5 * BLOCK:6 * BLOCK]
+        extra = b'new text in the middle'
+        block4 = tail[:1000] + extra + tail[1000:BLOCK - len(extra)]
+        self.new = old[2 * BLOCK:4 * BLOCK] + bytes(changed) + block4 + b'R' * BLOCK
+        # Block 4: 1000 bytes from the old block 5, the extra text, then the rest from where it continues there.
+        patch4 = bsdiff_patch([(1000, len(extra), 0), (BLOCK - 1000 - len(extra), 0, 0)],
+                              bytes(BLOCK - len(extra)), extra, BLOCK, kind='BSDF2')
+        self.ops = [(rom.SOURCE_COPY, b'', [(2, 2)], [(0, 2)]),
+                    (rom.SOURCE_BSDIFF, bsdiff_patch([(2 * BLOCK, 0, 0)], minus(changed, old[0:2 * BLOCK]), b'', 2 * BLOCK),
+                     [(0, 2)], [(2, 2)]),
+                    (rom.BROTLI_BSDIFF, patch4, [(5, 1)], [(4, 1)]),
+                    (rom.REPLACE, b'R' * BLOCK, [], [(5, 1)])]
+
+    def apply(self, data, source):
+        path = self.root / 'ota.zip'
+        with zipfile.ZipFile(path, 'w') as z:
+            z.writestr('payload.bin', data, compress_type=zipfile.ZIP_STORED)
+        with zipfile.ZipFile(path) as archive:
+            p = rom.Payload(archive)
+            with tempfile.TemporaryFile() as out:
+                digest = p.extract(p.partitions[0], out, source)
+                out.seek(0)
+                return digest, out.read()
+
+    def source(self, data):
+        f = tempfile.TemporaryFile()
+        f.write(data)
+        f.flush()
+        self.addCleanup(f.close)
+        return f
+
+    def test_the_new_partition_is_built_from_the_installed_one(self):
+        data = incremental_payload(self.old, self.new, self.ops)
+        source = self.source(self.old + b'past the old partition: never read')
+        digest, built = self.apply(data, source)
+        self.assertEqual(built, self.new)
+        self.assertEqual(digest, hashlib.sha256(self.new).hexdigest())
+        path = self.root / 'ota.zip'
+        info = rom.inspect(path)
+        row = info['partitions'][0]
+        self.assertTrue(row['incremental'] and row['applicable'])
+        self.assertEqual(row['source_sha256'], hashlib.sha256(self.old).hexdigest())
+        # The command line: the installed partition given as --source, the new one in a file of its own.
+        image = self.root / 'system.img'
+        (self.root / 'installed.img').write_bytes(self.old)
+        with mock.patch('sys.stdout', new=io.StringIO()) as printed:
+            self.assertEqual(rom.main(['extract', str(path), '--partition', 'system', '--out', str(image),
+                                       '--source', str(self.root / 'installed.img')]), 0)
+        self.assertTrue(json.loads(printed.getvalue())['incremental'])
+        self.assertEqual(image.read_bytes(), self.new)
+
+    def test_another_installed_partition_or_none_is_refused_before_anything_is_built(self):
+        data = incremental_payload(self.old, self.new, self.ops)
+        for source, code in ((self.source(os.urandom(len(self.old))), 'SOURCE_MISMATCH'),
+                             (self.source(self.old[:-1]), 'SOURCE_MISMATCH'), (None, 'INCREMENTAL_PAYLOAD')):
+            with self.assertRaises(rom.RomError) as caught:
+                self.apply(data, source)
+            self.assertEqual(caught.exception.code, code)
+        # Without the whole partition's hash, each operation's own source hash still stops another one.
+        changed = bytearray(self.old)
+        changed[2 * BLOCK] ^= 1
+        with self.assertRaises(rom.RomError) as caught:
+            self.apply(incremental_payload(self.old, self.new, self.ops, old_hash=False), self.source(bytes(changed)))
+        self.assertEqual(caught.exception.code, 'SOURCE_MISMATCH')
+
+    def test_damaged_patches_and_operations_it_cannot_apply_are_refused(self):
+        ops = list(self.ops)
+        ops[1] = (rom.SOURCE_BSDIFF, bsdiff_patch([(5 * BLOCK, 0, 0)], bytes(2 * BLOCK), b'', 2 * BLOCK), [(0, 2)], [(2, 2)])
+        with self.assertRaises(rom.RomError) as caught:
+            self.apply(incremental_payload(self.old, self.new, ops), self.source(self.old))
+        self.assertEqual(caught.exception.code, 'PAYLOAD_DAMAGED')
+        ops[1] = (rom.PUFFDIFF, b'puff', [(0, 2)], [(2, 2)])
+        data = incremental_payload(self.old, self.new, ops)
+        with self.assertRaises(rom.RomError) as caught:
+            self.apply(data, self.source(self.old))
+        self.assertEqual(caught.exception.code, 'PAYLOAD_OPERATION_UNSUPPORTED')
+        self.assertEqual(caught.exception.details['operations'], ['puffdiff'])
+        row = rom.inspect(self.root / 'ota.zip')['partitions'][0]
+        self.assertFalse(row['applicable'])
+        self.assertEqual(row['target'], 'refused')
+
+    def test_bytes_are_added_one_by_one(self):
+        a, b = os.urandom(4099) + b'\xff\x80\x7f', os.urandom(4099) + b'\x01\x80\x81'
+        self.assertEqual(rom._add(a, b), bytes((x + y) & 0xff for x, y in zip(a, b)))
+        self.assertEqual(rom._add(b'', b''), b'')
+        for bad in (b'BSDIFF40' + bytes(8), b'XXXXXXXX' + bytes(24),
+                    b'BSDIFF40' + offtout(-1) + offtout(0) + offtout(0)):
+            with self.assertRaises(ValueError):
+                rom.bspatch(b'old', bad)
+
+
 class Packages(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp(prefix='a22x-rom-', dir=os.environ.get('TMPDIR')))

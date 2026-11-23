@@ -5,8 +5,15 @@
 Nothing from a package is ever executed: update-binary and updater-script are not run, as in
 the stock installer. A package is read declaratively, as one of:
 
-  payload  a ZIP with payload.bin, update_engine's full OTA (operations REPLACE, REPLACE_BZ,
-           REPLACE_XZ, ZERO, DISCARD); an incremental OTA needs the old partitions and is refused
+  payload  a ZIP with payload.bin, update_engine's OTA: full (operations REPLACE, REPLACE_BZ,
+           REPLACE_XZ, ZERO, DISCARD) or incremental (also SOURCE_COPY, SOURCE_BSDIFF, BROTLI_BSDIFF)
+
+An incremental payload on this single-slot phone (2026-11-22): update_engine applies it from the other
+slot, which this phone has not; here it is applied to a copy. The installed partition is the source and
+is only read: its SHA-256 must be the one the update was made for (old_partition_info), each operation's
+source blocks their own (src_sha256_hash), and the new partition is built in a file of its own, checked
+against new_partition_info, before anything is written. PUFFDIFF, ZUCCHINI and the LZ4DIFF operations
+are refused by name: this recovery does not carry their decoders.
   block    a block-based OTA: *.new.dat (or .new.dat.br) with *.transfer.list per partition and
            dynamic_partitions_op_list for super
   images   a ZIP of partition images (boot.img, system.img, vendor.img...)
@@ -17,7 +24,7 @@ modem are refused here: this recovery does not write them. The recovery partitio
 ROM's own recovery would replace this one.
 
     android_rom.py inspect PACKAGE
-    android_rom.py extract PACKAGE --partition NAME --out FILE
+    android_rom.py extract PACKAGE --partition NAME --out FILE [--source INSTALLED-PARTITION]
 """
 import bz2
 import contextlib
@@ -38,7 +45,12 @@ PAYLOAD_MAGIC = b'CrAU'
 SPARSE_MAGIC = 0xED26FF3A
 # InstallOperation types (update_metadata.proto).
 REPLACE, REPLACE_BZ, MOVE, BSDIFF, SOURCE_COPY, SOURCE_BSDIFF, ZERO, DISCARD, REPLACE_XZ = 0, 1, 2, 3, 4, 5, 6, 7, 8
+PUFFDIFF, BROTLI_BSDIFF, ZUCCHINI, LZ4DIFF_BSDIFF, LZ4DIFF_PUFFDIFF, REPLACE_ZSTD = 9, 10, 11, 12, 13, 14
 FULL_OPERATIONS = {REPLACE: 'replace', REPLACE_BZ: 'replace-bz2', REPLACE_XZ: 'replace-xz', ZERO: 'zero', DISCARD: 'discard'}
+SOURCE_OPERATIONS = {SOURCE_COPY: 'source-copy', SOURCE_BSDIFF: 'source-bsdiff', BROTLI_BSDIFF: 'brotli-bsdiff'}
+OPERATION_NAMES = {**FULL_OPERATIONS, **SOURCE_OPERATIONS, MOVE: 'move', BSDIFF: 'bsdiff', PUFFDIFF: 'puffdiff',
+                   ZUCCHINI: 'zucchini', LZ4DIFF_BSDIFF: 'lz4diff-bsdiff', LZ4DIFF_PUFFDIFF: 'lz4diff-puffdiff',
+                   REPLACE_ZSTD: 'replace-zstd'}
 # Partitions this recovery writes from a ROM: outside super, and the logical ones inside it.
 PHYSICAL = ('boot', 'dtbo', 'vbmeta', 'vbmeta_system', 'vbmeta_vendor')
 # MediaTek's boot chain and firmware it loads, the modem, and Samsung's own partitions.
@@ -139,9 +151,11 @@ class Payload:
             name = first(part, 1, b'').decode('ascii', 'replace')
             new_info = message(first(part, 7, b''))
             old_info = first(part, 6)
+            old = message(old_info) if isinstance(old_info, bytes) else {}
             operations = [message(op) for op in part.get(8, [])]
             self.partitions.append({'name': name, 'size': first(new_info, 1, 0), 'sha256': first(new_info, 2, b'').hex(),
                                     'incremental': old_info is not None,
+                                    'old_size': first(old, 1, 0), 'old_sha256': first(old, 2, b'').hex(),
                                     'operations': operations})
         self.groups = []
         dynamic = first(self.manifest, 15)
@@ -155,11 +169,57 @@ class Payload:
         """Whether PART is written by full operations only (no old content needed)."""
         return not part['incremental'] and all(first(op, 1, 0) in FULL_OPERATIONS for op in part['operations'])
 
-    def extract(self, part, out):
-        """Write PART's new content into the open file OUT, checking its SHA-256."""
-        require(self.full(part), 'INCREMENTAL_PAYLOAD', 'This OTA updates an installed system; a full ROM is needed',
+    def unsupported(self, part):
+        """The names of PART's operations this recovery cannot apply."""
+        known = set(FULL_OPERATIONS) | set(SOURCE_OPERATIONS)
+        return sorted({OPERATION_NAMES.get(first(op, 1, 0), 'type-%d' % first(op, 1, 0))
+                       for op in part['operations'] if first(op, 1, 0) not in known})
+
+    def _source(self, part, source, block):
+        """The installed partition SOURCE (an open file) checked against the one the update was made for."""
+        require(source is not None, 'INCREMENTAL_PAYLOAD', 'This OTA updates an installed system: its partition is needed',
                 partition=part['name'])
+        require(part['old_size'] > 0, 'INVALID_PAYLOAD', 'The update does not say which partition it was made for',
+                partition=part['name'])
+        source.seek(0)
+        digest, left = hashlib.sha256(), part['old_size']
+        while left:
+            chunk = source.read(min(left, 1 << 20))
+            require(chunk, 'SOURCE_MISMATCH', 'The installed partition is smaller than the one this update was made for',
+                    partition=part['name'])
+            digest.update(chunk)
+            left -= len(chunk)
+        if part['old_sha256']:
+            require(digest.hexdigest() == part['old_sha256'], 'SOURCE_MISMATCH',
+                    'The installed partition is not the one this update was made for', partition=part['name'])
+
+    def _source_data(self, part, op, source, block):
+        spans = [(first(e, 1, 0) * block, first(e, 2, 0) * block) for e in (message(raw) for raw in op.get(4, []))]
+        data = bytearray()
+        for start, length in spans:
+            require(start + length <= part['old_size'], 'INVALID_PAYLOAD', 'An operation reads past its old partition',
+                    partition=part['name'])
+            source.seek(start)
+            chunk = source.read(length)
+            require(len(chunk) == length, 'SOURCE_MISMATCH', 'The installed partition ended early', partition=part['name'])
+            data += chunk
+        expected = first(op, 9)
+        if expected:
+            require(hashlib.sha256(data).digest() == expected, 'SOURCE_MISMATCH',
+                    'Blocks of the installed partition are not the ones this update was made for', partition=part['name'])
+        return bytes(data)
+
+    def extract(self, part, out, source=None, progress=None):
+        """Write PART's new content into the open file OUT, checking its SHA-256. An incremental PART is
+        built from SOURCE, the installed partition opened for reading, which is checked first. PROGRESS
+        (done, total) is told after each operation."""
+        missing = self.unsupported(part)
+        require(not missing, 'PAYLOAD_OPERATION_UNSUPPORTED', 'This OTA uses an operation this recovery cannot apply',
+                partition=part['name'], operations=missing)
         size, block = part['size'], self.block_size
+        if part['incremental'] or not self.full(part):
+            self._source(part, source, block)
+        written = 0
         out.truncate(size)
         with self.archive.open(self.name) as f:
             for op in part['operations']:
@@ -172,17 +232,29 @@ class Payload:
                         out.seek(start)
                         out.write(bytes(length))
                     continue
-                f.seek(self.data_start + first(op, 2, 0))
-                data = f.read(first(op, 3, 0))
-                require(len(data) == first(op, 3, 0), 'INVALID_PAYLOAD', 'The payload ends inside its data')
-                expected = first(op, 8)
-                if expected:
-                    require(hashlib.sha256(data).digest() == expected, 'PAYLOAD_DAMAGED', 'The payload data is damaged',
-                            partition=part['name'])
+                data = b''
+                if kind != SOURCE_COPY:
+                    f.seek(self.data_start + first(op, 2, 0))
+                    data = f.read(first(op, 3, 0))
+                    require(len(data) == first(op, 3, 0), 'INVALID_PAYLOAD', 'The payload ends inside its data')
+                    expected = first(op, 8)
+                    if expected:
+                        require(hashlib.sha256(data).digest() == expected, 'PAYLOAD_DAMAGED', 'The payload data is damaged',
+                                partition=part['name'])
                 if kind == REPLACE_XZ:
                     data = lzma.decompress(data)
                 elif kind == REPLACE_BZ:
                     data = bz2.decompress(data)
+                elif kind == SOURCE_COPY:
+                    data = self._source_data(part, op, source, block)
+                elif kind in (SOURCE_BSDIFF, BROTLI_BSDIFF):
+                    old = self._source_data(part, op, source, block)
+                    try:
+                        data = bspatch(old, data)
+                    except (ValueError, OSError, EOFError, lzma.LZMAError) as error:
+                        reason = str(error)[:120]
+                        require(False, 'PAYLOAD_DAMAGED', 'A patch of the payload could not be applied',
+                                partition=part['name'], reason=reason)
                 # The unpacked data fills its blocks exactly: anything shorter or longer is a damaged
                 # or foreign payload, never a partition written in part.
                 require(len(data) == sum(length for _, length in spans), 'PAYLOAD_DAMAGED',
@@ -193,6 +265,9 @@ class Payload:
                     out.seek(start)
                     out.write(data[at:at + length])
                     at += length
+                written += at
+                if progress:
+                    progress(min(written, size), size)
         out.flush()
         out.seek(0)
         digest = hashlib.sha256()
@@ -205,6 +280,95 @@ class Payload:
             require(digest.hexdigest() == part['sha256'], 'PAYLOAD_DAMAGED', 'The extracted partition does not match the payload',
                     partition=part['name'])
         return digest.hexdigest()
+
+
+# ---------------------------------------------------------------------------- bspatch
+
+def _offtin(data, at):
+    """bsdiff's signed 64-bit number: magnitude in the low 63 bits, little-endian, the sign in the top bit."""
+    value = int.from_bytes(data[at:at + 8], 'little')
+    return -(value & ~(1 << 63)) if value >> 63 else value
+
+
+def _brotli(data):
+    import subprocess
+    done = subprocess.run([BROTLI], input=data, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=300)
+    if done.returncode:
+        raise ValueError('brotli stream damaged')
+    return done.stdout
+
+
+def _stream(kind, data):
+    if kind == 0:
+        return data
+    if kind == 1:
+        return bz2.decompress(data) if data else b''
+    if kind == 2:
+        return _brotli(data) if data else b''
+    raise ValueError('unknown bsdiff stream compression %d' % kind)
+
+
+_MASKS = {}
+
+
+def _add(a, b):
+    """Bytes A plus bytes B, each byte modulo 256 (bsdiff's diff): eight bytes at a time in one integer,
+    the top bit of each byte added apart so no carry crosses into the next byte."""
+    n = len(a)
+    if not n:
+        return b''
+    masks = _MASKS.get(n)
+    if masks is None:
+        ones = int.from_bytes(b'\x01' * n, 'little')
+        masks = (ones * 0x7f, ones * 0x80)
+        if len(_MASKS) < 8:
+            _MASKS[n] = masks
+    low, high = masks
+    x, y = int.from_bytes(a, 'little'), int.from_bytes(b, 'little')
+    return (((x & low) + (y & low)) ^ ((x ^ y) & high)).to_bytes(n, 'little')
+
+
+def bspatch(old, patch, limit=1 << 31):
+    """The new bytes from OLD and PATCH: bsdiff's BSDIFF40 (three bzip2 streams) or update_engine's BSDF2
+    (each stream raw, bzip2 or Brotli). ValueError for a patch that is not whole or reaches out of bounds."""
+    if patch[:8] == b'BSDIFF40':
+        kinds = (1, 1, 1)
+    elif patch[:5] == b'BSDF2' and len(patch) >= 8:
+        kinds = tuple(patch[5:8])
+    else:
+        raise ValueError('not a bsdiff patch')
+    if len(patch) < 32:
+        raise ValueError('bsdiff patch too short')
+    control_length, diff_length, new_size = _offtin(patch, 8), _offtin(patch, 16), _offtin(patch, 24)
+    if control_length < 0 or diff_length < 0 or not 0 <= new_size <= limit or 32 + control_length + diff_length > len(patch):
+        raise ValueError('bsdiff header out of bounds')
+    at = 32
+    control = _stream(kinds[0], patch[at:at + control_length])
+    diff = _stream(kinds[1], patch[at + control_length:at + control_length + diff_length])
+    extra = _stream(kinds[2], patch[at + control_length + diff_length:])
+    new = bytearray()
+    old_at = diff_at = extra_at = control_at = 0
+    while len(new) < new_size:
+        if control_at + 24 > len(control):
+            raise ValueError('bsdiff control ends early')
+        add, copy, seek = _offtin(control, control_at), _offtin(control, control_at + 8), _offtin(control, control_at + 16)
+        control_at += 24
+        if add < 0 or copy < 0 or len(new) + add + copy > new_size or diff_at + add > len(diff) or extra_at + copy > len(extra):
+            raise ValueError('bsdiff control out of bounds')
+        for start in range(0, add, 1 << 20):
+            n = min(1 << 20, add - start)
+            here = old_at + start
+            lo, hi = max(here, 0), min(here + n, len(old))
+            source = bytes(lo - here) + old[lo:hi] + bytes(here + n - hi) if lo < hi else bytes(n)
+            if len(source) != n:
+                source = bytes(n)
+            new += _add(diff[diff_at + start:diff_at + start + n], source)
+        diff_at += add
+        old_at += add
+        new += extra[extra_at:extra_at + copy]
+        extra_at += copy
+        old_at += seek
+    return bytes(new)
 
 
 # ---------------------------------------------------------------------------- what a package is
@@ -266,9 +430,18 @@ def inspect(path, logical=('system', 'vendor', 'product', 'odm')):
                 result['groups'] = payload.groups
                 for part in payload.partitions:
                     where, why = classify(part['name'], logical)
-                    if where != 'refused' and not payload.full(part):
-                        where, why = 'refused', 'an incremental update: a full ROM is needed'
-                    result['partitions'].append({'name': part['name'], 'size': part['size'], 'target': where, 'reason': why})
+                    row = {'name': part['name'], 'size': part['size']}
+                    if not payload.full(part):
+                        # Applied to a copy of the installed partition (extract --source); the installer
+                        # does not offer it yet, so it is listed as refused with what it would need.
+                        missing = payload.unsupported(part)
+                        row.update({'incremental': True, 'source_size': part['old_size'], 'source_sha256': part['old_sha256'],
+                                    'applicable': not missing, 'unsupported_operations': missing})
+                        if where != 'refused':
+                            where, why = 'refused', ('an incremental update: it is applied to a copy of the installed partition'
+                                                     if not missing else 'an incremental update with operations this recovery cannot apply')
+                    row.update({'target': where, 'reason': why})
+                    result['partitions'].append(row)
             elif any(n.endswith('.transfer.list') for n in names):
                 result['format'] = 'block'
                 for name in sorted(n for n in names if n.endswith('.transfer.list')):
@@ -465,8 +638,12 @@ def main(argv=None):
     try:
         if len(args) == 2 and args[0] == 'inspect':
             value = inspect(args[1])
-        elif len(args) == 6 and args[0] == 'extract' and args[2] == '--partition' and args[4] == '--out':
-            with zipfile.ZipFile(args[1]) as archive:
+        elif len(args) in (6, 8) and args[0] == 'extract' and args[2] == '--partition' and args[4] == '--out' and \
+                (len(args) == 6 or args[6] == '--source'):
+            source = open(args[7], 'rb') if len(args) == 8 else None
+            with contextlib.ExitStack() as stack, zipfile.ZipFile(args[1]) as archive:
+                if source:
+                    stack.enter_context(source)
                 payload = Payload(archive)
                 part = next((p for p in payload.partitions if p['name'] == args[3]), None)
                 require(part, 'NO_SUCH_PARTITION', 'The payload has no such partition', partition=args[3])
@@ -474,9 +651,11 @@ def main(argv=None):
                 require(where != 'refused', 'PARTITION_REFUSED', why or 'This partition is not written', partition=args[3])
                 fd = os.open(args[5], os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
                 with os.fdopen(fd, 'w+b') as out:
-                    value = {'partition': args[3], 'size': part['size'], 'sha256': payload.extract(part, out)}
+                    value = {'partition': args[3], 'size': part['size'], 'sha256': payload.extract(part, out, source),
+                             'incremental': part['incremental']}
         else:
-            print('usage: android_rom.py inspect PACKAGE | extract PACKAGE --partition NAME --out FILE', file=sys.stderr)
+            print('usage: android_rom.py inspect PACKAGE | extract PACKAGE --partition NAME --out FILE [--source IMAGE]',
+                  file=sys.stderr)
             return 2
         print(json.dumps({'ok': True, **value}, ensure_ascii=True, separators=(',', ':')))
         return 0

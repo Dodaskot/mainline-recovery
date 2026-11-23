@@ -11,8 +11,41 @@ mkdir -p /dev /proc /sys /run /tmp /mnt/backup /mnt/volumes
 mount -t devtmpfs dev /dev 2>/dev/null
 mount -t proc proc /proc
 mount -t sysfs sys /sys
+# The kernel draws the picture of the theme in use that misc keeps for it (boot_splash.py) from the
+# moment the display exists, and the UI carries its bar on (2026-11-21: no black screen between the
+# bootloader and the recovery). Without that picture its built-in fallback is stopped here, before
+# it shows a theme that may not be the saved one, and the UI draws the theme once it is read below.
+splash_params=/sys/module/mediatek_drm/parameters
+splash_source=
+for n in 1 2 3 4 5 6 7 8 9 10; do
+    splash_source=$(cat "$splash_params/boot_splash_source" 2>/dev/null)
+    [ "$splash_source" = loading ] || break
+    sleep 0.1
+done
+# 2026-11-21 review: the kernel draws that picture only through the MediaTek display driver. A phone
+# whose bootloader names another panel (Tianma ...) keeps the bootloader's framebuffer (simpledrm),
+# where nothing in the kernel draws: there the theme is drawn below as before, not left black.
+if [ "$splash_source" = misc ]; then
+    case "$(cat /sys/class/graphics/fb0/name 2>/dev/null)" in
+        *simple*) splash_source=simple-framebuffer ;;
+    esac
+fi
+if [ "$splash_source" != misc ] && [ -w "$splash_params/boot_splash_stop" ] && printf 1 > "$splash_params/boot_splash_stop"; then
+    echo "a22x-recovery: boot splash framebuffer released" > /dev/kmsg
+fi
 mount -t tmpfs -o mode=0755,size=64m tmpfs /run
 mount -t tmpfs -o mode=1777,size=128m tmpfs /tmp
+# Compressed swap in RAM (2026-11-22, a tester, #6: a 4K video ran the browser out of memory, and a
+# flash or a backup must never meet that). The recovery lives in RAM: zram0 of half of it, lz4, so
+# pages nobody touches are packed and the kernel's out-of-memory killer comes much later.
+if [ -w /sys/block/zram0/disksize ] && ! grep -qs '^/dev/zram0 ' /proc/swaps; then
+    mem_kb=$(sed -n 's/^MemTotal: *\([0-9]*\) kB$/\1/p' /proc/meminfo)
+    printf lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null
+    if [ -n "$mem_kb" ] && echo $((mem_kb / 2 * 1024)) > /sys/block/zram0/disksize &&
+       mkswap /dev/zram0 >/dev/null 2>&1 && swapon /dev/zram0 2>/dev/null; then
+        echo "a22x-recovery: zram swap of $((mem_kb / 2048)) MiB ($(cat /sys/block/zram0/comp_algorithm))" > /dev/kmsg
+    fi
+fi
 mkdir -p /dev/pts /run/lock /run/a22x-recovery/ui /run/a22x-recovery/plans/ui
 mount -t devpts -o mode=0620 devpts /dev/pts
 mount -t configfs configfs /sys/kernel/config 2>/dev/null
@@ -38,8 +71,17 @@ msg() {
 
 # A refused power action: the reason is logged and shown by the next interface start.
 power_refused() {
-    msg "$1"
-    echo "$1" > /run/a22x-recovery/power-message
+    msg "$1${2:+ ($2)}"
+    { echo "$1"; [ -z "$2" ] || echo "$2"; } > /run/a22x-recovery/power-message
+}
+# The helper's own explanation of a refusal (code: message), shown under the general text.
+helper_reason() {
+    /usr/bin/python3 -I -B -c 'import json, sys
+try:
+    error = json.load(open(sys.argv[1]))["error"]
+    print((str(error["code"]) + ": " + str(error["message"])).replace("\n", " ")[:300])
+except Exception:
+    pass' "$1" 2>/dev/null
 }
 # The camera's LED goes dark before a reset or a power-off: nothing else is sure to switch it off.
 torch_off() {
@@ -66,8 +108,38 @@ check_cache() {
 }
 msg "RAM recovery reached on $(uname -r); internal filesystems remain unmounted"
 
+show_boot_theme() {
+    printf '%s\n' "$1" > /run/a22x-recovery/boot-theme
+    # The kernel shows the theme's own picture from misc already: the UI takes it over as it is.
+    if [ "$splash_source" = misc ]; then
+        msg "boot splash drawn by the kernel from misc"
+        return 0
+    fi
+    case "$1" in
+        graphite|daylight|aurora)
+            echo "$1" > "$splash_params/boot_splash_theme" 2>/dev/null ;;
+    esac
+    if /bin/recovery-ui --boot-splash-frame "$1" >/run/a22x-recovery/boot-theme.log 2>&1; then
+        msg "boot splash rendered with theme $1"
+        return 0
+    fi
+    return 1
+}
+
 # Export GPT names from kernel-owned sysfs. Do not infer labels from partition order.
 mkdir -p /dev/disk/by-partlabel
+# The theme only needs internal misc. Look it up before the full device scan.
+for p in /sys/class/block/mmcblk0p*; do
+    [ -b "/dev/${p##*/}" ] && grep -qx PARTNAME=misc "$p/uevent" || continue
+    ln -s "/dev/${p##*/}" /dev/disk/by-partlabel/misc
+    break
+done
+saved=$(/usr/bin/python3 -B /opt/a22x-recovery/misc_store.py field settings theme 2>/dev/null)
+case "$saved" in *[!a-z0-9-]*) saved= ;; esac
+if [ "${#saved}" -lt 3 ] || [ "${#saved}" -gt 23 ]; then saved=; fi
+boot_theme_drawn=
+if [ -n "$saved" ] && show_boot_theme "$saved"; then boot_theme_drawn=1; fi
+
 for n in 1 2 3 4 5; do
     [ -b /dev/mmcblk0 ] && break
     sleep 1
@@ -82,26 +154,37 @@ for p in /sys/class/block/*; do
     case "$name" in ''|*[!a-zA-Z0-9_-]*) continue ;; esac
     [ -b "/dev/${p##*/}" ] || continue
     ln -s "/dev/${p##*/}" "/dev/disk/by-partlabel/$name" 2>/dev/null
+    # As Android and TWRP have it, for the internal eMMC only (a card's partition may carry the same name):
+    # guides and scripts typed into the terminal use /dev/block/by-name (2026-11-21, a tester, #8).
+    case "${p##*/}" in
+        mmcblk0p*) mkdir -p /dev/block/by-name && ln -s "/dev/${p##*/}" "/dev/block/by-name/$name" 2>/dev/null ;;
+    esac
 done
 
-# The boot splash in the user's theme (2026-11-10): the kernel waits a moment for it before the
-# first picture, and the interface starts in it. Read-only, without replaying the journal; a theme
-# from a file falls back to Graphite, which the kernel also shows when nothing arrives.
-boot_theme=graphite
-# Since 2026-11-14 the settings are in misc (misc_store.py); the file on cache only until the first
-# start of such a release has copied it there.
-saved=$(/usr/bin/python3 -B /opt/a22x-recovery/misc_store.py field settings theme 2>/dev/null)
-case "$saved" in graphite|daylight|aurora) boot_theme=$saved ;; esac
-if [ -z "$saved" ] && [ -b /dev/disk/by-partlabel/cache ] && mkdir -p /run/a22x-theme &&
+# Older settings and imported themes can live on cache. Read the selected file
+# without replaying the cache journal, then hand the same palette to the UI.
+if [ -z "$boot_theme_drawn" ] && [ -b /dev/disk/by-partlabel/cache ] && mkdir -p /run/a22x-theme &&
         mount -t ext4 -o ro,noload,nosuid,nodev,noexec /dev/disk/by-partlabel/cache /run/a22x-theme 2>/dev/null; then
-    saved=$(sed -n 's/.*"theme": *"\([a-z]*\)".*/\1/p' /run/a22x-theme/a22x-recovery/settings.json 2>/dev/null | head -n 1)
+    if [ -z "$saved" ]; then
+        saved=$(sed -n 's/.*"theme": *"\([a-z0-9-]\{3,23\}\)".*/\1/p' /run/a22x-theme/a22x-recovery/settings.json 2>/dev/null | head -n 1)
+    fi
+    if [ -n "$saved" ]; then
+        theme=/run/a22x-theme/a22x-recovery/themes/$saved.theme
+        if [ -f "$theme" ] && [ ! -L "$theme" ] && [ "$(stat -c %s "$theme")" -le 2097152 ]; then
+            mkdir -p /run/a22x-recovery/themes
+            cp "$theme" "/run/a22x-recovery/themes/$saved.theme"
+        fi
+    fi
     umount /run/a22x-theme
-    case "$saved" in graphite|daylight|aurora) boot_theme=$saved ;; esac
 fi
 rmdir /run/a22x-theme 2>/dev/null
-echo "$boot_theme" > /sys/module/mediatek_drm/parameters/boot_splash_theme 2>/dev/null
-echo "$boot_theme" > /run/a22x-recovery/boot-theme
+if [ -z "$boot_theme_drawn" ] && [ -n "$saved" ]; then show_boot_theme "$saved"; fi
 check_cache
+
+# The hardware clock holds the date in Android's form: set the time it means, so files and
+# screenshots carry the right date before Wi-Fi asks a time server (2026-11-19). The clock chip
+# itself is left as Android wrote it.
+/usr/bin/python3 -B /opt/a22x-recovery/clock.py hardware > /run/a22x-recovery/clock-hardware.json 2>&1 || true
 
 # Boot identity is separate from the exact Linux workflow qualification capsule.
 boot_id=$(cat /proc/sys/kernel/random/boot_id)
@@ -119,7 +202,12 @@ if [ -n "$udc" ]; then
     echo 'SM-A226B RAM Recovery' > "$g/strings/0x409/product"
     echo a22x-recovery > "$g/strings/0x409/serialnumber"
     echo NCM > "$g/configs/c.1/strings/0x409/configuration"
-    ln -s "$g/functions/ncm.usb0" "$g/configs/c.1/"
+    # The USB network (SSH, adb over the network, diagnostics on 172.16.42.1) only when SSH has a key to
+    # accept (2026-11-21, #3: a computer showed a wired network with SSH off). adb over USB needs none of it;
+    # without adb's interface the network comes back so that the gadget has a function.
+    usb_net=
+    [ -s /etc/a22x-recovery/authorized_keys ] && usb_net=1
+    [ -n "$usb_net" ] && ln -s "$g/functions/ncm.usb0" "$g/configs/c.1/"
     # adb over USB beside NCM (2026-11-10): adbd publishes its FunctionFS interface before the UDC
     # binds, and serves TCP on the USB network too. Without the interface in time, or when the
     # controller does not bind both functions, NCM goes on alone as before.
@@ -133,26 +221,40 @@ if [ -n "$udc" ]; then
         while [ ! -e /dev/usb-ffs/adb/ep2 ] && [ $n -lt 60 ]; do sleep 0.1; n=$((n + 1)); done
         [ -e /dev/usb-ffs/adb/ep2 ] && ln -s "$g/functions/ffs.adb" "$g/configs/c.1/" && adb_usb=1
     fi
+    if [ -z "$adb_usb" ] && [ -z "$usb_net" ]; then
+        usb_net=1
+        ln -s "$g/functions/ncm.usb0" "$g/configs/c.1/"
+    fi
     if ! echo "$udc" > "$g/UDC" && [ -n "$adb_usb" ]; then
         rm -f "$g/configs/c.1/ffs.adb"
         adb_usb=
+        if [ -z "$usb_net" ]; then
+            usb_net=1
+            ln -s "$g/functions/ncm.usb0" "$g/configs/c.1/"
+        fi
         echo "$udc" > "$g/UDC"
     fi
     sleep 1
-    ifconfig usb0 172.16.42.1 netmask 255.255.255.0 up
-    printf 'start 172.16.42.2\nend 172.16.42.2\ninterface usb0\noption subnet 255.255.255.0\nlease_file /run/udhcpd.leases\n' > /run/udhcpd.conf
-    touch /run/udhcpd.leases
-    udhcpd /run/udhcpd.conf
-    /usr/bin/python3 /opt/a22x-recovery/diagnostics.py \
-        > /run/a22x-recovery/diagnostics.log 2>&1 &
-    /usr/bin/python3 /opt/a22x-recovery/ssh_service.py start \
-        > /run/a22x-recovery/ssh-start.log 2>&1
+    if [ -n "$usb_net" ]; then
+        ifconfig usb0 172.16.42.1 netmask 255.255.255.0 up
+        printf 'start 172.16.42.2\nend 172.16.42.2\ninterface usb0\noption subnet 255.255.255.0\nlease_file /run/udhcpd.leases\n' > /run/udhcpd.conf
+        touch /run/udhcpd.leases
+        udhcpd /run/udhcpd.conf
+        /usr/bin/python3 /opt/a22x-recovery/diagnostics.py \
+            > /run/a22x-recovery/diagnostics.log 2>&1 &
+        /usr/bin/python3 /opt/a22x-recovery/ssh_service.py start \
+            > /run/a22x-recovery/ssh-start.log 2>&1
+    fi
     # ADB (2026-11-10): over USB when the interface was published, and on the USB network
     # (adb connect 172.16.42.1:5555). A new computer key is allowed on the phone screen first;
     # the recovery password, when set, is asked as for SSH.
     [ -n "$adbd_started" ] || /usr/bin/python3 /opt/a22x-recovery/adbd.py --persist \
         > /run/a22x-recovery/adbd.log 2>&1 &
-    msg "USB NCM: diagnostics 172.16.42.1:8081; key-only SSH on port 22; adb on 172.16.42.1:5555${adb_usb:+ and over USB}"
+    if [ -n "$usb_net" ]; then
+        msg "USB NCM: diagnostics 172.16.42.1:8081; key-only SSH on port 22; adb on 172.16.42.1:5555${adb_usb:+ and over USB}"
+    else
+        msg "USB: adb only (no SSH key, so no USB network)"
+    fi
 fi
 
 # Engineering recovery retains the existing physical UART console.
@@ -174,9 +276,17 @@ fi
 
 display_service_pid=
 while true; do
-    # The touch firmware probe can complete after /init has started.
+    # The touch firmware probe can complete after /init has started. Any touchscreen (an input
+    # device with INPUT_PROP_DIRECT): Himax on JDI, Novatek on Tianma, FocalTech on Truly; waiting
+    # for Himax's name alone cost the other panels 10 s at every start (2026-11-22 audit).
     for n in 1 2 3 4 5 6 7 8 9 10; do
-        if [ -c /dev/fb0 ] && grep -qs '^himax-touchscreen$' /sys/class/input/event*/device/name; then
+        touch_found=
+        for props in /sys/class/input/event*/device/properties; do
+            value=$(cat "$props" 2>/dev/null) || continue
+            case "$value" in *[!0-9a-fA-F]*|'') continue ;; esac
+            [ $(( 0x$value & 2 )) -ne 0 ] && { touch_found=1; break; }
+        done
+        if [ -c /dev/fb0 ] && [ -n "$touch_found" ]; then
             break
         fi
         sleep 1
@@ -248,6 +358,23 @@ while true; do
               sleep 5
           done ) &
     fi
+    # The boot splash of the theme in use into misc, once per start in the background, a while after
+    # the UI's first frames (2026-11-21): written only when misc holds another picture (a new or
+    # edited theme, a first start of this version). The UI asks for it again when the theme changes.
+    if [ ! -e /run/a22x-recovery/splash.started ] && [ -f /opt/a22x-recovery/boot_splash.py ]; then
+        : > /run/a22x-recovery/splash.started
+        ( sleep 20
+          /bin/busybox timeout 120 /usr/bin/python3 -B /opt/a22x-recovery/boot_splash.py save \
+              > /run/a22x-recovery/boot-splash-start.json 2>&1 ) &
+    fi
+    # Sound (2026-11-20): the card's modules, the speaker or the headphones, and a watcher of the
+    # jack, once per start in the background. Without the card everything else goes on silent.
+    if [ ! -e /run/a22x-recovery/sound.started ] && [ -f /opt/a22x-recovery/sound.py ]; then
+        : > /run/a22x-recovery/sound.started
+        ( /bin/busybox timeout 60 /usr/bin/python3 /opt/a22x-recovery/sound.py start \
+              > /run/a22x-recovery/sound-start.json 2>&1 &&
+          exec /usr/bin/python3 /opt/a22x-recovery/sound.py watch > /run/a22x-recovery/sound-watch.log 2>&1 ) &
+    fi
     if [ -n "${auto_rc:-}" ]; then
         rc=$auto_rc
         auto_rc=
@@ -286,7 +413,8 @@ while true; do
                 if grep -qs OPERATION_BUSY /run/a22x-recovery/power-install.json; then
                     power_refused "The phone stayed in recovery: a backup, restore or installation is still running. Wait until it finishes, then try again."
                 else
-                    power_refused "The phone stayed in recovery: an image installation needs attention in Install images."
+                    power_refused "The phone stayed in recovery: an image installation needs attention in Install images." \
+                        "$(helper_reason /run/a22x-recovery/power-install.json)"
                 fi
                 sleep 3
                 continue
@@ -303,9 +431,35 @@ while true; do
             # A confirmed power action ends USB file sharing, which holds the storage lease.
             usb_token=$(/usr/bin/python3 /opt/a22x-recovery/usb_files.py --mode device status 2>/dev/null |
                 sed -n 's/.*"session_token": *"\([^"]*\)".*/\1/p')
-            [ -z "$usb_token" ] || /usr/bin/python3 /opt/a22x-recovery/usb_files.py --mode device stop \
-                --expected-session-token "$usb_token" >/dev/null 2>&1
-            # Ordinary unmount fails if an operation or terminal still owns a volume.
+            if [ -n "$usb_token" ]; then
+                /usr/bin/python3 /opt/a22x-recovery/usb_files.py --mode device stop \
+                    --expected-session-token "$usb_token" >/dev/null 2>&1
+                # A stop that does not end must not keep the phone here (2026-11-20, #3): after 20 s
+                # its supervisor and responder are killed; the restart resets USB anyway.
+                /usr/bin/python3 /opt/a22x-recovery/usb_files.py --mode device end-stuck \
+                    --expected-session-token "$usb_token" --wait 20 \
+                    > /run/a22x-recovery/power-usb.json 2>&1
+            fi
+            # The player of the media service keeps the file it played open, on a card (2026-11-22, on the
+            # phone: the restart was refused, "the kernel refused" to unmount): the service and its
+            # daemons end first. Its pid is in media.pid; it stops its children on SIGTERM.
+            media_pid=$(cat /run/a22x-recovery/media.pid 2>/dev/null)
+            if [ -n "$media_pid" ] && [ -d "/proc/$media_pid" ]; then
+                kill "$media_pid" 2>/dev/null
+                for wait_media in 1 2 3 4 5 6; do [ -d "/proc/$media_pid" ] || break; sleep 1; done
+            fi
+            # Ordinary unmount fails if an operation or terminal still owns a volume. Right after USB
+            # file sharing was ended its responder may hold the volume a moment longer (2026-11-22, a
+            # tester, #13: the restart only went through once MTP was stopped by hand): a few tries.
+            tries=1
+            [ -n "$usb_token" ] && tries=6
+            while :; do
+                /usr/bin/python3 /opt/a22x-recovery/filesystem.py --device unmount-all \
+                    > /run/a22x-recovery/power-volumes.json 2>&1 && break
+                tries=$((tries - 1))
+                [ "$tries" -gt 0 ] && ! grep -qs OPERATION_BUSY /run/a22x-recovery/power-volumes.json || break
+                sleep 1
+            done
             if /usr/bin/python3 /opt/a22x-recovery/filesystem.py --device unmount-all \
                 > /run/a22x-recovery/power-volumes.json 2>&1 && \
                /usr/bin/python3 /opt/a22x-recovery/storage.py umount \

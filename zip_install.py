@@ -3,7 +3,8 @@
 """ZIPs that install themselves (2026-11-11): what TWRP calls Install.
 
 A flashable ZIP carries its own installer, META-INF/com/google/android/update-binary: a shell
-script (Magisk, AnyKernel3, modules) or a program (edify). TWRP runs it as root with the whole
+script (Magisk, AnyKernel3) or a program (edify). Recognized module ZIPs are refused until
+a separate module installer is qualified. TWRP runs general installers as root with the whole
 phone in reach. Here it runs as root too, as its owner asked, but in a room of its own:
 
   - its own mount, process, IPC and host-name spaces, and a root made of tmpfs;
@@ -74,6 +75,10 @@ import saved_boot
 
 INSTALLER = 'META-INF/com/google/android/update-binary'
 INSTALLER_LIMIT = 32 << 20
+MODULE_PROP_LIMIT = 32 << 10
+MODULE_ZIP_UNSUPPORTED = ('Module ZIP installation is not available in recovery yet. '
+                          "Use the installed framework's Android app. The recovery module manager "
+                          'can change the state of already installed modules.')
 # What an installer may write. Never the bootloader chain, the modem, calibration, this recovery or Android's data.
 WRITABLE = ('boot', 'dtbo', 'vbmeta', 'vbmeta_system', 'vbmeta_vendor', 'super', 'prism', 'optics')
 WATCHED = ('boot', 'dtbo', 'vbmeta', 'vbmeta_system', 'vbmeta_vendor')
@@ -336,7 +341,10 @@ def describe(fd, name, check_members=True):
             program = archive.read(INSTALLER)
             head = program[:64]
             module = {}
-            if 'module.prop' in names:
+            module_package = 'module.prop' in names
+            if module_package:
+                require(archive.getinfo('module.prop').file_size <= MODULE_PROP_LIMIT,
+                        'MODULE_ZIP_UNSUPPORTED', MODULE_ZIP_UNSUPPORTED)
                 for line in archive.read('module.prop').decode('utf-8', 'replace').splitlines():
                     key, _, value = line.partition('=')
                     module[key.strip()] = value.strip()[:80]
@@ -352,8 +360,9 @@ def describe(fd, name, check_members=True):
         require(arch != 'other', 'ZIP_INSTALLER_INVALID', 'The installer in this ZIP is a program for another processor')
     else:
         fail('ZIP_INSTALLER_INVALID', 'The installer in this ZIP is neither a script nor a program')
-    if module.get('name'):
-        what, title = 'module', (module['name'] + ' ' + module.get('version', '')).strip()
+    if module_package:
+        # module.prop identifies the module path even when its display name is missing.
+        what, title = 'module', ((module.get('name') or 'Module ZIP') + ' ' + module.get('version', '')).strip()
     elif 'assets/boot_patch.sh' in names or 'lib/arm64-v8a/libmagiskboot.so' in names:
         what, title = 'magisk', 'Magisk'
     elif 'anykernel.sh' in names:
@@ -364,10 +373,20 @@ def describe(fd, name, check_members=True):
     if kind == 'program':
         warnings.append('This installer is a program: it can map and rewrite the logical partitions of super by itself')
     if what == 'module':
-        warnings.append('A module needs Android data, which stays closed here: install it in the Magisk or APatch app')
+        warnings.append(MODULE_ZIP_UNSUPPORTED)
     return {'name': name[:200], 'sha256': digest.hexdigest(), 'size': size, 'installer': kind, 'arch': arch, 'what': what,
             'installer_sha256': hashlib.sha256(program).hexdigest(),
-            'title': title[:120], 'files': len(names), 'warnings': warnings, 'writable': list(WRITABLE), 'logical': list(LOGICAL)}
+            'title': title[:120], 'files': len(names), 'warnings': warnings,
+            'run_supported': what != 'module',
+            'writable': [] if what == 'module' else list(WRITABLE),
+            'logical': [] if what == 'module' else list(LOGICAL)}
+
+
+def require_installable(about):
+    # The generic room has no qualified module installer or persistent /data/adb.
+    # Refuse before checking/closing target mounts, saving BOOT, or entering a room.
+    require(about['what'] != 'module', 'MODULE_ZIP_UNSUPPORTED', MODULE_ZIP_UNSUPPORTED,
+            package=about)
 
 
 def targets(context):
@@ -1042,17 +1061,28 @@ def untouched(context, found, room, before, layout, counters, now):
     return True
 
 
+def boot_verified(context):
+    """Whether vbmeta verifies BOOT now (root.verification_on): unknown counts as verified."""
+    import root
+    try:
+        return root.verification_on(context)
+    except Exception:  # noqa: BLE001 - nothing known is the cautious answer
+        return True
+
+
 def run(context, args, progress):
     require(args.confirm, 'CONFIRMATION_REQUIRED', 'Running the installer of a ZIP must be confirmed')
     with flash.operation_lock(context.lock_path, context.mode):
         require(not context.guard_path.exists(), 'INSTALL_PENDING', 'Finish the unfinished installation first')
-        found = targets(context)
-        context.check_offline(list(found.values()))
-        ensure_mounted(context, args.volume, args.volume_token)
+        # Review/inspect opens the source read-only. A stale unmounted source must be
+        # reviewed again; run never mounts it before it knows this package is supported.
         with flash.source_file(context, args.volume, args.volume_token, args.path) as fd:
             # Its members' CRC were read at the review; the same SHA-256 means the same bytes.
             about = describe(fd, Path(args.path).name, check_members=False)
             require(about['sha256'] == args.expected_sha256, 'ZIP_CHANGED', 'The ZIP changed after it was reviewed')
+            require_installable(about)
+            found = targets(context)
+            context.check_offline(list(found.values()))
             # The BOOT there is kept on cache first: the way back from whatever the installer writes.
             kept = saved_boot.keep_current_boot(context, lambda *a: None)
             before = hashes(context, found)
@@ -1177,7 +1207,10 @@ def run(context, args, progress):
                   'keeps_recovery': bool(marked), 'mappings_left': left,
                   # 2026-11-13, the owner, on stock and custom builds alike: Android starts with a
                   # BOOT changed by a kernel, Magisk or APatch ZIP only after its data is erased.
-                  'android_boot_changed': bool(marked),
+                  # That is while vbmeta verifies BOOT (root.py): with verification off Android kept
+                  # its data over a kernel ZIP (2026-11-21, KernelSU Next on Evolution X), so the
+                  # erase is offered only while it is on, or not known.
+                  'android_boot_changed': bool(marked) and boot_verified(context),
                   'super_fitted': {name: {'from': now, 'to': then} for name, (now, then) in fitted.items()}}
         now = protected_hashes(context)
         touched = sorted(label for label, digest in guarded.items() if now.get(label) != digest)
@@ -1207,6 +1240,7 @@ def inspect(context, args, progress):
     ensure_mounted(context, args.volume, args.volume_token)
     with flash.source_file(context, args.volume, args.volume_token, args.path) as fd:
         about = describe(fd, Path(args.path).name)
+        require_installable(about)
         sizes = package_sizes(fd)
     about['partitions'] = sorted(targets(context))
     about['super_fit'] = {}

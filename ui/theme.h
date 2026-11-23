@@ -22,11 +22,12 @@ typedef struct {
     uint32_t terminal_bg,terminal_fg;const uint32_t *terminal_palette;
     const uint8_t *backdrop;
     unsigned int backdrop_w,backdrop_h; /* 0 means the size of the built-in backdrops. */
-    unsigned int surface_alpha,edge_alpha,shadow_strength;
+    unsigned int surface_alpha,edge_alpha,shadow_strength,blur;
+    unsigned int tile_style;
     bool bento;
 } Theme;
 
-#define THEME_COUNT 3
+#define THEME_COUNT 4
 static const Theme themes[THEME_COUNT]={
     {.code="graphite",.name="Graphite",.bg=0x0e1013u,.panel=0x191c21u,.panel2=0x282c34u,.line=0x2f343cu,.edge=0x24282fu,.text=0xf4f5f7u,.muted=0xa0a8b5u,
      .accent=0xff9a4bu,.container=0x3b2617u,.container_edge=0x5a3a22u,.on_accent=0x2b1605u,.icon_fill=0x302219u,.knob=0xf4f5f7u,
@@ -34,18 +35,25 @@ static const Theme themes[THEME_COUNT]={
      .hero_top=0x3b2617u,.hero_bottom=0x3b2617u,.hero_text=0xf4f5f7u,.hero_sub=0xd8c3b4u,
      .tile_fill={0x302219u,0x302219u,0x302219u,0x302219u,0x302219u,0x302219u},.tile_ink={0xff9a4bu,0xff9a4bu,0xff9a4bu,0xff9a4bu,0xff9a4bu,0xff9a4bu},
      .terminal_bg=0x0b0e13u,.terminal_fg=0xe5e9efu,.terminal_palette=NULL,.backdrop=NULL,.surface_alpha=255,.edge_alpha=255,.shadow_strength=0,.bento=false},
-    {.code="daylight",.name="Daylight",.bg=0xf7f4fdu,.panel=0xfefdffu,.panel2=0xd6dcffu,.line=0xd5d5ebu,.edge=0xffffffu,.text=0x1c1c2eu,.muted=0x58586eu,
+    {.code="daylight",.name="Daylight",.bg=0xf7f4fdu,.panel=0xfefdffu,.panel2=0xd6dcffu,.line=0xd5d5ebu,.edge=0x9b9bb6u,.text=0x1c1c2eu,.muted=0x58586eu,
      .accent=0x4a41e4u,.container=0xdde4ffu,.container_edge=0xc6d0fau,.on_accent=0xffffffu,.icon_fill=0xdbe3ffu,.knob=0xffffffu,
      .green=0x007948u,.red=0xc51d28u,.blue=0x0060c1u,.purple=0x8632b6u,.danger=0xffe3e4u,.toast_fill=0x1c1c2eu,.toast_text=0xffffffu,.shadow=0x3a2f7au,
      .hero_top=0x6f4ef5u,.hero_bottom=0x283ddeu,.hero_text=0xffffffu,.hero_sub=0xe4e1ffu,
      .tile_fill={0xcde7ffu,0xffe4b3u,0xbdf3dau,0xeedbffu,0xbaf0f6u,0xffd6d9u},.tile_ink={0x085dc7u,0xa76100u,0x007852u,0x7a31cau,0x00717fu,0xc81f40u},
      .terminal_bg=0xfbfaffu,.terminal_fg=0x1c1c2eu,.terminal_palette=terminal_light_palette,.backdrop=backdrop_daylight,.surface_alpha=176,.edge_alpha=150,.shadow_strength=46,.bento=true},
     {.code="aurora",.name="Aurora",.bg=0x080f1fu,.panel=0x1f283du,.panel2=0x2b3e57u,.line=0x404e63u,.edge=0x5b7088u,.text=0xf0f6fcu,.muted=0xa9b9cau,
-     .accent=0x4ae6d6u,.container=0x005455u,.container_edge=0x0a6f6fu,.on_accent=0x001c1du,.icon_fill=0x004d51u,.knob=0xf0f6fcu,
+     .accent=0x4ae6d6u,.container=0x005455u,.container_edge=0x0a6f6fu,.on_accent=0x000000u,.icon_fill=0x004d51u,.knob=0xf0f6fcu,
      .green=0x6ce5b5u,.red=0xfd8a8cu,.blue=0x8cc3fcu,.purple=0xd0aafcu,.danger=0x4a2328u,.toast_fill=0xe8f4f6u,.toast_text=0x0b1220u,.shadow=0,
      .hero_top=0x008781u,.hero_bottom=0x373ba7u,.hero_text=0xffffffu,.hero_sub=0xc9f2eeu,
      .tile_fill={0x23436cu,0x5b4315u,0x134e39u,0x4e3468u,0x0d4b51u,0x703138u},.tile_ink={0xa6d1ffu,0xf5cf7du,0x7deabdu,0xdbb8ffu,0x79e5ebu,0xffadb3u},
      .terminal_bg=0x0b0e13u,.terminal_fg=0xe5e9efu,.terminal_palette=NULL,.backdrop=backdrop_aurora,.surface_alpha=150,.edge_alpha=70,.shadow_strength=90,.bento=true},
+    /* Pure black for an AMOLED panel (2026-11-21, a tester, #7): black pixels stay dark, no picture behind. */
+    {.code="amoled",.name="AMOLED",.bg=0x000000u,.panel=0x0e0e0eu,.panel2=0x1c1c1cu,.line=0x2a2a2au,.edge=0x1f1f1fu,.text=0xf5f5f5u,.muted=0xa6a6a6u,
+     .accent=0x4ae6d6u,.container=0x00393au,.container_edge=0x0a5454u,.on_accent=0x000000u,.icon_fill=0x0e2b2bu,.knob=0xf5f5f5u,
+     .green=0x6ce5b5u,.red=0xfd8a8cu,.blue=0x8cc3fcu,.purple=0xd0aafcu,.danger=0x2a1215u,.toast_fill=0xf0f0f0u,.toast_text=0x000000u,.shadow=0,
+     .hero_top=0x003b38u,.hero_bottom=0x0e0e0eu,.hero_text=0xffffffu,.hero_sub=0xb8dcd8u,
+     .tile_fill={0x0f1b2bu,0x2a2010u,0x0c2a1fu,0x211833u,0x0a2a2du,0x2e1316u},.tile_ink={0xa6d1ffu,0xf5cf7du,0x7deabdu,0xdbb8ffu,0x79e5ebu,0xffadb3u},
+     .terminal_bg=0x000000u,.terminal_fg=0xe5e9efu,.terminal_palette=NULL,.backdrop=NULL,.surface_alpha=255,.edge_alpha=255,.shadow_strength=0,.bento=true},
 };
 static const Theme *ui_theme=&themes[0];
 /* Terminal colors are chosen apart from the interface theme. The first entry follows it.

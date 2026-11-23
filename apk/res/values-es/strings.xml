@@ -167,7 +167,7 @@
     <string name="update_unreadable">No se pudieron leer las versiones. Compruebe la red y vuelva a abrir esta página.</string>
     <string name="update_newer">Hay una app más nueva publicada.</string>
     <string name="update_current">Esta app está al día.</string>
-    <string name="update_hold">Mantenga para actualizar la app</string>
+    <string name="update_hold">Actualizar la aplicación</string>
     <string name="update_downloading">Descargando: %1$d%%</string>
     <string name="update_installing">Instalando la actualización; la app se cierra y se abre de nuevo.</string>
     <string name="boot_kept_title">BOOT de fábrica</string>

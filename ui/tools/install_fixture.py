@@ -57,7 +57,9 @@ def main():
                 'state': 'writing', 'resumable': True}
 
     if args.operation == 'list':
-        assert args.repository == config['repository']
+        # The card's first partition, mounted in Files, stands for the store of /mnt/backup and is the
+        # one chosen then (recovery_ui.c store_hidden, 2026-11-21): either store is the UI's.
+        assert args.repository in (config['repository'], str(root / 'volumes/sd/A22xBackups')), args.repository
         result = {**common, 'backups': [
             {'path': backup, 'name': 'linux-explicit-snapshot', 'profile': 'linux', 'schema': 'a22x.backup.v2', 'workflow': 'linux-partclone-v2'},
             {'path': str(root / 'repo/legacy'), 'name': 'legacy-must-not-select', 'profile': 'linux', 'schema': 'a22x.backup.v1'},

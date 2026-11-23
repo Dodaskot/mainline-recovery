@@ -47,7 +47,7 @@ def main():
         with open(card, 'rb') as stream:
             sector = stream.read(512)
             rows = [struct.unpack_from('<B3sB3sII', sector, 446 + 16 * n) for n in range(4)]
-            assert [row[2] for row in rows] == [0x0c, 0x82, 0, 0], rows
+            assert [row[2] for row in rows] == [0x07, 0x82, 0, 0], rows  # exFAT for files (2026-11-20)
             assert (rows[0][4] * 512, rows[0][5] * 512) == (4 * MIB, 3072 * MIB - 4 * MIB - 1024 * MIB), rows
             assert (rows[1][4] * 512, rows[1][5] * 512) == (3072 * MIB - 1024 * MIB, 1024 * MIB), rows
             stream.seek(MIB + 1024)

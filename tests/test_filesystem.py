@@ -70,6 +70,49 @@ class FilesystemFixtureSupport(unittest.TestCase):
 
 
 class FilesystemFixtureTest(FilesystemFixtureSupport):
+    def test_list_search_filters_and_paging_use_the_same_result_set(self):
+        report = self.data / 'ЗВІТ-2026.txt'
+        report.write_bytes(b'a' * 25)
+        old = self.data / 'звіт-старий.txt'
+        old.write_bytes(b'old')
+        os.utime(old, (1, 1))
+        (self.data / 'звіт-папка').mkdir()
+        (self.data / 'звіт-малий.txt').write_bytes(b'hi')
+        options = ('list', '--volume', 'userdata', '--query', 'звіт', '--kind',
+                   'file', '--age-days', '7', '--order', 'largest', '--limit', '1')
+        first = self.cli(*options)
+        second = self.cli(*options, '--offset', '1')
+        self.assertEqual(first['total'], second['total'])
+        self.assertEqual(first['total'], 2)
+        self.assertEqual([e['name'] for e in first['entries']], [report.name])
+        self.assertEqual([e['name'] for e in second['entries']], ['звіт-малий.txt'])
+        self.assertTrue(first['has_more'])
+        self.assertFalse(second['has_more'])
+
+    def test_delete_preview_measures_nested_files_and_refuses_stale_review(self):
+        folder = self.data / 'picked'
+        folder.mkdir()
+        (folder / 'inner').mkdir()
+        selected = folder / 'inner/one.dat'
+        selected.write_bytes(b'1234')
+        (folder / 'leaf.dat').write_bytes(b'abc')
+        (folder / 'link').symlink_to(self.text)
+        plan = self.root / 'selection.json'
+        plan.write_text(json.dumps({'all': False, 'names': ['picked']}))
+        scope = ('--volume', 'userdata', '--path', '/', '--selection-file', str(plan))
+        preview = self.cli('preview-delete', *scope)
+        self.assertEqual((preview['bytes'], preview['selected_count']), (7, 1))
+        selected.write_bytes(b'123456')
+        failed = self.cli('delete-many', *scope, '--confirm', '--expected-selection-sha256',
+                          preview['selection_sha256'], ok=False)
+        self.assertEqual(failed['error']['code'], 'SELECTION_CHANGED')
+        self.assertTrue(selected.exists())
+        newest = self.cli('preview-delete', *scope)
+        self.assertEqual(newest['bytes'], 9)
+        self.assertEqual(self.cli('delete-many', *scope, '--confirm', '--expected-selection-sha256',
+                                  newest['selection_sha256'])['deleted'], 1)
+        self.assertTrue(self.text.exists())
+
     def test_end_to_end_cli_roundtrip(self):
         self.cli('mount', '--volume', 'userdata', '--mode', 'ro')
         denied = self.cli('mkdir', '--volume', 'userdata', '--path', '/test', '--confirm', ok=False)
@@ -352,6 +395,41 @@ class FilesystemFixtureTest(FilesystemFixtureSupport):
         other = self.cli('wipe', '--volume', 'userdata', '--confirm', ok=False)
         self.assertEqual(other['error']['code'], 'WIPE_NOT_ADMITTED')
         self.assertTrue(self.source.exists())
+
+    def test_wipe_dalvik_only_empties_the_android_runtime_cache_directories(self):
+        caches = [self.data / path.lstrip('/') for path in fs.DALVIK_CACHE_PATHS]
+        for cache in caches:
+            cache.mkdir(parents=True)
+            (cache / 'arm64').mkdir()
+            (cache / 'arm64' / 'boot.oat').write_bytes(b'compiled')
+            (cache / 'link').symlink_to(self.source)
+        original_inodes = [cache.stat().st_ino for cache in caches]
+        arguments = ('wipe-dalvik', '--volume', 'userdata', '--expected-volume-token',
+                     self.ctx.volume('userdata')['volume_token'])
+        refusal = self.cli(*arguments, ok=False)
+        self.assertEqual(refusal['error']['code'], 'CONFIRMATION_REQUIRED')
+        confirmed = self.cli(*arguments, '--confirm')
+        self.assertEqual(confirmed['removed'], 4)
+        self.assertEqual([cache.stat().st_ino for cache in caches], original_inodes)
+        self.assertTrue(all(not list(cache.iterdir()) for cache in caches))
+        self.assertEqual(self.source.read_text(), 'before\n')
+        self.assertEqual(self.cli(*arguments, '--confirm')['removed'], 0)
+
+    def test_wipe_dalvik_rejects_unverified_android_data_and_bad_paths_before_delete(self):
+        standard = self.data / 'dalvik-cache'
+        standard.mkdir()
+        (standard / 'boot.art').write_bytes(b'compiled')
+        modern = self.data / 'misc/apexdata/com.android.art'
+        modern.mkdir(parents=True)
+        (modern / 'dalvik-cache').symlink_to(self.sd, target_is_directory=True)
+        token = self.ctx.volume('userdata')['volume_token']
+        with mock.patch.object(self.ctx, 'mode', 'device'):
+            self.assert_error('ANDROID_CACHE_AUTH_REQUIRED', fs.wipe_dalvik, self.ctx, token, True)
+        self.assert_error('ANDROID_CACHE_PATH_INVALID', fs.wipe_dalvik, self.ctx, token, True)
+        self.assertTrue((standard / 'boot.art').is_file())
+        with mock.patch.object(self.ctx, 'is_mountpoint', side_effect=lambda _volume, path: path == '/dalvik-cache'):
+            self.assert_error('NESTED_MOUNT', fs.wipe_dalvik, self.ctx, token, True)
+        self.assertTrue((standard / 'boot.art').is_file())
 
     def test_a_computer_session_is_named_as_the_reason(self):
         """2026-11-10: an SSH or SFTP session holds the lease; the message says so, not USB files."""
@@ -995,6 +1073,20 @@ class ProbeAndMountTest(unittest.TestCase):
         data[108], data[110] = 9, 1
         self.assertEqual(fs.probe_magic(data)['fs_type'], 'exfat')
 
+    def test_probe_btrfs_and_udf(self):
+        # 2026-11-20: filesystems the kernel has, for backups made on a computer.
+        data = bytearray(fs.PROBE_BYTES)
+        data[0x10040:0x10048] = b'_BHRfS_M'
+        data[0x10020:0x10030] = bytes(range(16))
+        data[0x1012b:0x1012f] = b'pool'
+        found = fs.probe_magic(data)
+        self.assertEqual((found['fs_type'], found['filesystem_label']), ('btrfs', 'pool'))
+        data = bytearray(fs.PROBE_BYTES)
+        data[32769:32774], data[32769 + 2048:32774 + 2048] = b'BEA01', b'NSR02'
+        self.assertEqual(fs.probe_magic(data)['fs_type'], 'udf')
+        data[32769 + 2048:32774 + 2048] = b'TEA01'
+        self.assertIsNone(fs.probe_magic(data)['fs_type'])
+
     def test_unknown_signature_never_guesses_filesystem(self):
         self.assertIsNone(fs.probe_magic(b'ANDROID!' + bytes(8192))['fs_type'])
         self.assertTrue(fs.probe_magic(b'LUKS\xba\xbe' + bytes(8192))['encrypted_container'])
@@ -1003,6 +1095,19 @@ class ProbeAndMountTest(unittest.TestCase):
         self.assertIn('noload', fs.mount_options('ext4', 'ro').split(','))
         self.assertIn('norecovery', fs.mount_options('f2fs', 'ro').split(','))
         self.assertNotIn('noload', fs.mount_options('ext4', 'rw'))
+        self.assertIn('rescue=nologreplay', fs.mount_options('btrfs', 'ro').split(','))
+        self.assertNotIn('rescue=nologreplay', fs.mount_options('btrfs', 'rw').split(','))
+        # FAT names in UTF-8: the kernel's default ISO 8859-1 turned Cyrillic into '?' (2026-11-20).
+        self.assertIn('utf8', fs.mount_options('vfat', 'rw').split(','))
+
+    def test_external_volumes_format_as_ext4_exfat_fat32_or_f2fs(self):
+        for kind in ('ext4', 'exfat', 'vfat', 'f2fs'):
+            fs.format_admitted({'id': 'sdcard-p2', 'mounted': False}, kind, True)
+        for kind in ('btrfs', 'udf', 'erofs'):
+            with self.assertRaises(fs.FilesystemError):
+                fs.format_admitted({'id': 'sdcard-p2', 'mounted': False}, kind, True)
+        with self.assertRaises(fs.FilesystemError):
+            fs.format_admitted({'id': 'cache', 'mounted': False}, 'exfat', False)
 
     def test_mountinfo_identity_and_escaped_path(self):
         value = fs.parse_mountinfo('42 2 259:22 / /mnt/volumes/user\\040data ro,nodev - ext4 /dev/mmcblk0p54 ro\n')[0]
@@ -1077,9 +1182,6 @@ class BlockReadOnlyGuardTest(unittest.TestCase):
         self.assertEqual(self.changes, [])
 
 
-if __name__ == '__main__':
-    unittest.main()
-
 
 class CheckRepairTest(FilesystemFixtureSupport):
     """TWRP's "Repair file system": e2fsck on an unmounted ext2/3/4 volume the helper may format."""
@@ -1093,7 +1195,9 @@ class CheckRepairTest(FilesystemFixtureSupport):
         self.assertEqual(self.cli('check', '--volume', 'sdcard-p1', ok=False)['error']['code'], 'CONFIRMATION_REQUIRED')
         done = self.cli('check', '--volume', 'sdcard-p1', '--confirm')
         self.assertEqual((done['checked'], done['result'], done['exit_code']), ('ext4', 'clean', 0))
-        self.assertEqual(self.cli('check', '--volume', 'usb-1', '--confirm', ok=False)['error']['code'], 'UNSUPPORTED_FILESYSTEM')
+        # 2026-11-20: exFAT is checked too (fsck.exfat); an EROFS image never is.
+        self.assertEqual(self.cli('check', '--volume', 'usb-1', '--confirm')['checked'], 'exfat')
+        self.assert_error('UNSUPPORTED_FILESYSTEM', fs.check_admitted, {'id': 'usb-9', 'mounted': False, 'fs_type': 'btrfs'}, True)
         self.assertEqual(self.cli('check', '--volume', 'system', '--confirm', ok=False)['error']['code'], 'CHECK_FORBIDDEN')
         # 2026-11-13: F2FS and FAT are checked too; Android's encrypted F2FS is left to Android.
         self.assertEqual(self.cli('check', '--volume', 'usb-2', '--confirm')['checked'], 'vfat')
@@ -1124,6 +1228,11 @@ class CheckRepairTest(FilesystemFixtureSupport):
         self.assert_error('CHECK_ERRORS_LEFT', fs.run_fsck, '/dev/x', 'f2fs', {'f2fs': tools['left'], 'vfat': '', 'ext': ''})
         self.assert_error('CHECK_FAILED', fs.run_fsck, '/dev/x', 'vfat', {'f2fs': '', 'vfat': tools['broken'], 'ext': ''})
         self.assert_error('CHECK_UNAVAILABLE', fs.run_fsck, '/dev/x', 'f2fs', {'f2fs': str(self.root / 'none'), 'vfat': '', 'ext': ''})
+        # fsck.exfat (2026-11-20): -y answers every repair; 1 means repaired, 4 errors left.
+        done = fs.run_fsck('/dev/z', 'exfat', {'exfat': tools['fixed']})
+        self.assertEqual((done['result'], done['exit_code']), ('repaired', 1))
+        self.assertTrue((self.root / 'fixed.args').read_text().strip().endswith('-y /dev/z'))
+        self.assert_error('CHECK_ERRORS_LEFT', fs.run_fsck, '/dev/z', 'exfat', {'exfat': tools['left']})
 
     def test_mounted_volume_is_refused_with_its_reason(self):
         result = self.cli('check', '--volume', 'userdata', '--confirm', ok=False)
@@ -1192,3 +1301,17 @@ class ResizeTest(FilesystemFixtureSupport):
         with self.assertRaises(fs.FilesystemError) as caught:
             fs.run_resize2fs(empty, tools=(e2fsck, resize2fs, tune2fs))
         self.assertEqual(caught.exception.code, 'CHECK_FAILED')
+
+
+class BlockClaimedTest(unittest.TestCase):
+    def test_an_exclusive_open_that_says_busy_means_mounted_somewhere(self):
+        with mock.patch.object(fs.os, 'open', side_effect=OSError(fs.errno.EBUSY, 'busy')):
+            self.assertTrue(fs.block_claimed('/dev/mmcblk1p1'))
+        with tempfile.NamedTemporaryFile() as free:
+            self.assertFalse(fs.block_claimed(free.name))
+        with self.assertRaises(FileNotFoundError):
+            fs.block_claimed('/nonexistent/a22x-device')
+
+
+if __name__ == '__main__':
+    unittest.main()

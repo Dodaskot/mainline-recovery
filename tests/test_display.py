@@ -470,6 +470,17 @@ class BacklightTests(unittest.TestCase):
         # Restore the exact pinned inode for ordinary fixture teardown.
         self.light.close = self.io.close
 
+    def test_native_panels_and_their_drivers(self):
+        self.assertEqual(display.panel_driver([b'jdi,hx83112f-a22x', b'']), 'panel-jdi-hx83112f')
+        self.assertEqual(display.panel_driver([b'tianma,nt36672c-a22x', b'']), 'panel-tianma-nt36672c-a22x')
+        # Truly (FT8722) phones: brightness and blanking need their panel listed too (2026-11-22 audit).
+        self.assertEqual(display.panel_driver([b'truly,ft8722-a22x', b'']), 'panel-truly-ft8722-a22x')
+        self.assertEqual(display.panel_driver([b'txd,ili7807s-a22x', b'']), 'panel-txd-ili7807s-a22x')
+        for compatible in ([b'simple-framebuffer', b''], [b''],
+                           [b'jdi,hx83112f-a22x', b'tianma,nt36672c-a22x', b'']):
+            with self.subTest(compatible=compatible):
+                self.assertIsNone(display.panel_driver(compatible))
+
     def test_non_sysfs_and_symlink_escape_are_not_admitted(self):
         for path in (self.root, self.root / 'alias'):
             if path.name == 'alias':

@@ -443,6 +443,20 @@ esac
 $B devmem 0x11d534 32 0x12345678
 exec $B devmem 0x11d538 32 $reason
 """
+# The way back to the recovery from a desktop (2026-11-21, the owner found none): an entry among the
+# apps; on a console, sudo a22x-reboot recovery.
+RECOVERY_DESKTOP = """[Desktop Entry]
+Type=Application
+Name=Restart into Recovery
+Name[uk]=Перезапуск у Recovery
+Name[de]=Neustart ins Recovery
+Comment=Restart the phone into Mainline Recovery
+Comment[uk]=Перезапустити телефон у Mainline Recovery
+Exec=pkexec /usr/bin/a22x-reboot recovery
+Icon=system-reboot
+Terminal=false
+Categories=System;
+"""
 REBOOT_TOOL = """#!/bin/sh
 # usage: a22x-reboot [normal|recovery|download]
 target=${1:-normal}
@@ -485,6 +499,10 @@ case "$1" in poweroff|halt) exec /opt/a22x-conn/a22x-sram clear ;; esac
 SSH_KEYS_UNIT = """[Unit]
 Description=A22x SSH host keys (cloud images leave them to cloud-init)
 Before=ssh.service sshd.service
+# Fedora's own generator runs at the same time and failed once ours had written the RSA key between
+# its check and its ssh-keygen ("already exists"): the system was "degraded" at every start
+# (2026-11-22, Fedora 45 live). Ours goes first; sshd-keygen@ then finds the keys and is skipped.
+Before=sshd-keygen@rsa.service sshd-keygen@ecdsa.service sshd-keygen@ed25519.service sshd-keygen.target
 
 [Service]
 Type=oneshot
@@ -647,6 +665,11 @@ def adapt(root, args, meta):
     for child in sorted(modules.iterdir()) if modules.is_dir() else ():
         remove(child)
     clear(entry(root, 'boot'))
+    # The mount points first: a link of the image there (/tmp -> an absolute path under /tmp) made later
+    # paths through it loop ("Too many links in etc/selinux/config", 2026-11-22, the tests with TMPDIR
+    # in /tmp). They are emptied again at the end.
+    for name in ('dev', 'proc', 'sys', 'run', 'tmp', 'var/tmp'):
+        clear(entry(root, name))
     firmware = inside(root, 'usr/lib/firmware')
     if not args.keep_firmware:
         for child in sorted(firmware.iterdir()) if firmware.is_dir() else ():
@@ -669,6 +692,7 @@ def adapt(root, args, meta):
               '/etc/systemd/system/a22x-shutdown-splash.service')
     write(root, 'opt/a22x-conn/a22x-sram', SRAM_GUARD, 0o755)
     write(root, 'usr/bin/a22x-reboot', REBOOT_TOOL, 0o755)
+    write(root, 'usr/share/applications/a22x-recovery.desktop', RECOVERY_DESKTOP)
     write(root, 'etc/systemd/system/a22x-sram.service', SRAM_UNIT)
     link_unit(root, 'etc/systemd/system/sysinit.target.wants/a22x-sram.service',
               '/etc/systemd/system/a22x-sram.service')

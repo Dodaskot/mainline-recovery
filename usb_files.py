@@ -11,6 +11,7 @@ Fixture mode exercises the same IPC/lease lifecycle without USB or mounts.
 from __future__ import annotations
 import argparse
 from contextlib import ExitStack
+import contextlib
 import ctypes
 import errno
 import fcntl
@@ -176,6 +177,7 @@ def snapshot(context, record=None, available=True, reason=None):
             'session_token': record.get('session_token') if record else None,
             'exports': record.get('exports', []) if record else [], 'candidates': [],
             'reason': reason or (record.get('reason') if record else None),
+            'stage': record.get('stage') if record else None,
             'metadata_note': 'New files: root:root 0644; folders: root:root 0755. '
                              'MTP clients may delete/recreate an edited file. '
                              'Symlinks and special files are hidden; use Linux backup for Unix metadata.'}
@@ -235,9 +237,18 @@ def status(context):
         if context.mode == 'device':
             Gadget.validate()
         value = snapshot(context)
-        with operation_lock(context.fs.lock_path, context.mode):
-            value['candidates'] = candidates(context)
-        return value
+        # Right after a stop the supervisor may still hold the lease while it lets the card go: wait
+        # a little for it instead of answering OPERATION_BUSY at once (2026-11-21, #3).
+        deadline = time.monotonic() + 3
+        while True:
+            try:
+                with operation_lock(context.fs.lock_path, context.mode, shared=True):
+                    value['candidates'] = candidates(context)
+                return value
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.1)
     except (OSError, fs.FilesystemError) as error:
         code = 'OPERATION_BUSY' if isinstance(error, BlockingIOError) else getattr(error, 'code', 'USB_RUNTIME_UNAVAILABLE')
         return snapshot(context, available=code == 'OPERATION_BUSY', reason=code)
@@ -264,9 +275,10 @@ class Gadget:
         links = {p.name: p for p in config.iterdir() if p.is_symlink()}
         # NCM, and the adb interface when the recovery publishes one over USB (2026-11-10); the
         # MTP session leaves that one as it found it.
-        expected = {'ncm.usb0'} | ({'ffs.adb'} if 'ffs.adb' in links else set())
-        require(set(links) == expected and
-                links['ncm.usb0'].resolve() == GADGET / 'functions/ncm.usb0' and
+        # The USB network is there only when SSH has a key (2026-11-21); adb's interface when it published in time.
+        expected = ({'ncm.usb0'} if 'ncm.usb0' in links else set()) | ({'ffs.adb'} if 'ffs.adb' in links else set())
+        require(set(links) == expected and expected and
+                ('ncm.usb0' not in links or links['ncm.usb0'].resolve() == GADGET / 'functions/ncm.usb0') and
                 ('ffs.adb' not in links or links['ffs.adb'].resolve() == GADGET / 'functions/ffs.adb'),
                 'USB_GADGET_CHANGED', 'Expected the dedicated NCM recovery gadget')
         require(not (GADGET / 'functions/ffs.mtp').exists(), 'USB_GADGET_CHANGED', 'An MTP function already exists')
@@ -389,17 +401,32 @@ def child_start(context, session, pin, lease, access, runtime, gadget):
         os.close(ffs_fd)
 
 
-def drain(source, retained):
+def drain(source, retained, log_path=None):
+    """The responder's output, kept up to MAX_LOG. With log_path it also goes to that file as it
+    arrives (2026-11-20, #3: a stop that never finished left the log only in memory, and a forced
+    restart lost it)."""
+    log = None
+    if log_path is not None:
+        try:
+            log = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        except OSError:
+            log = None
     try:
         while True:
-            chunk = source.read(4096)
+            chunk = source.read1(4096) if hasattr(source, 'read1') else source.read(4096)
             if not chunk:
                 break
-            retained.extend(chunk[:max(0, MAX_LOG - len(retained))])
+            kept = chunk[:max(0, MAX_LOG - len(retained))]
+            retained.extend(kept)
+            if log is not None and kept:
+                with contextlib.suppress(OSError):
+                    os.write(log, kept)
     except OSError:
         pass
     finally:
         source.close()
+        if log is not None:
+            os.close(log)
 
 
 def child_stop(child):
@@ -466,7 +493,8 @@ def serve(context, args):
             signal.signal(number, signal_stop)
         try:
             context.save(record)
-            lease = stack.enter_context(operation_lock(context.fs.lock_path, context.mode))
+            # Shared: the card stays open to the terminal, copies and exports while it is shared (2026-11-21).
+            lease = stack.enter_context(operation_lock(context.fs.lock_path, context.mode, shared=True))
             runtime = context.runtime()
             fs.require_hash(args.expected_volume_token, 'expected-volume-token')
             fs.require_hash(args.expected_mount_token, 'expected-mount-token')
@@ -486,7 +514,8 @@ def serve(context, args):
                 gadget.prepare()
             pin.recheck()
             child = child_start(context, session, pin, lease, access, runtime, gadget)
-            thread = threading.Thread(target=drain, args=(child.stdout, retained), daemon=True)
+            thread = threading.Thread(target=drain, args=(child.stdout, retained, session / 'responder.log'),
+                                      daemon=True)
             thread.start()
             record['child_pid'] = child.pid
             record['child_start'] = process_start(child.pid)
@@ -544,16 +573,34 @@ def serve(context, args):
             tearing = True
             # Stop USB traffic before terminating the responder; keep the lease
             # until it is reaped, the exported filesystem is flushed and NCM is restored.
+            # Each step is recorded before it runs: a stop that does not end shows where it waits
+            # (2026-11-20, #3: "stopping" for minutes, and nothing said what it waited for).
+            # With the time of each step since the stop began, for the logs (2026-11-21, #3: a stop with
+            # ChromeOS ended OPERATION_BUSY, and nothing showed which step took the time).
+            began = time.monotonic()
+            record['timeline'] = []
+
+            def stage(name):
+                record['stage'] = name
+                record['timeline'] = (record['timeline'] + [[name, round((time.monotonic() - began) * 1000)]])[-12:]
+                with contextlib.suppress(OSError):
+                    context.save(record)
             try:
                 if gadget:
+                    stage('usb-disconnect')
                     gadget.disconnect()
+                stage('responder-stop')
                 child_stop(child)
                 if 'thread' in locals():
                     thread.join(timeout=1)
                 if 'pin' in locals() and context.mode == 'device':
+                    stage('flush')
                     system_call(libc.syncfs, pin.fd)
                 if gadget:
+                    stage('usb-restore')
                     gadget.restore()
+                record['stage'] = None
+                record['timeline'] = (record['timeline'] + [['done', round((time.monotonic() - began) * 1000)]])[-12:]
                 record['clean'] = True
             except (OSError, fs.FilesystemError, subprocess.SubprocessError) as exc:
                 error = error or exc
@@ -569,7 +616,7 @@ def serve(context, args):
             if record['clean']:
                 record['exports'] = []
             context.save(record)
-            if session is not None and retained:
+            if session is not None and retained and not (session / 'responder.log').exists():
                 log = session / 'responder.log'
                 fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
                 try:
@@ -624,6 +671,35 @@ def start(context, args):
     return snapshot(context, context.record(), reason='USB_START_PENDING')
 
 
+def end_stuck(context, token, wait_seconds):
+    """For a confirmed power action only: a stop that has not ended after wait_seconds ends by
+    SIGKILL of the supervisor's process group and of its responder (2026-11-20, #3: a stop stayed at
+    "stopping", its lease refused the restart, and only holding the keys left recovery). The restart
+    that follows resets USB, so the gadget is not restored here."""
+    record = context.record()
+    require(record and record.get('session_token') == token, 'SESSION_CHANGED', 'The USB export session changed')
+    deadline = time.monotonic() + wait_seconds
+    while process_live(record) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    if not process_live(record):
+        return snapshot(context, context.record() or record)
+    victims = [record['pid']]
+    child = {'pid': record.get('child_pid'), 'process_start': record.get('child_start')}
+    if child['pid'] and process_live(child):
+        victims.append(child['pid'])
+    with contextlib.suppress(OSError):
+        if os.getpgid(record['pid']) == record['pid']:
+            os.killpg(record['pid'], signal.SIGKILL)
+    for pid in victims:
+        with contextlib.suppress(OSError):
+            os.kill(pid, signal.SIGKILL)
+    deadline = time.monotonic() + 3
+    while (process_live(record) or (child['pid'] and process_live(child))) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    left = process_live(record) or bool(child['pid'] and process_live(child))
+    return snapshot(context, record, reason='USB_STOP_FORCED' if not left else 'USB_RESPONDER_BUSY')
+
+
 class StopRequested(OSError):
     """SIGTERM or SIGINT before the export was active: setup ends through its own cleanup."""
     code = 'USB_STOP_REQUESTED'
@@ -652,6 +728,9 @@ def main(argv=None):
                 p.add_argument('--session-token', required=True)
         p = sub.add_parser('stop')
         p.add_argument('--expected-session-token', required=True)
+        p = sub.add_parser('end-stuck')
+        p.add_argument('--expected-session-token', required=True)
+        p.add_argument('--wait', type=float, default=20.0)
         args = parser.parse_args(argv)
         operation, mode = args.operation, args.mode
         context = Context(args)
@@ -661,14 +740,22 @@ def main(argv=None):
             result = status(context)
         elif operation == 'start':
             result = start(context, args)
+        elif operation == 'end-stuck':
+            fs.require_hash(args.expected_session_token, 'expected-session-token')
+            result = end_stuck(context, args.expected_session_token, max(0.0, min(args.wait, 120.0)))
         else:
             fs.require_hash(args.expected_session_token, 'expected-session-token')
             record = context.record()
             require(record and record.get('session_token') == args.expected_session_token,
                     'SESSION_CHANGED', 'The USB export session changed')
             try:
+                if process_live(record) and record.get('state') == 'stopping':
+                    # The stop is already going on: the supervisor takes no more requests, and each
+                    # further one waited in its listen queue until connect() failed with EAGAIN
+                    # (2026-11-20, #3: "OPERATION_BUSY [Errno 11]" for every press of Stop).
+                    raise TimeoutError
                 result = request(context, record, 'stop', args.expected_session_token)
-            except TimeoutError:
+            except (TimeoutError, BlockingIOError):
                 # The supervisor took the stop and is still releasing (flushing the export): that is a
                 # stop going on, not a failed one (2026-11-14 review).
                 now = context.record() or record

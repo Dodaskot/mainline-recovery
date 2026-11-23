@@ -128,7 +128,7 @@ def store(context, volume, folder, name, data, limit=None):
     goes elsewhere (2026-11-13 review: the mount came between a partition table and its mkfs)."""
     found = context.volume(volume)
     if not found['mounted'] or found['read_only']:
-        with operation_lock(context.lock_path, context.mode):
+        with operation_lock(context.lock_path, context.mode, shared=True):
             return store_now(context, volume, folder, name, data, limit, context.volume(volume))
     return store_now(context, volume, folder, name, data, limit, found)
 

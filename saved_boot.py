@@ -258,14 +258,15 @@ def image_key(folder, name):
         os.close(fd)
 
 
-def prune_rollbacks(folder, keep=None):
+def prune_rollbacks(folder, keep=None, newest=1):
     """2026-11-11: cache is 200 MiB, and two flashes of the recovery left 80 MiB of old recoveries
     in A22xPartitionBackups; a root install then found no room for its BOOT. Of each partition's
     copies kept before a write, only the newest stays (KEEP, the copy just written, when given: the
     clock may have been wrong when an older one was named). A copy whose write is not over yet
     (NAME.pending.json, flash.py resume) is never removed, and counts as the newest. Without KEEP
     and with a date this recovery cannot have seen in the group, nothing of it is removed: which
-    copy is newest is not known (2026-11-12 review). Returns the bytes freed."""
+    copy is newest is not known (2026-11-12 review). NEWEST (2026-11-21): how many of each partition
+    stay; a card keeps more than cache. Returns the bytes freed."""
     groups = {}
     for name in os.listdir(folder):
         match = ROLLBACK_NAME.fullmatch(name)
@@ -279,7 +280,7 @@ def prune_rollbacks(folder, keep=None):
     for copies in groups.values():
         if keep is None and not any(c[0] for c in copies) and not all(c[1] for c in copies):
             continue
-        for *_, name, pending in sorted(copies)[:-1]:
+        for *_, name, pending in sorted(copies)[:-max(1, newest)]:
             if pending:
                 continue
             with contextlib.suppress(OSError):
@@ -422,6 +423,87 @@ def make_room(pin, downloadable=None):
                 tidy(folder)
 
 
+OFFLOAD = 'A22xSavedBoots'
+
+
+def offload_to_card(context, pin, need):
+    """Older kept BOOTs move to a card mounted for writing until NEED bytes are free on cache (2026-11-21,
+    on the phone: five BOOTs of 32 MiB, each the only copy of itself, filled cache, and Root stopped with
+    CACHE_FULL). Each is copied with its description, read back against its SHA-256, and only then
+    removed from cache. The newest stock BOOT and the newest Linux BOOT always stay on cache: they are
+    the ways back. Returns the names moved."""
+    card = next((v for v in context.fs.volumes() if str(v['id']).startswith(('sdcard', 'usb')) and v['mounted']
+                 and not v['read_only'] and v.get('write_supported')), None)
+    if card is None:
+        return []
+    with pin.directory(SAVED_BOOT) as folder:
+        rows = []
+        for name in sorted(os.listdir(folder)):
+            if not name.endswith('.img'):
+                continue
+            try:
+                fd = fs.open_regular(name + '.json', dir_fd=folder)
+                try:
+                    meta = json.loads(os.pread(fd, 65536, 0).decode('utf-8'))
+                finally:
+                    os.close(fd)
+            except (OSError, ValueError, fs.FilesystemError):
+                continue
+            if isinstance(meta, dict) and re.fullmatch(r'[0-9a-f]{64}', str(meta.get('sha256', ''))):
+                rows.append((int(meta.get('saved', 0) or 0), name, meta))
+        stock = [r for r in rows if r[2].get('kind') == 'android' and not r[2].get('root')]
+        linux = [r for r in rows if r[2].get('kind') == 'linux' and not r[2].get('root')]
+        keep = {max(group)[1] for group in (stock, linux) if group}
+        moved = []
+        with fs.PinnedVolume(context.fs, card['id'], card['volume_token'], writing=True) as dest:
+            with contextlib.suppress(FileExistsError):
+                os.mkdir(OFFLOAD, 0o700, dir_fd=dest.fd)
+            target = os.open(OFFLOAD, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dest.fd)
+            try:
+                dest.check_fd(target)
+                for _, name, meta in sorted(rows):
+                    room = os.fstatvfs(pin.fd)
+                    if room.f_bavail * room.f_frsize > need:
+                        break
+                    if name in keep:
+                        continue
+                    for suffix in ('', '.json', '.sha256'):
+                        try:
+                            source = os.open(name + suffix, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=folder)
+                        except FileNotFoundError:
+                            continue
+                        try:
+                            pin.check_fd(source)
+                            out = os.open(name + suffix + '.part', os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                          0o600, dir_fd=target)
+                            try:
+                                while chunk := os.read(source, 1 << 20):
+                                    view = memoryview(chunk)
+                                    while view:
+                                        view = view[os.write(out, view):]
+                                os.fsync(out)
+                            finally:
+                                os.close(out)
+                        finally:
+                            os.close(source)
+                        os.rename(name + suffix + '.part', name + suffix, src_dir_fd=target, dst_dir_fd=target)
+                    copy = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=target)
+                    try:
+                        same = fs.hash_fd(copy) == meta['sha256']
+                    finally:
+                        os.close(copy)
+                    os.fsync(target)
+                    require(same, 'OFFLOAD_MISMATCH', 'A BOOT copied to the card differs; it stays on cache', boot=name)
+                    for suffix in ('', '.json', '.sha256'):
+                        with contextlib.suppress(FileNotFoundError):
+                            os.unlink(name + suffix, dir_fd=folder)
+                    os.fsync(folder)
+                    moved.append(name)
+            finally:
+                os.close(target)
+        return moved
+
+
 def tidy_cache(context):
     """Cache tidied at every start of the recovery (2026-11-12, the owner: "cache should clean
     itself, removing old copies of recovery or BOOT; the settings and the newest copies of
@@ -551,6 +633,12 @@ def save_on_cache(context, name, image, meta, progress, keep_mounted=False, fold
                     # 2026-11-11, on the phone: a root install stopped here with copies of the same
                     # BOOT and of older recoveries filling cache. They go first.
                     make_room(pin)
+                    room = os.fstatvfs(pin.fd)
+                if room.f_bavail * room.f_frsize <= end + (8 << 20):
+                    # Then older kept BOOTs that are the only copies of themselves move to a card, whatever is
+                    # being written (2026-11-21: Root's patched BOOT goes to a22x-recovery/root).
+                    with contextlib.suppress(FileNotFoundError, NotADirectoryError):
+                        offload_to_card(context, pin, end + (8 << 20))
                     room = os.fstatvfs(pin.fd)
                 require(room.f_bavail * room.f_frsize > end + (8 << 20), 'CACHE_FULL', 'Cache has no room to keep this BOOT')
                 # 2026-11-13 review: a write cut short (ENOSPC, EIO, power) left NAME.img without its

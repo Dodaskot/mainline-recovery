@@ -99,7 +99,7 @@ static void render_images(App*a){
         text(a,52,962,1,TEXT,"Delete this image?");
         raw_text(true);ellipsis(a,52,1020,616,0,TEXT,s->name[0]?s->name:s->file);snprintf(line,sizeof(line),"%s  /  %s",s->file,size);ellipsis(a,52,1062,616,0,MUTED,line);raw_text(false);
         wrapped(a,52,1116,616,0,MUTED,"It is removed from the phone's memory. Installed systems are not affected.",3);
-        button(a,(Rect){40,1240,640,96},"Hold 2 seconds to delete",A_IMAGE_DELETE_CONFIRM,free_ui,true,2000);
+        button(a,(Rect){40,1240,640,96},"Hold 1 second to delete",A_IMAGE_DELETE_CONFIRM,free_ui,true,2000);
         button(a,(Rect){40,1352,640,84},"Cancel",A_IMAGE_DELETE_CANCEL,true,false,0);
     }
     if(a->systems_mount_sheet)render_systems_mount(a);

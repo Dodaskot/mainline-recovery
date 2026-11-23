@@ -112,7 +112,7 @@ static void render_systems_apps(App*a){
         else ellipsis(a,r.x+10,r.y+62,r.w-20,0,ink,label);
         raw_text(false);
         if(on){
-            int cx=r.x+r.w-24,cy=r.y+22;uint32_t ink=ui_theme->hero_text;
+            int cx=r.x+r.w-24,cy=r.y+22;uint32_t ink=ON_ORANGE;
             rounded(a,(Rect){cx-15,cy-15,30,30},15,ORANGE);
             vector_line(a,cx-8,cy+1,cx-3,cy+6,3,ink);vector_line(a,cx-3,cy+6,cx+8,cy-6,3,ink);
         }
@@ -135,7 +135,7 @@ static void render_package_search(App*a){
         int x=28;
         for(unsigned int n=0;n<PKG_FAMILIES;n++){
             int w=text_width(pkg_family_labels[n],0)+40;Rect r={x,y,w,52};
-            rounded(a,r,26,a->pkg_family==n?ORANGE:PANEL);centered(a,r,0,a->pkg_family==n?ui_theme->hero_text:TEXT,pkg_family_labels[n]);
+            rounded(a,r,26,a->pkg_family==n?ORANGE:PANEL);centered(a,r,0,a->pkg_family==n?ON_ORANGE:TEXT,pkg_family_labels[n]);
             register_button(a,r,A_PKG_FAMILY+(int)n,!busy,0);x+=w+10;
         }
         y+=72;

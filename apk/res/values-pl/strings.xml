@@ -167,7 +167,7 @@
     <string name="update_unreadable">Nie udało się odczytać wydań. Sprawdź sieć i otwórz stronę ponownie.</string>
     <string name="update_newer">Opublikowano nowszą aplikację.</string>
     <string name="update_current">Aplikacja jest aktualna.</string>
-    <string name="update_hold">Przytrzymaj, aby zaktualizować aplikację</string>
+    <string name="update_hold">Zaktualizuj aplikację</string>
     <string name="update_downloading">Pobieranie: %1$d%%</string>
     <string name="update_installing">Instaluję aktualizację; aplikacja zamknie się i otworzy ponownie.</string>
     <string name="boot_kept_title">Fabryczny BOOT</string>

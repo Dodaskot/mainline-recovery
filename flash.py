@@ -8,14 +8,14 @@ check    reads the whole image and reports what it is; nothing is written.
          BOOT, a filesystem image to userdata. That is Restore from an image.
 write    saves a small partition first when it can, writes, then reads it back.
 
-Only the partitions of a normal Android image are offered. Recovery is left out,
-so a flash can never remove the way back. Bootloaders, modem firmware and
-calibration data are never reachable from here.
+The recovery partition can replace itself. Bootloaders, modem firmware and
+calibration data are outside the allowlist.
 """
 import argparse
 import contextlib
 import hashlib
 import json
+import re
 import lzma
 import os
 from pathlib import Path
@@ -37,7 +37,9 @@ import lp_metadata as lp
 import saved_boot
 import sevenzip
 from install import require
-from operation_lock import operation_lock
+from operation_lock import lease, operation_lock
+
+RecoveryError = install._backend_storage().RecoveryError
 
 TARGETS = (('boot', 'Kernel and ramdisk'), ('dtbo', 'Device tree overlays'),
            ('vbmeta', 'Verified boot data'), ('vbmeta_system', 'Verified boot data for system'),
@@ -349,6 +351,10 @@ def members(context, args):
             extra['installer'] = 'META-INF/com/google/android/update-binary' in names
             extra['block_ota'] = any(name.endswith('.transfer.list') for name in names)
             extra['payload'] = 'payload.bin' in names
+            if extra['payload']:
+                # The partitions of an update_engine payload (2026-11-22): each is taken out into an image of
+                # its own first (payload-stage), an incremental one built from the partition installed here.
+                found.extend(payload_members(fd, labels))
         elif os.pread(fd, 5, 257) == b'ustar':
             kind = 'tar'
             with shared_offset(fd) as handle, tarfile.open(fileobj=handle, mode='r:') as archive:
@@ -364,6 +370,144 @@ def members(context, args):
                 continue
             found.append({'name': name, 'size': size, 'target': image_target(name, labels)})
     return {'archive': kind, 'members': found[:64], **extra}
+
+
+PAYLOAD_PREFIX = 'payload.bin/'
+PAYLOAD_STAGE = 'A22xImages'
+PAYLOAD_SPARE = 64 << 20
+
+
+def payload_target(name, labels):
+    """The partition a payload's partition NAME goes to here, or ''."""
+    import android_rom
+    where, _ = android_rom.classify(name, ('system', 'vendor', 'product', 'odm'))
+    if where == 'refused':
+        return ''
+    return image_target(name + '.img', labels) or ''
+
+
+def payload_members(fd, labels):
+    import android_rom
+    rows = []
+    with shared_offset(fd) as handle, zipfile.ZipFile(handle) as archive:
+        try:
+            payload = android_rom.Payload(archive)
+        except android_rom.RomError:
+            return rows
+        for part in payload.partitions:
+            target = payload_target(part['name'], labels)
+            row = {'name': PAYLOAD_PREFIX + part['name'], 'size': part['size'], 'target': target, 'payload': True,
+                   'incremental': not payload.full(part)}
+            if row['incremental']:
+                missing = payload.unsupported(part)
+                row['applicable'] = not missing
+                if missing:
+                    row['target'], row['unsupported_operations'] = '', missing
+            rows.append(row)
+    return rows
+
+
+class ExtentReader:
+    """A logical partition of super read as one file: SPANS [(offset in super, or None for zeros, length)]."""
+    def __init__(self, fd, spans):
+        self.fd, self.spans, self.at = fd, spans, 0
+        self.size = sum(length for _, length in spans)
+
+    def seek(self, at, whence=0):
+        self.at = at if whence == 0 else (self.at + at if whence == 1 else self.size + at)
+        return self.at
+
+    def read(self, count=-1):
+        count = self.size - self.at if count is None or count < 0 else count
+        out, base = bytearray(), 0
+        for offset, length in self.spans:
+            if count <= 0:
+                break
+            if self.at < base + length:
+                inside = self.at - base
+                take = min(count, length - inside)
+                out += bytes(take) if offset is None else os.pread(self.fd, take, offset + inside)
+                self.at += take
+                count -= take
+            base += length
+        return bytes(out)
+
+
+@contextlib.contextmanager
+def installed_partition(context, label):
+    """The partition LABEL as it is now, opened for reading as one file."""
+    name = logical_name(label)
+    if name:
+        _, sfd, found = open_super(context)
+        try:
+            spans = [(e['start'] * lp.SECTOR if e['type'] == lp.TARGET_LINEAR else None, e['sectors'] * lp.SECTOR)
+                     for e in found.extents_of(found.partition(name))]
+            yield ExtentReader(sfd, spans)
+        finally:
+            os.close(sfd)
+        return
+    target = context.target(label)
+    with os.fdopen(context.open_target(target), 'rb') as f:
+        yield f
+
+
+def payload_stage(context, args, progress):
+    """The payload's partition taken out of the ZIP into an image on the same volume (A22xImages), which
+    Flash then checks and writes as any image. An incremental partition is built from the one installed
+    here, which is only read (android_rom.Payload.extract checks it against the update first)."""
+    import android_rom
+    labels = {row['label'] for row in targets(context)['targets']}
+    stem = re.sub(r'[^A-Za-z0-9._-]+', '_', Path(args.path).name)
+    stem = (stem[:-4] if stem.lower().endswith('.zip') else stem)[:80]
+    out_name = '%s.%s.img' % (stem, re.sub(r'[^a-z0-9_]', '', args.partition)[:32])
+    with operation_lock(context.lock_path, context.mode):
+        with source_file(context, args.volume, args.volume_token, args.path) as fd, \
+                shared_offset(fd) as handle, zipfile.ZipFile(handle) as archive:
+            try:
+                payload = android_rom.Payload(archive)
+                part = next((p for p in payload.partitions if p['name'] == args.partition), None)
+                require(part is not None, 'NO_SUCH_PARTITION', 'The payload has no such partition', partition=args.partition)
+                label = payload_target(part['name'], labels)
+                require(label, 'PARTITION_REFUSED', 'This partition of the payload is not written by this recovery',
+                        partition=args.partition)
+                incremental = not payload.full(part)
+                with fs.PinnedVolume(context.fs, args.volume, args.volume_token, writing=True) as dest:
+                    with contextlib.suppress(FileExistsError):
+                        os.mkdir(PAYLOAD_STAGE, 0o755, dir_fd=dest.fd)
+                    folder = os.open(PAYLOAD_STAGE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=dest.fd)
+                    try:
+                        dest.check_fd(folder)
+                        room = os.fstatvfs(folder)
+                        require(room.f_bavail * room.f_frsize >= part['size'] + PAYLOAD_SPARE, 'INSUFFICIENT_SPACE',
+                                'There is no room on this volume for the image of this partition',
+                                needed_bytes=part['size'] + PAYLOAD_SPARE, free_bytes=room.f_bavail * room.f_frsize)
+                        partial = out_name + '.part'
+                        out_fd = os.open(partial, os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644,
+                                         dir_fd=folder)
+                        done = False
+                        try:
+                            with os.fdopen(out_fd, 'w+b') as out:
+                                step = lambda at, total: progress('Unpacking', {'label': label, 'size_bytes': total}, at)
+                                if incremental:
+                                    with installed_partition(context, label) as source:
+                                        digest = payload.extract(part, out, source, progress=step)
+                                else:
+                                    digest = payload.extract(part, out, progress=step)
+                                out.flush()
+                                os.fsync(out.fileno())
+                            os.rename(partial, out_name, src_dir_fd=folder, dst_dir_fd=folder)
+                            os.fsync(folder)
+                            done = True
+                        finally:
+                            if not done:
+                                with contextlib.suppress(FileNotFoundError):
+                                    os.unlink(partial, dir_fd=folder)
+                    finally:
+                        os.close(folder)
+            except android_rom.RomError as error:
+                fs.fail(error.code, error.message, **error.details)
+    return {'partition': part['name'], 'target': label, 'incremental': incremental, 'volume': args.volume,
+            'path': '/%s/%s' % (PAYLOAD_STAGE, out_name), 'size_bytes': part['size'], 'sha256': digest}
 
 
 def open_reader(fd, compression, size=0):
@@ -545,6 +689,9 @@ def source_file(context, volume, token, path):
             os.close(fd)
 
 
+ROLLBACKS_ON_CARDS = 3
+
+
 def rollback_volume(context, size, skip_cache=False, make_room=False):
     """A mounted writable volume for the old content, removable storage first. Cache is small
     (200 MiB): with SKIP_CACHE it is passed over (the BOOT is already kept there once), and with
@@ -702,8 +849,9 @@ def save_rollback(context, target, progress, chunks=None, skip_cache=False, pend
                     raise
                 finally:
                     os.close(out)
-                if volume['id'] == 'cache':
-                    saved_boot.prune_rollbacks(folder, keep=name)
+                # 2026-11-21, on the phone: on a card the copies were never pruned, and 41 recoveries (1.8 GB)
+                # filled its first partition until a push failed. A card keeps the newest three of each.
+                saved_boot.prune_rollbacks(folder, keep=name, newest=1 if volume['id'] == 'cache' else ROLLBACKS_ON_CARDS)
             finally:
                 os.close(folder)
     finally:
@@ -780,26 +928,43 @@ def open_super(context, write=False):
         raise
 
 
-def targets(context):
-    rows = []
-    for label, title in TARGETS:
+@contextlib.contextmanager
+def list_super(context):
+    """Read the metadata with the recovery lease, without unmounting logical volumes."""
+    target = context.target('super')
+    with lease(context.lock_path, context.mode):
+        if context.mode == 'device':
+            fd = os.open(target['path'], os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+        else:
+            fd = context.open_target(target)
         try:
-            rows.append({'label': label, 'title': title, 'size_bytes': context.target(label)['size_bytes']})
-        except (OSError, fs.FilesystemError):
+            context.check_target(fd, target)
+            yield lp.Super(fd)
+        finally:
+            os.close(fd)
+
+
+def targets(context):
+    """The partitions that can be flashed, by name (2026-11-21, a tester, #8: in a fixed order they looked
+    random), each with its block device (mmcblk0pN: this recovery has no /dev/block/by-name of Android's)."""
+    rows = []
+    for label, title in sorted(TARGETS):
+        try:
+            found = context.target(label)
+            rows.append({'label': label, 'title': title, 'size_bytes': found['size_bytes'],
+                         'node': os.path.basename(str(found.get('path') or ''))})
+        except (OSError, fs.FilesystemError, RecoveryError):
             continue
     extra = {}
     try:
-        _, fd, found = open_super(context)
-    except (OSError, fs.FilesystemError, lp.MetadataError):
-        found = None
-    if found is not None:
-        try:
-            for p in found.metadata['partitions']:
-                rows.append({'label': LOGICAL_PREFIX + p['name'], 'title': 'Logical partition in super',
-                             'size_bytes': found.size_of(p), 'logical': True, 'room_bytes': found.room(p)})
+        with list_super(context) as found:
+            logical = [{'label': LOGICAL_PREFIX + p['name'], 'title': 'Logical partition in super',
+                        'size_bytes': found.size_of(p), 'logical': True, 'room_bytes': found.room(p)}
+                       for p in sorted(found.metadata['partitions'], key=lambda p: p['name'])]
             extra = {'super_free_bytes': found.describe()['free_bytes']}
-        finally:
-            os.close(fd)
+            rows.extend(logical)
+    except (OSError, fs.FilesystemError, RecoveryError, lp.MetadataError) as error:
+        extra['super_error'] = str(error)
     return {'targets': rows, **extra}
 
 
@@ -840,17 +1005,17 @@ def check_logical(context, args, progress, name):
                     progress('Checking the image', shown, count)
             finally:
                 close_reader(reader)
-            align = max(found.metadata['devices'][0]['alignment'], lp.SECTOR)
-            # An image that fits keeps the partition as it is; only a larger one makes it grow, to
-            # super's alignment (2026-11-10: odm of 4,349,952 bytes, not a whole MiB, and its own
-            # image would have been shown "growing" to 5 MiB).
-            grown = current if count <= current else -(-count // align) * align
+            # The partition takes the image's size, as fastboot does (2026-11-21, #9: images of other
+            # sizes for system, vendor, product and odm): a larger one grows into super's free space,
+            # a smaller one gives its rest back, so the next image has room. To the logical block, as
+            # liblp: an image's AVB footer stays at the end of the partition (odm's 4,349,952 bytes).
+            grown = fitted_size(found, count, current)
             require(count > 0, 'IMAGE_EMPTY', 'The image is empty')
             # As for the partitions outside super: a small one is compared with the image (and
             # the zeros after it), and its content is saved before it is written.
             small = current <= ROLLBACK_LIMIT
             identical = False
-            if small and count <= current:
+            if small and grown == current:
                 padded, left = digest.copy(), current - count
                 while left:
                     padded.update(bytes(min(left, 1 << 20)))
@@ -924,10 +1089,18 @@ def write_logical(context, args, progress, name):
         return result
 
 
+def fitted_size(found, count, current):
+    """The size a logical partition takes for an image of COUNT bytes: COUNT rounded up to super's
+    logical block, or CURRENT when that is already it."""
+    unit = max(found.geometry['logical_block_size'], lp.SECTOR)
+    fitted = -(-count // unit) * unit
+    return current if fitted == -(-current // unit) * unit else fitted
+
+
 def write_logical_content(context, args, progress, name, fd, compression, found, sfd, current, rollback):
     """The image written into logical partition NAME of super and read back (write_logical puts the saved copy back when this fails)."""
-    if args.image_bytes > current:
-        found.resize(name, args.image_bytes)  # The metadata, every copy, read back.
+    if fitted_size(found, args.image_bytes, current) != current:
+        found.resize(name, args.image_bytes)  # Grown or shrunk; the metadata, every copy, read back.
     total = found.size_of(found.partition(name))
     image_format = layout(fd, compression, total)
     reader = open_reader(fd, compression, total)
@@ -1303,6 +1476,11 @@ def parser():
     listed.add_argument('--volume', required=True)
     listed.add_argument('--volume-token', required=True)
     listed.add_argument('--path', required=True)
+    staged = commands.add_parser('payload-stage')
+    staged.add_argument('--volume', required=True)
+    staged.add_argument('--volume-token', required=True)
+    staged.add_argument('--path', required=True)
+    staged.add_argument('--partition', required=True)
     for name in ('check', 'write'):
         command = commands.add_parser(name)
         command.add_argument('--target', type=target_choice, required=True)
@@ -1345,11 +1523,13 @@ def main(argv=None):
             result = check(context, args, progress)
         elif args.command == 'members':
             result = members(context, args)
+        elif args.command == 'payload-stage':
+            result = payload_stage(context, args, progress)
         else:
             result = write(context, args, progress)
         print(json.dumps({'ok': True, 'operation': args.command, **result}, separators=(',', ':')), flush=True)
         return 0
-    except (OSError, ValueError, subprocess.SubprocessError, fs.FilesystemError) as error:
+    except (OSError, ValueError, subprocess.SubprocessError, fs.FilesystemError, RecoveryError) as error:
         code = getattr(error, 'code', None) or ('OPERATION_BUSY' if isinstance(error, BlockingIOError) else 'IO_ERROR')
         print(json.dumps({'ok': False, 'operation': args.command, 'error': {
             'code': code, 'message': str(error), 'details': getattr(error, 'details', {})}}, separators=(',', ':')), flush=True)

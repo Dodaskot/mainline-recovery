@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MIT
  * Partition a card, as TWRP's Partition SD card (2026-11-11): sdcard.py lists the card in the
- * slot and USB drives, and writes a new table with a FAT32 partition for files and, on request,
+ * slot and USB drives, and writes a new table with a partition for files (exFAT, FAT32, ext4 or F2FS
+ * since 2026-11-20) and, on request,
  * ext4 for Linux and swap. The page shows what the card holds now, since all of it is lost, and
  * nothing is written before the hold. The sizes offered here are checked again by the helper.
  */
@@ -8,6 +9,10 @@
 #define A22X_CARD_UI_H
 
 static const unsigned int card_linux_gib[]={0,8,16,32,64},card_swap_gib[]={0,1,2,4};
+/* The partition for files: exFAT first (2026-11-20, the owner: files over 4 GiB, backups), FAT32 for old
+   readers, ext4 or F2FS for Linux; sdcard.py --files-fs. */
+static const char*const card_files_fs[]={"exfat","vfat","ext4","f2fs"},*const card_files_label[]={"exFAT","FAT32","ext4","F2FS"};
+#define CARD_FILES_CHOICES 4u
 #define CARD_LINUX_CHOICES (sizeof(card_linux_gib)/sizeof(card_linux_gib[0]))
 #define CARD_SWAP_CHOICES (sizeof(card_swap_gib)/sizeof(card_swap_gib[0]))
 
@@ -28,7 +33,8 @@ static bool start_card_job(App*a,int kind){
         if(!c||c->busy_code[0]||!card_files_bytes(c,a->card_linux,a->card_swap))return false;
         snprintf(a->card_linux_arg,sizeof(a->card_linux_arg),"%u",a->card_linux*1024u);snprintf(a->card_swap_arg,sizeof(a->card_swap_arg),"%u",a->card_swap*1024u);
         args[n++]="apply";args[n++]="--disk";args[n++]=c->id;args[n++]="--expected-token";args[n++]=c->token;
-        args[n++]="--linux-mib";args[n++]=a->card_linux_arg;args[n++]="--swap-mib";args[n++]=a->card_swap_arg;args[n++]="--confirm";
+        args[n++]="--linux-mib";args[n++]=a->card_linux_arg;args[n++]="--swap-mib";args[n++]=a->card_swap_arg;
+        args[n++]="--files-fs";args[n++]=(char*)card_files_fs[a->card_files_fs<CARD_FILES_CHOICES?a->card_files_fs:0];args[n++]="--confirm";
     }
     args[n]=NULL;if(!launch_job(a,kind,args))return false;
     a->result_return=CARD_PAGE;return true;
@@ -75,10 +81,14 @@ static void complete_card_job(App*a,const Json*j,int kind,bool ok){
     char text[384]="",size[48];int made=json_get(j,0,"created");
     for(int p=made+1;made>=0&&p<j->count&&j->tokens[p].start<j->tokens[made].end;p=json_next(j,p)){
         if(j->tokens[p].type!=J_OBJECT)continue;
-        char what[16]={0};jstring(j,p,"kind",what,sizeof(what));human_bytes(json_uint(j,json_get(j,p,"size_bytes"),0),size,sizeof(size));
-        const char*name=!strcmp(what,"files")?"Files (FAT32)":(!strcmp(what,"linux")?"Linux (ext4)":"Swap");
+        char what[16]={0},made_fs[16]={0},name[64];jstring(j,p,"kind",what,sizeof(what));jstring(j,p,"fs",made_fs,sizeof(made_fs));human_bytes(json_uint(j,json_get(j,p,"size_bytes"),0),size,sizeof(size));
+        if(!strcmp(what,"files")){
+            /* Its filesystem as chosen (2026-11-20); an older helper says none, and made FAT32. */
+            const char*label="FAT32";for(unsigned int n=0;n<CARD_FILES_CHOICES;n++)if(!strcmp(made_fs,card_files_fs[n]))label=card_files_label[n];
+            snprintf(name,sizeof(name),"%s (%s)",tr("Files"),label);
+        }else copy(name,sizeof(name),tr(!strcmp(what,"linux")?"Linux (ext4)":"Swap"));
         if(text[0])append(text,sizeof(text),"\n");
-        append(text,sizeof(text),tr(name));append(text,sizeof(text),": ");append(text,sizeof(text),size);
+        append(text,sizeof(text),name);append(text,sizeof(text),": ");append(text,sizeof(text),size);
     }
     a->successful=true;copy(a->status,sizeof(a->status),"Card partitioned");
     snprintf(a->message,sizeof(a->message),"%s\n\n%s",text,tr("Mount the card in Files to use it."));
@@ -129,17 +139,23 @@ static void render_card(App*a){
     if(c->part_count>shown){snprintf(line,sizeof(line),T("and %u more"),c->part_count-shown);text(a,52,y,0,MUTED,line);}
     y=242+height+16;
     if(a->card_count>1){button(a,(Rect){28,y,664,72},"Next card",A_CARD_NEXT,free_ui,false,0);y+=88;}
-    rounded(a,(Rect){28,y,664,330},24,PANEL);
+    rounded(a,(Rect){28,y,664,420},24,PANEL);
     card_chips(a,y+18,"LINUX (EXT4)",card_linux_gib,CARD_LINUX_CHOICES,a->card_linux,A_CARD_LINUX,c,true,free_ui);
     card_chips(a,y+130,"SWAP",card_swap_gib,CARD_SWAP_CHOICES,a->card_swap,A_CARD_SWAP,c,false,free_ui);
     uint64_t files=card_files_bytes(c,a->card_linux,a->card_swap);human_bytes(files,size,sizeof(size));
-    text(a,52,y+248,0,ORANGE,"FILES (FAT32)");
-    raw_text(true);text(a,52,y+280,1,files?TEXT:RED,files?size:"-");raw_text(false);
-    text(a,668-text_width(tr("the rest of the card"),0),y+286,0,MUTED,"the rest of the card");
-    y+=346;
+    text(a,52,y+248,0,ORANGE,"FILES");
+    raw_text(true);text(a,668-text_width(files?size:"-",1),y+242,1,files?TEXT:RED,files?size:"-");raw_text(false);
+    {int width=(616-3*8)/4;
+     for(unsigned int n=0;n<CARD_FILES_CHOICES;n++){
+        Rect r={52+(int)n*(width+8),y+290,width,64};bool on=n==a->card_files_fs;
+        rounded(a,r,32,on?ORANGE:PANEL2);raw_text(true);centered(a,r,1,on?ui_theme->on_accent:TEXT,card_files_label[n]);raw_text(false);
+        register_button(a,r,A_CARD_FILES+(int)n,free_ui&&!on,0);
+     }}
+    text(a,52,y+370,0,MUTED,a->card_files_fs==1?"Each file up to 4 GiB":(a->card_files_fs>=2?"For Linux; Android does not read it":"Large files, read by Android and computers"));
+    y+=436;
     if(c->busy_code[0])y+=text_tile(a,y,1,ORANGE,c->busy,3)+12;
     text_tile(a,y,0,RED,"Everything on this card is erased: its partitions, systems and files.",3);
-    button(a,(Rect){28,1320,664,104},"Hold 5 seconds: erase and partition",A_CARD_APPLY,free_ui&&!c->busy_code[0]&&files>0,true,5000);
+    button(a,(Rect){28,1320,664,104},"Hold 2 seconds: erase and partition",A_CARD_APPLY,free_ui&&!c->busy_code[0]&&files>0,true,5000);
 }
 static bool card_action(App*a,int id){
     if(id==A_CARD&&(a->screen==WIPE||a->screen==CARD_PAGE)){
@@ -149,8 +165,9 @@ static bool card_action(App*a,int id){
     }
     if(a->screen!=CARD_PAGE)return false;
     if(id==A_BACK){reopen(a,came_from(a,WIPE));return true;}
-    CardDisk*c=card_current(a);if(!c||!ui_free(a))return id==A_CARD_NEXT||id==A_CARD_APPLY||(id>=A_CARD_LINUX&&id<A_CARD_SWAP+(int)CARD_SWAP_CHOICES);
+    CardDisk*c=card_current(a);if(!c||!ui_free(a))return id==A_CARD_NEXT||id==A_CARD_APPLY||(id>=A_CARD_LINUX&&id<A_CARD_FILES+(int)CARD_FILES_CHOICES);
     if(id==A_CARD_NEXT){a->card_index=(a->card_index+1)%(int)a->card_count;card_fit_choices(a);a->dirty=true;return true;}
+    if(id>=A_CARD_FILES&&id<A_CARD_FILES+(int)CARD_FILES_CHOICES){a->card_files_fs=(unsigned int)(id-A_CARD_FILES);a->dirty=true;return true;}
     if(id>=A_CARD_LINUX&&id<A_CARD_LINUX+(int)CARD_LINUX_CHOICES){
         if(card_files_bytes(c,card_linux_gib[id-A_CARD_LINUX],a->card_swap))a->card_linux=card_linux_gib[id-A_CARD_LINUX];
         a->dirty=true;return true;

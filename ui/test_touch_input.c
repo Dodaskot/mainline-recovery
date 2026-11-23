@@ -49,6 +49,83 @@ done:
     for(int n=0;n<2;n++)if(fds[n]>=0)close(fds[n]);
     free(a->pixels);free(a);return ok;
 }
+
+/* A second Type-B contact during inertia stop must cancel until all slots lift. */
+static bool regression_two_finger_stop(void){
+    bool ok=false;int fds[2]={-1,-1};App*a=calloc(1,sizeof(*a));if(!a)return false;initialize(a);
+    TCHECK(preview(a,"volume-scroll"));a->profile_render=true;
+    apply_scroll(a,SCROLL_VOLUMES,500);render(a);
+    TCHECK(kinetic_begin(&a->kinetic,500,2200,(double)volume_max_scroll(a),1000));
+    a->motion_surface=SCROLL_VOLUMES;tick_inertia(a,1040);
+    int64_t offset=scroll_offset(a,SCROLL_VOLUMES);
+    TCHECK(offset>500&&a->kinetic.active);
+    TCHECK(pipe2(fds,O_NONBLOCK|O_CLOEXEC)==0);
+    Input input={.fd=fds[0],.clock_monotonic=true,.mt=true,.xmin=0,.xmax=CW-1,.ymin=0,.ymax=CH-1,.primary_id=-1};
+    for(int n=0;n<MAX_SLOTS;n++)input.slots[n].id=-1;
+    Display d={.vw=CW,.vh=CH};d.v.xres=CW;d.v.yres=CH;
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_SLOT,0,1100));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_TRACKING_ID,77,1100));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_POSITION_X,250,1100));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_POSITION_Y,650,1100));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_SYN,SYN_REPORT,0,1100));
+    TCHECK(input.down&&a->pointer_down&&a->scroll_stop_tap&&!a->kinetic.active&&!a->pressed_action);
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_SLOT,1,1120));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_TRACKING_ID,78,1120));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_POSITION_X,540,1120));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_POSITION_Y,700,1120));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_SYN,SYN_REPORT,0,1120));
+    TCHECK(input.need_release&&!input.down&&!a->pointer_down&&!a->pressed_action&&!a->kinetic.active);
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_TRACKING_ID,-1,1140));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_SYN,SYN_REPORT,0,1140));
+    TCHECK(input.need_release&&!input.down&&!a->pointer_down);
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_SLOT,0,1160));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_POSITION_Y,500,1160));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_SYN,SYN_REPORT,0,1160));
+    TCHECK(input.need_release&&!a->pointer_down&&scroll_offset(a,SCROLL_VOLUMES)==offset);
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_TRACKING_ID,-1,1180));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_SYN,SYN_REPORT,0,1180));
+    TCHECK(!input.need_release&&!input.down&&!a->pointer_down&&!a->job.pid);
+    TCHECK(a->screen==FILE_VOLUMES&&scroll_offset(a,SCROLL_VOLUMES)==offset);
+    ok=true;
+done:
+    for(int n=0;n<2;n++)if(fds[n]>=0)close(fds[n]);
+    free(a->pixels);free(a);return ok;
+}
+
+/* The inertia-stopping finger can immediately drag; a row tap remains suppressed. */
+static bool regression_drag_after_stop(void){
+    bool ok=false;int fds[2]={-1,-1};App*a=calloc(1,sizeof(*a));if(!a)return false;initialize(a);
+    TCHECK(preview(a,"volume-scroll"));a->profile_render=true;
+    apply_scroll(a,SCROLL_VOLUMES,500);render(a);
+    TCHECK(kinetic_begin(&a->kinetic,500,2200,(double)volume_max_scroll(a),1000));
+    a->motion_surface=SCROLL_VOLUMES;tick_inertia(a,1040);
+    int64_t offset=scroll_offset(a,SCROLL_VOLUMES);
+    TCHECK(offset>500&&a->kinetic.active);
+    TCHECK(pipe2(fds,O_NONBLOCK|O_CLOEXEC)==0);
+    Input input={.fd=fds[0],.clock_monotonic=true,.mt=true,.xmin=0,.xmax=CW-1,.ymin=0,.ymax=CH-1,.primary_id=-1};
+    for(int n=0;n<MAX_SLOTS;n++)input.slots[n].id=-1;
+    Display d={.vw=CW,.vh=CH};d.v.xres=CW;d.v.yres=CH;
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_SLOT,0,1100));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_TRACKING_ID,77,1100));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_POSITION_X,250,1100));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_POSITION_Y,650,1100));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_SYN,SYN_REPORT,0,1100));
+    TCHECK(a->scroll_stop_tap&&!a->kinetic.active&&a->pointer_down&&!a->pressed_action);
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_POSITION_Y,510,1140));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_SYN,SYN_REPORT,0,1140));
+    TCHECK(a->scroll_moved&&a->scroll_dragging&&a->scroll_stop_tap&&!a->pressed_action);
+    int64_t dragged=scroll_offset(a,SCROLL_VOLUMES);
+    TCHECK(dragged>offset&&a->screen==FILE_VOLUMES&&!a->job.pid);
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_ABS,ABS_MT_TRACKING_ID,-1,1180));
+    TCHECK(feed_input(fds[1],&input,a,&d,EV_SYN,SYN_REPORT,0,1180));
+    TCHECK(!input.down&&!a->pointer_down&&!a->pressed_action&&!a->scroll_stop_tap);
+    TCHECK(a->screen==FILE_VOLUMES&&scroll_offset(a,SCROLL_VOLUMES)==dragged&&!a->job.pid);
+    ok=true;
+done:
+    for(int n=0;n<2;n++)if(fds[n]>=0)close(fds[n]);
+    free(a->pixels);free(a);return ok;
+}
+
 static bool navigation_key(void){
     bool ok=false;int fds[2]={-1,-1};App*a=calloc(1,sizeof(*a));if(!a)return false;initialize(a);
     TCHECK(preview(a,"volume-scroll"));render(a);a->profile_render=true;
@@ -66,6 +143,7 @@ int main(void){
        !stopping_contact("file-scroll",SCROLL_FOLDER,true,true)||
        !stopping_contact("editor-scroll",SCROLL_TEXT,true,true)||
        !stopping_contact("volume-scroll",SCROLL_VOLUMES,false,true)||
-       !stopping_contact("volume-scroll",SCROLL_VOLUMES,true,false)||!navigation_key())return 1;
-    printf("{\"ok\":true,\"workflows\":6,\"checks\":%u,\"actual_evdev_decoder\":true,\"physical_device_io\":false}\n",checks);return 0;
+       !stopping_contact("volume-scroll",SCROLL_VOLUMES,true,false)||!navigation_key()||
+       !regression_two_finger_stop()||!regression_drag_after_stop())return 1;
+    printf("{\"ok\":true,\"workflows\":8,\"checks\":%u,\"actual_evdev_decoder\":true,\"physical_device_io\":false}\n",checks);return 0;
 }

@@ -167,7 +167,7 @@
     <string name="update_unreadable">Не вдалося прочитати випуски. Перевірте мережу й відкрийте сторінку ще раз.</string>
     <string name="update_newer">Опубліковано новіший застосунок.</string>
     <string name="update_current">Застосунок актуальний.</string>
-    <string name="update_hold">Утримайте, щоб оновити застосунок</string>
+    <string name="update_hold">Оновити застосунок</string>
     <string name="update_downloading">Завантаження: %1$d%%</string>
     <string name="update_installing">Встановлюю оновлення; застосунок закриється й відкриється знову.</string>
     <string name="boot_kept_title">Стоковий BOOT</string>

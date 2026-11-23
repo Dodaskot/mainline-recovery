@@ -17,7 +17,9 @@ import json
 import os
 import re
 from pathlib import Path
+import subprocess
 import sys
+from types import SimpleNamespace
 
 MISC = Path('/dev/disk/by-partlabel/misc')
 SIZE = 2048  # struct bootloader_message: command[32] status[32] recovery[768] stage[32] reserved[1184]
@@ -26,6 +28,100 @@ WIPE_ARGUMENTS = ('--prompt_and_wipe_data', '--wipe_data')
 
 def misc_path(context):
     return context.root / 'misc' if context.mode == 'fixture' else MISC
+
+
+# Samsung's Android writes its factory reset to /cache/recovery/command, AOSP's older place for it, and
+# leaves only "boot-recovery" in misc (2026-11-21, on the owner's phone: "--wipe_data",
+# "--reason=MasterClearConfirm,..."). AOSP's recovery reads the file when misc has no arguments; so does
+# this one, through a private read-only mount of cache that replays no journal.
+CACHE = Path('/dev/disk/by-partlabel/cache')
+CACHE_PEEK = Path('/run/a22x-recovery/.bcb-cache')
+COMMAND = 'recovery/command'
+
+
+def _cache_mounted(write):
+    if not re.fullmatch(r'/dev/mmcblk0p[0-9]+', os.path.realpath(CACHE)):
+        raise OSError('cache is not on the internal storage')
+    CACHE_PEEK.mkdir(mode=0o700, parents=True, exist_ok=True)
+    options = 'rw,nodev,nosuid,noexec' if write else 'ro,noload,nodev,nosuid,noexec'
+    done = subprocess.run(['/bin/busybox', 'mount', '-t', 'ext4', '-o', options, str(CACHE), str(CACHE_PEEK)],
+                          capture_output=True, timeout=20)
+    if done.returncode:
+        raise OSError('cache could not be mounted: ' + done.stderr.decode('utf-8', 'replace')[-120:])
+
+
+def _cache_mountpoint():
+    """Where cache is mounted already in this namespace, or None."""
+    st = os.stat(CACHE)
+    devno = '%d:%d' % (os.major(st.st_rdev), os.minor(st.st_rdev))
+    for line in Path('/proc/self/mountinfo').read_text().splitlines():
+        fields = line.split(' - ', 1)[0].split()
+        if len(fields) >= 5 and fields[2] == devno and fields[3] == '/':
+            return re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), fields[4])
+    return None
+
+
+def _cache_released():
+    subprocess.run(['/bin/busybox', 'umount', str(CACHE_PEEK)], capture_output=True, timeout=20)
+
+
+def cache_command(context):
+    """The lines of /cache/recovery/command, [] when there is none or it cannot be read."""
+    try:
+        if context.mode == 'fixture':
+            text = (context.root / 'cache-command').read_bytes()[:4096]
+        else:
+            mounted = _cache_mountpoint()
+            if mounted:
+                # Files already has cache open (Linux takes one mount of it at a time well).
+                with open(Path(mounted) / COMMAND, 'rb') as f:
+                    text = f.read(4096)
+            else:
+                _cache_mounted(False)
+                try:
+                    with open(CACHE_PEEK / COMMAND, 'rb') as f:
+                        text = f.read(4096)
+                finally:
+                    _cache_released()
+    except OSError:
+        return []
+    return [line for line in text.decode('utf-8', 'replace').splitlines() if line][:16]
+
+
+def forget_cache_command(context):
+    """The file removed, as AOSP's recovery does once it acted on it; True when there was one."""
+    if context.mode == 'fixture':
+        path = context.root / 'cache-command'
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+    _cache_mounted(True)
+    try:
+        path = CACHE_PEEK / COMMAND
+        if not path.exists():
+            return False
+        path.unlink()
+        fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        return True
+    finally:
+        _cache_released()
+
+
+def request(context):
+    """What Android asked: misc, or when misc names no arguments, Samsung's /cache/recovery/command."""
+    found = read(misc_path(context))
+    if not found['recovery'] and found['command'] in ('', 'boot-recovery'):
+        lines = cache_command(context)
+        if lines:
+            found = {'command': 'boot-recovery', 'recovery': lines, 'source': 'cache',
+                     'reason': next((line.split('=', 1)[1] for line in lines if line.startswith('--reason=')), '')[:128],
+                     'wipe': any(line in WIPE_ARGUMENTS for line in lines)}
+    return found
 
 
 def read(path):
@@ -89,7 +185,8 @@ def main(argv=None):
     parser.add_argument('command', choices=('read', 'arrive', 'forget'))
     args = parser.parse_args(argv)
     path = args.fixture / 'misc' if args.fixture else MISC
-    found = read(path)
+    context = SimpleNamespace(mode='fixture', root=args.fixture) if args.fixture else SimpleNamespace(mode='device')
+    found = request(context)
     cleared = False
     if args.command == 'arrive' and found['command'] == 'boot-recovery' and not found['wipe']:
         # "Start the recovery" (adb reboot recovery, Android's power menu) is done by arriving here:
@@ -101,11 +198,12 @@ def main(argv=None):
             cleared = False
     if args.command == 'forget' and found['wipe']:
         try:
-            cleared = clear(path)
+            cleared = forget_cache_command(context) if found.get('source') == 'cache' else False
+            cleared = clear(path) or cleared
         except OSError:
             print(json.dumps({'ok': False, **found, 'cleared': False}, separators=(',', ':')))
             return 2
-        found = read(path)
+        found = request(context)
     print(json.dumps({'ok': True, **found, 'cleared': cleared}, separators=(',', ':')))
     return 0
 

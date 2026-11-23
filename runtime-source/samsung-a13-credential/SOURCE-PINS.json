@@ -1,0 +1,15 @@
+{
+  "credential_codec.h": "395afa881b1b7d49ad3cda7a5b789d9bfa9fc70c57a9d918ba1ecbc1463c184d",
+  "credential_codec.cpp": "e5ae42a5b25ae7d4c763b14902248db3b829404acb1dc3fb3b368c449219d14f",
+  "credential_frame.cpp": "7578b3bcbf2967e7a8e28796d4733c3fa3cba50f6a26f1733bdd4f0b9d9e0f51",
+  "test_credential_codec.cpp": "924bdc99be4c66954679ab6d0548efb213ae54772c1d83de1baa23542c3fe97d",
+  "test_credential_frame.cpp": "744aa4e36159bce90b5fa9bedbd66ac5b1a6c0fc5b5417430ea8ce9f621fa360",
+  "unlock_main.cpp": {
+    "base_sha256": "caeb7bcf5651a11f1ed8c1cb7ff1a42095a0ea61c0b9da9e447bbe33ee1f2df9",
+    "patched_sha256": "b48af9b8f85b45fbb00f226ff328c2b9178de5705697e84b8de79f7e44add2ef"
+  },
+  "snapshot.c": {
+    "base_sha256": "e2f6d6532867d0c89bf4cf07aca8613c5c8e3c40ec9a4315992619782d698539",
+    "patched_sha256": "e7d66557bd57ab95a20c0d6d9b423c1d9789ee276b9ff9a28b956d730814be03"
+  }
+}

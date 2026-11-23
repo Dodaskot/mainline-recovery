@@ -15,6 +15,62 @@ int main(int argc,char**argv){
     a->fs_dirty=true;copy(a->fs_text,sizeof(a->fs_text),"unsaved system editor ґ");screen(a,OS_MENU);
     SCHECK(test_press(a,A_SYSTEMS,50)&&a->screen==RESULT&&a->result_return==FILE_EDIT&&!a->job.pid&&!strcmp(a->fs_text,"unsaved system editor ґ"));
     a->fs_dirty=false;screen(a,OS_MENU);SCHECK(test_press(a,A_SYSTEMS,50)&&systems_settle(a)&&a->screen==SYSTEMS&&a->systems_known);
+    if(!strcmp(which,"android-script")){
+        SCHECK(a->systems_foreign&&a->systems_mounted&&systems_new_android(a)&&!systems_ready(a));
+        SCHECK(test_press(a,A_SYS_NEW,50)&&a->screen==SYSTEMS_NEW);
+        SCHECK(test_press(a,A_NEW_FILE,50)&&systems_settle(a)&&a->source_sheet);
+        int sd=-1;for(int n=0;n<a->volume_count;n++)if(!strcmp(a->volumes[n].id,"sdcard-p1"))sd=n;
+        SCHECK(sd>=0&&test_press(a,A_SOURCE_ITEM+sd,50)&&systems_settle(a)&&a->screen==FILE_BROWSER);
+        int image=-1;for(int n=0;n<a->file_count;n++)if(!strcmp(a->files[n].name,"rootfs.tar.gz"))image=n;
+        SCHECK(image>=0&&test_press(a,A_FS_ENTRY+image,50)&&systems_settle(a)&&a->screen==FILE_INFO);
+        SCHECK(test_press(a,A_SYS_USE_MANIFEST,50)&&a->screen==SYSTEMS_SETUP&&a->systems_wipe);
+        copy(a->systems_password,sizeof(a->systems_password),"fixture-password");
+        SCHECK(test_press(a,A_SYS_SETUP_NEXT,50)&&a->screen==SYSTEMS_EXTRAS);
+        SCHECK(test_press(a,A_SYS_SCRIPT,50)&&systems_settle(a)&&a->screen==FILE_VOLUMES);
+        int user=-1;for(int n=0;n<a->volume_count;n++)if(!strcmp(a->volumes[n].id,"userdata"))user=n;
+        SCHECK(user>=0&&!test_press(a,A_FS_VOLUME_ITEM+user,50));
+        /* The fixture has no cryptography. Exercise the picker with the verified mount fields a device publishes. */
+        FileVolume*v=&a->volumes[user];
+        copy(v->mount_owner,sizeof(v->mount_owner),"android-decrypt");
+        copy(v->decrypt_state,sizeof(v->decrypt_state),"mounted");
+        v->read_only=true;SCHECK(!test_press(a,A_FS_VOLUME_ITEM+user,50));v->read_only=false;
+        SCHECK(test_press(a,A_FS_VOLUME_ITEM+user,50)&&systems_settle(a)&&a->screen==FILE_BROWSER);
+        int script=-1;for(int n=0;n<a->file_count;n++)if(!strcmp(a->files[n].name,"setup.sh"))script=n;
+        SCHECK(script>=0);
+        browser_scroll_to(a,((int64_t)a->file_offset+script)*FILE_ROW_HEIGHT);
+        SCHECK(systems_settle(a)&&test_press(a,A_FS_ENTRY+script,50)&&systems_settle(a)&&a->screen==FILE_INFO);
+        SCHECK(test_press(a,A_SYS_USE_SCRIPT,50)&&a->job.kind==J_SYS_STAGE_ANDROID_SCRIPT&&systems_settle(a)&&a->screen==SYSTEMS_EXTRAS);
+        SCHECK(!strcmp(a->systems_script_volume,"recovery-ram")&&valid_sha256(a->systems_script_token)&&!strcmp(a->systems_script_name,"setup.sh"));
+        SCHECK(test_press(a,A_SYS_SETUP_NEXT,50)&&systems_settle(a)&&a->screen==SYSTEMS_PLAN&&a->systems_plan_valid&&!a->systems_mounted);
+        SCHECK(a->systems_plan_clean&&access(a->systems_script_path,F_OK)==0);
+        goto finished;
+    }
+    if(!strncmp(which,"android-",8)&&strcmp(which,"android-plan")){
+        bool mounted=strcmp(which,"android-unmounted")!=0;
+        SCHECK(a->systems_foreign&&a->systems_mounted==mounted&&!a->systems_initialized&&!a->systems_empty&&!a->systems_slot_count);
+        SCHECK(!systems_ready(a)&&!systems_can_mount(a)&&!test_press(a,A_SYS_IMPORT,50)&&!a->job.pid);
+        SCHECK(systems_new_android(a));
+        /* A future writable Android mount must still never enable Linux import/switch. */
+        bool ro=a->systems_read_only;a->systems_read_only=false;SCHECK(!systems_ready(a));a->systems_read_only=ro;
+        char path[PATH_LEN],payload[8192];JsonToken tokens[512];Json doc;
+        snprintf(path,sizeof(path),"%s/invalid-status-count",argv[1]);FILE*count_file=fopen(path,"r");SCHECK(count_file!=NULL);
+        int invalid_count=0;int scanned=fscanf(count_file,"%d",&invalid_count);fclose(count_file);SCHECK(scanned==1&&invalid_count>10);
+        for(int n=0;n<invalid_count;n++){
+            snprintf(path,sizeof(path),"%s/invalid-status-%d.json",argv[1],n);FILE*input=fopen(path,"r");SCHECK(input!=NULL);
+            size_t length=fread(payload,1,sizeof(payload)-1,input);bool ended=feof(input);fclose(input);SCHECK(ended&&length>0);payload[length]=0;
+            SCHECK(json_parse(&doc,payload,tokens,512)>0);
+            a->systems_known=true;a->systems_plan_valid=true;a->systems_reboot_blocked=true;
+            SCHECK(complete_systems_job(a,&doc,J_SYS_STATUS,true)==J_NONE);
+            SCHECK(!a->systems_known&&!a->systems_plan_valid&&a->systems_reboot_blocked&&a->screen==SYSTEMS&&a->systems_reason[0]&&!a->job.pid);
+            /* Stale cached slots must not be rendered or actionable after rejection. */
+            a->systems_slot_count=1;copy(a->systems_slots[0].id,sizeof(a->systems_slots[0].id),"stale-linux");
+            render(a);SCHECK(!test_button(a,A_SYS_SLOT)&&!test_press(a,A_SYS_NEW,50));
+            SCHECK(test_button(a,A_SYS_REFRESH)&&test_button(a,A_SYS_REFRESH)->enabled&&test_button(a,A_SYS_FILES)&&test_button(a,A_SYS_FILES)->enabled);
+        }
+        SCHECK(test_press(a,A_SYS_REFRESH,50)&&!a->systems_known&&a->job.kind==J_SYS_STATUS&&systems_settle(a));
+        SCHECK(a->systems_known&&a->systems_foreign&&a->systems_mounted==mounted&&!a->systems_reason[0]&&!a->systems_slot_count&&a->systems_reboot_blocked);
+        SCHECK(!systems_ready(a)&&!systems_can_mount(a));goto finished;
+    }
     if(!strcmp(which,"android-plan")){
         /* 2026-11-14, on the phone: a check that found the storage busy is asked again a few seconds
            later, not given up until the next start. */
@@ -38,9 +94,9 @@ int main(int argc,char**argv){
         SCHECK(!strcmp(a->systems_script_volume,"cache")&&!strcmp(a->systems_script_path,"/a22x-recovery/scripts/setup.sh")&&a->aplan_used);
         /* A new choice on the pages drops the plan's password hash. */
         systems_forget_plan(a);systems_forget_choices(a);SCHECK(!a->systems_password_hash[0]&&!a->aplan_used);
-        /* Discarding deletes the plan from cache, only after the hold. */
-        screen(a,APLAN);SCHECK(test_press(a,A_APLAN_FORGET,1000)&&!a->job.pid&&a->aplan_present);
-        SCHECK(test_press(a,A_APLAN_FORGET,2100)&&systems_settle(a)&&a->screen==HOME&&!a->aplan_present);
+        /* Discarding deletes the plan from cache, only after the hold (one second since 2026-11-20). */
+        screen(a,APLAN);SCHECK(test_press(a,A_APLAN_FORGET,999)&&!a->job.pid&&a->aplan_present);
+        SCHECK(test_press(a,A_APLAN_FORGET,1100)&&systems_settle(a)&&a->screen==HOME&&!a->aplan_present);
         goto finished;
     }
     if(!strcmp(which,"unmounted")||!strcmp(which,"readonly")||!strcmp(which,"no-profile")){
@@ -124,8 +180,8 @@ int main(int argc,char**argv){
         SCHECK(test_press(a,A_SYS_PLAN_CONFIRM,3100)&&systems_settle(a)&&a->screen==RESULT&&!strcmp(a->status,"PLAN_FILE_CHANGED"));
         SCHECK(test_press(a,A_DONE,50)&&systems_settle(a)&&a->screen==SYSTEMS&&!strcmp(a->systems_active,"original")&&!a->systems_reboot_blocked);goto finished;
     }
-    SCHECK(test_press(a,A_SYS_PLAN_CONFIRM,2000)&&!a->job.pid&&a->systems_plan_valid);
-    SCHECK(test_press(a,A_SYS_PLAN_CONFIRM,3100)&&systems_settle(a)&&a->screen==SYSTEMS&&!strcmp(a->systems_active,"new-linux")&&!a->systems_reboot_blocked);
+    SCHECK(test_press(a,A_SYS_PLAN_CONFIRM,999)&&!a->job.pid&&a->systems_plan_valid);
+    SCHECK(test_press(a,A_SYS_PLAN_CONFIRM,1100)&&systems_settle(a)&&a->screen==SYSTEMS&&!strcmp(a->systems_active,"new-linux")&&!a->systems_reboot_blocked);
     int original=-1;for(int n=0;n<a->systems_slot_count;n++)if(!strcmp(a->systems_slots[n].id,"original"))original=n;SCHECK(original>=0);
     SCHECK(test_press(a,A_SYS_SLOT+original,50)&&systems_settle(a)&&a->screen==SYSTEMS_PLAN&&a->systems_plan_valid);
     SCHECK(test_press(a,A_SYS_PLAN_CONFIRM,3100)&&systems_settle(a)&&a->screen==SYSTEMS&&!strcmp(a->systems_active,"original"));
@@ -133,8 +189,8 @@ int main(int argc,char**argv){
     target=-1;for(int n=0;n<a->systems_slot_count;n++)if(!strcmp(a->systems_slots[n].id,"new-linux"))target=n;SCHECK(target>=0);
     SCHECK(test_press(a,A_SYS_SLOT+target,50)&&systems_settle(a)&&a->screen==SYSTEMS_PLAN&&a->systems_plan_kind==J_SYS_SWITCH_PLAN);
     SCHECK(test_press(a,A_SYS_REMOVE,50)&&a->screen==SYSTEMS_REMOVE&&!a->systems_plan_valid&&!strcmp(a->systems_plan_slot,"new-linux"));
-    SCHECK(test_press(a,A_SYS_REMOVE_CONFIRM,2000)&&!a->job.pid&&a->screen==SYSTEMS_REMOVE);
-    SCHECK(test_press(a,A_SYS_REMOVE_CONFIRM,3100)&&systems_settle(a)&&systems_settle(a)&&a->screen==SYSTEMS&&strstr(a->systems_note,"removed"));
+    SCHECK(test_press(a,A_SYS_REMOVE_CONFIRM,999)&&!a->job.pid&&a->screen==SYSTEMS_REMOVE);
+    SCHECK(test_press(a,A_SYS_REMOVE_CONFIRM,1100)&&systems_settle(a)&&systems_settle(a)&&a->screen==SYSTEMS&&strstr(a->systems_note,"removed"));
     SCHECK(a->systems_known&&a->systems_slot_count==1&&!strcmp(a->systems_active,"original"));
     /* 2026-11-10: an image saved on the phone survived both switches, installs without an SD card
        (userdata is its source) and is deleted only after a hold. */
@@ -143,15 +199,17 @@ int main(int argc,char**argv){
     SCHECK(test_press(a,A_IMAGE_ITEM,50)&&a->screen==SYSTEMS_SETUP&&!strcmp(a->systems_source_volume,"userdata")&&!strcmp(a->systems_manifest,"/.a22x-images/rootfs.tar.gz")&&!a->systems_wipe);
     screen(a,SYSTEMS_IMAGES);
     SCHECK(test_press(a,A_IMAGE_DELETE,50)&&a->saved_delete==1);
-    SCHECK(test_press(a,A_IMAGE_DELETE_CONFIRM,1000)&&!a->job.pid&&a->saved_delete==1);
-    SCHECK(test_press(a,A_IMAGE_DELETE_CONFIRM,2100)&&systems_settle(a)&&a->saved_count==0&&!a->saved_delete&&strstr(a->saved_note,"deleted"));
+    SCHECK(test_press(a,A_IMAGE_DELETE_CONFIRM,999)&&!a->job.pid&&a->saved_delete==1);
+    SCHECK(test_press(a,A_IMAGE_DELETE_CONFIRM,1100)&&systems_settle(a)&&a->saved_count==0&&!a->saved_delete&&strstr(a->saved_note,"deleted"));
     screen(a,SYSTEMS);
     /* Existing slots are pixel-scrollable, with bounded inertia and stop-tap suppression. */
     a->preview=true;a->systems_slot_count=16;for(int n=0;n<16;n++){snprintf(a->systems_slots[n].id,sizeof(a->systems_slots[n].id),"slot-%02d",n);copy(a->systems_slots[n].name,sizeof(a->systems_slots[n].name),"A long prepared ARM64 system");a->systems_slots[n].active=n==0;}
-    uint64_t at=milliseconds();workflow_swipe(a,250,960,460,at);SCHECK(a->systems_scroll==500&&a->kinetic.active&&a->motion_surface==SCROLL_SYSTEMS&&!a->job.pid);
+    /* the list ends above the tabs (2026-11-22): the swipe starts inside it */
+    uint64_t at=milliseconds();workflow_swipe(a,250,900,400,at);SCHECK(a->systems_scroll==500&&a->kinetic.active&&a->motion_surface==SCROLL_SYSTEMS&&!a->job.pid);
     tick_inertia(a,at+120);SCHECK(a->systems_scroll>500&&a->systems_scroll<=systems_max_scroll(a));int64_t offset=a->systems_scroll;render(a);pointer(a,true,250,650,at+130);pointer(a,false,250,650,at+160);SCHECK(!a->kinetic.active&&a->systems_scroll==offset&&!a->job.pid&&a->screen==SYSTEMS);
     systems_scroll_to(a,INT64_MAX);SCHECK(a->systems_scroll==systems_max_scroll(a));systems_scroll_to(a,-1);SCHECK(a->systems_scroll==0);
 finished:
     SCHECK(!strcmp(a->fs_text,"unsaved system editor ґ")&&!a->fs_dirty);
-    systems_forget_plan(a);free(a->pixels);free(a);printf("{\"ok\":true,\"case\":\"%s\",\"checks\":%u,\"actual_backend\":true,\"directory_fixture\":true,\"device_io\":false}\n",which,checks);return 0;
+    if(strcmp(which,"android-script"))systems_forget_plan(a);
+    free(a->pixels);free(a);printf("{\"ok\":true,\"case\":\"%s\",\"checks\":%u,\"actual_backend\":true,\"directory_fixture\":true,\"device_io\":false}\n",which,checks);return 0;
 }

@@ -4,6 +4,114 @@ What changed in each version of A22x Mainline Recovery, newest first. Every item
 was checked on the phone unless it says otherwise. Before 0.6.124: [docs/CHANGELOG.md](docs/CHANGELOG.md);
 day-by-day notes with every on-phone check: [docs/PROGRESS.md](docs/PROGRESS.md).
 
+## 1.1.0 betas (beta2–beta25, 2026-11-19 … 2026-11-22)
+
+Test builds of the 1.1 line, not releases; each beta's own notes are on
+[GitHub](https://github.com/Dodaskot/mainline-recovery/releases). This is the state as of beta25
+(kernel #164, source `kernel-source-1.1.0-beta25.tar.gz`). Every item was checked on the developer's
+phone (A22 5G, JDI panel, Himax touch) unless it says otherwise. Thank you, @erayrafet, for the
+reports and tests behind many items (#3, #6, #7) and for trying the Tianma panel.
+
+### Interface
+
+- **Home and tabs:** Backup across the top row, Install and Restore below it; tabs Overview, Systems, Files and Tools. Home shows Linux in BOOT even while userdata is not mounted (that row was in English in every language in beta21), a long system name no longer runs under its badge, and an operation started during the page's background check no longer fails with "Storage is in use". **Recent screens** (swipe up and hold) switch between the browser, Files, the terminal and others.
+- **Quick settings shade:** Wi-Fi and Bluetooth (their tiles fill only for a connection), brightness, volume, torch and a **Browser** tile. Over a playing video it is solid, and closing it brings the page back whole.
+- **Status bar:** Bluetooth left of the camera (struck through when off, the sign when on, on a coloured pill when a device is connected); the charging bolt sits inside the battery and stays on while the phone is plugged in. A double tap on the bar turns the screen off; a short press on Power turns it on.
+- **Themes:** an AMOLED theme (pure black; the volume number and the active tab's title are readable on its cyan accent). The theme's boot logo is kept in `misc` and drawn by the kernel right after the bootloader, without a black gap (JDI; on Tianma the recovery draws it at its start, as before).
+- **Settings and languages:** the theme, language and password survive restarts also when `misc` holds another program's data, and a reset of damaged settings cannot bring an old password back. Holds of 2 or 3 seconds are one second now (erasing, formatting and installing take two). The sound, brightness and flashlight sliders take a touch or a drag anywhere. About phone refreshes every second (processor temperature and clocks, battery, refresh rate, time running). Why a card cannot hold backups is said in plain words, in all five languages.
+
+### Browser and media
+
+- **Browser:** Chromium runs entirely in RAM and writes nothing to the card (so exFAT and FAT cards work); its engine is prepared when Wi-Fi joins and stays in RAM until the recovery restarts. Tabs, toolbar and menu like Chrome on Android, search from the address bar, a desktop site on request, **Dark sites**, close to 90 frames a second (TestUFO 89–90). If the engine stops, **Try again** replaces a stuck spinner.
+- **Sessions:** leaving and coming back keeps the page, and opening the browser again reopens the last one; cookies and logins stay in RAM, never on a card, until the recovery restarts. Removing the browser's card in recent screens, or *Clear all*, keeps its tabs; **Quit browser** in the menu ends it.
+- **Sites and video:** YouTube plays past the first minute (the browser no longer marks itself as automated) and its full screen stays open; wide video turns to landscape; a video keeps playing under the menu; sites are not offered video above 1080p (a 4K YouTube stream ran out of memory). Cloudflare's "Verify you are human" passes; app links (`intent:`, `market:`, `tel:` …) no longer leave the tab under a dialog that cannot be closed.
+- **Downloads:** a Downloads page; each finished download moves into `Download/` on the SD card or a USB drive mounted for writing (an existing file is never replaced), otherwise it stays in RAM until restart.
+- **Player and floating window:** a media player for music and video with picture-in-picture and full screen. **Floating window** (browser menu): the page in a window you can drag, fold into a bubble at the edge, bring back, make full screen or close (playback pauses); resizing it is not yet tried.
+- **Bluetooth** (scan, pair, connect, forget) and **sound:** the shade's volume card names the output (the phone's speaker or connected Bluetooth headphones); a tap opens the list over any page, and the choice moves the sound of the player and the browser. Headphones that connect take that sound at once, without restarting the video; when they go, it comes back to the phone and playback pauses (checked with the speaker, not yet with headphones). The volume is kept across restarts (it came back at 60 % every time).
+- **Volume panel** with the volume keys on every screen: a touch beside it puts it away; in a landscape video it lies along the edge, shows its percent upright for the one holding the phone and stays out of screenshots.
+- **Fixed:** beta20 and beta21 had no sound and no Bluetooth (kernel #164 without its modules). Since beta22 the modules are built from #164, and the image build stops when a module folder belongs to another kernel build.
+
+### Operations
+
+- A long operation folds into a small indicator above the tabs: from its page, the back gesture, Back or Home put it there. Beside a running operation the browser, the player and Files (read only) can be used; a finished download waits in memory until the operation ends (Files and downloads there are not yet tried).
+- While a volume is shared with a computer over USB, the terminal, file copies, diagnostics export and screenshots work too. Mounting, formatting, flashing and offline backups still need the storage alone; the page then says what holds it and offers **Stop USB sharing** and/or **Close the terminal**.
+- **Cancel and cleanup:** a cancelled Linux backup used to leave its unfinished data on the card, with no record of the failure; now a cancel cleans up, and a backup cut short by power or a crash gives its space back before the next one (checked: cancelled at 28 %, card space back). A refused Linux install no longer leaves its new user's folder in the shared `/home`.
+
+### Backups and restore
+
+- Backups go on every filesystem the kernel writes (ext4, exFAT, F2FS, Btrfs, UDF; FAT32 with its 4 GiB file limit) and on any partition of a card or a stick, the card's first (exFAT) partition included.
+- Unencrypted Android data is copied as files beside the partitions (81 MB for LineageOS 20 instead of a 50 GB image); a restore formats userdata itself after the copy is checked.
+- Right after a restart the card is the backup place at once (Backup read "unavailable" and Restore "no completed copies" until the Storage page had been opened). Putting Android's data back on a data partition not mounted for writing says so, instead of "encrypted".
+- A full round, checked with beta24: Linux backed up → Android (LineageOS 20) restored from its copy and started with its data → Linux (Debian 13) restored from its copy and started with its sign-in screen, Wi-Fi and account.
+- **Transfer to another Android** has a **Contents** page (root and adb, photos, videos, audio, documents, archives, APK files, other); on a phone without adb settings, adb keys or Magisk the copy goes on without *Root and adb* and says so.
+
+### Android
+
+- **Decryption is not part of the public betas:** encrypted Android data is skipped by the mounting at start. Data without encryption (One UI ports without it, LineageOS 20) is recognised before any mount and offered for writing.
+- **No encryption from the install:** Samsung firmware and GSI installs offer *Android's data: No encryption* (the vendor's fstab asks for none, as in LineageOS 20 for this phone). With A226BXXSBDZC3, One UI started unencrypted, kept its data after a restart, and the recovery read it without a password.
+- **Moving to another ROM:** the first start's preparation shows its stages, Android 16 ROMs work, restored app data keeps its SELinux categories, and the recovery's Wi-Fi networks go along. With KernelSU in the new kernel, the first start applies the apps, contacts, Wi-Fi and settings by itself, and `su` gives root to adb at once. Apps (an APK, the Magisk app, a root manager) can be queued for Android's next start.
+- **An update that keeps the data** is offered only on the BOOT, vendor, verification and encryption it was checked with (crDroid 12.12 vanilla ↔ microG, also with KernelSU Next).
+- **Root:** KernelSU Next is downloaded like Magisk (the project's own 4.14 kernel, release `kernelsu-next-a22x-v1`, and its manager). A Magisk module ZIP (Magisk 31.0/31.1) installs from its page after a review, as Magisk's own installer does for a simple module, without running `customize.sh` (tested on the host; on the phone, without root, only the review and its refusal); KernelSU and APatch are sent to their app. The review says when KernelSU Next will not mount a module's system files (it needs a metamodule); switching root (APatch → KernelSU) no longer locks the module manager.
+- **Starting and partitions:** a normal restart no longer refuses an empty `vbmeta_system` when `vbmeta` turns verification off, and a refusal shows the check's own reason. A factory reset started in Android's Settings is carried out as Samsung's recovery does. Logical partitions take the size of their image, as with fastboot (odm shrunk and grown back byte for byte, LineageOS 20 started).
+
+### Linux
+
+- **Installing works again:** beta19 and beta20 stopped at `PLATFORM_BUNDLE_INVALID · opt/a22x-conn/btmtk_stp.ko` (a Bluetooth module changed without its sealed list of platform files). Checked with beta21: Arch Linux ARM with Phosh and Phrog installed from the interface in 9 minutes.
+- **Phrog**, the touch sign-in screen, comes as a ready package ([phrog-0.53.0-a22x1](https://github.com/Dodaskot/mainline-recovery/releases/tag/phrog-0.53.0-a22x1)) for Debian 13, Mobian 13, Ubuntu 26.04, Fedora 45, Arch Linux ARM and Manjaro ARM instead of a 30–40 minute build on the phone; Ubuntu 24.04 cannot have it (its Phosh has no libphosh). Revision 2 has the keypad page's **Back** button again (checked with Debian 13, Phosh and Sxmo).
+- **Systems beside each other:** a second Linux with a new user installs beside the first and shares `/home` with it (it was refused with `HOME_UNKNOWN_UID`); checked with Mobian beside Debian, Mobian's Wi-Fi joining by itself with the network passed from the recovery.
+- **Switching after a recovery update:** each recovery build changes its device files a little, so other installed Linux systems could not be switched to ("set up for another kernel and firmware"). Before a switch the recovery now brings that system's device files up to date from its own verified copy (checked: Mobian → Debian installed with beta21).
+- Fedora started "degraded" because two SSH key generators raced; ours now runs first. Installed Linux systems get **Restart into Recovery** among their apps (`sudo a22x-reboot recovery`). Neither is checked on the phone yet.
+
+### Display and hardware
+
+- **One image for every panel.** The Tianma NT36672C panel is driven natively: 60/90 Hz, brightness, real screen-off, touch and double tap to wake were confirmed on a Tianma phone with the earlier `-tianma-display` builds. beta15 lost touch on Tianma (built without the panel's kernel parameter); since beta16 the kernel drives it natively by default (not yet tried on a Tianma phone), and the recovery never blocks touch on a screen it cannot dim or turn off.
+- **Truly panel with FocalTech FT8722 touch:** driven natively with its touch (YourLocalTechGuy's driver from the postmarketOS fork of this kernel, the FT8722 firmware of Samsung's sources); brightness and screen off go through the display service. Not tested on a Truly phone.
+- **TXD panel with Ilitek ILI7807S:** a native panel driver (init sequence of Samsung's GPL sources, 60/90 Hz, brightness) and an SPI touch driver that loads Samsung's touch firmware into the chip's RAM, never its flash. The normal image keeps such a phone on the bootloader's picture (no touch), since the panel and touch are one chip and a wrong start could leave the screen dark; the drivers run in `recovery-a22x-1.1.0-beta25-ili7807s-test` (`mtk_a22x_display_select.ili_native=1`). If its screen stays dark, flash the normal beta25 back with Odin. Not tested on such a phone; the new drivers refuse other panels before touching the hardware.
+- **Touch:** **Double tap to wake** is in Settings → Display, off by default (off, the touch sleeps fully), and works on JDI with Himax touch too. The Novatek touch takes a double tap only from frames that pass the watchdog, ESD and checksum checks, as Samsung's driver does, and is told when a charger is plugged in (the screen woke by itself with USB, #10); neither is tried on a Tianma phone yet. The interface no longer waits 10 s at every start for a Himax touchscreen on Tianma and Truly phones.
+- **Kernel #164** since beta20. Along the line: compressed swap in RAM (zram, lz4, half of the RAM), the signed wireless regulatory database, the right date from the start (Samsung's form of the hardware clock read as the year 2086 before), no more "blocked for more than 120 seconds" noise from the TEE driver; adb over USB pushes about 12 MB/s and pulls about 9 MB/s.
+
+### Privacy of the images
+
+- The kernel carries neither the builder's name nor paths, and the image build stops if a text file names the builder's home. Betas 19–22 still had the builder's user name in the Wi-Fi modules inside the platform archives and in a kernel record; since beta23 it is nowhere (checked in every file and inside every archive).
+- The browser's log leaves page addresses out; cookies and logins stay in RAM. The phone shows no wired network (RNDIS/NCM) to a computer unless SSH has a key.
+
+### Files, storage and flashing
+
+- **Mounting at start** (Settings): the SD card, USB drives and Android data are mounted for writing right after the start, like TWRP and OrangeFox. Each group or partition can be set to Don't mount, Read only or Read and write; `metadata` is mounted for writing only by its own choice.
+- **exFAT** in full: format, check and repair; **Partition a card** makes its files partition exFAT, FAT32, ext4 or F2FS. External storage works with cards that are not ext4.
+- **USB files (MTP):** the "Operation busy" lock-up is fixed (a kernel bug: the USB driver reused a buffer it had already given back), and **Stop sharing** answers even during a long stop. Checked with libmtp on a Linux PC.
+- **Files:** a file's page offers **Install...** with the ways that fit it (flash an `.img`, run a ZIP's installer, Samsung firmware, Linux, a root module, a `.sh` in the terminal), each refusing what it is not. Rows show permissions, owner and date modified; sorting by date; **Internal storage** one tap away; archives open with **Extract here**; pickers have Search and filters.
+- **Flash a partition:** recovery betas can be flashed from a card or a USB stick without a PC (the current one kept as a copy, the new one read back). Partitions are listed alphabetically with their `mmcblk0pN`, the terminal has `/dev/block/by-name`, and on a card the newest three copies of each partition stay.
+
+### Known limits; not yet checked on a phone
+
+- adb in every beta answers without approval and without the recovery password (`adbd-test-no-auth.patch`), so logs can be taken with a dark screen; flash a normal recovery after testing.
+- The browser's sound moving to Bluetooth headphones was checked with the speaker only; it is still to be confirmed with real headphones (reports welcome).
+- Not yet tried: resizing the floating window; Files and downloads beside a running operation.
+- No tester yet for the ILI7807S test image or the Truly panel (its touch, brightness and screen off); reports welcome. On a Tianma phone, the native display by default (beta16), the Novatek double-tap checks and the charger notice are not yet tried.
+- Not yet checked on the phone: the Fedora SSH key fix and **Restart into Recovery** in installed Linux. Magisk module installs were tested on the host; on the phone (no root on it) only the review and its refusal.
+- In ChromeOS the phone shows up as "Pro 5 Ubuntu Phone" (libmtp's name for the USB ID 18d1:d001, kept because adb drivers know it); the developer could not try ChromeOS.
+- Now and then YouTube sends the first video of a freshly started browser for one minute only ("Something went wrong"); reloading the page helped (beta13: not solved yet).
+- Decryption of encrypted Android data is not included.
+
+## 1.1.0-dev-evox-rw-ui1 (qualified development build, 2026-11-17)
+
+- Qualified Evolution X 16 password userdata can be opened for reading or writing.
+  Files shows the actual mode; a repeated same-mode request reuses the session,
+  and changing modes explicitly requires normal unmount and a fresh recovery boot.
+- Formatting protected userdata requires a fresh native Android password check and
+  a separate 5-second hold. The 120-second, one-use authorization is bound to the
+  boot, physical volume, session and intended operation; cancellation revokes it.
+- Expected mount/format states have readable UI messages. Busy/unknown outcomes
+  preserve or refresh actual state without automatically repeating authentication.
+- On-phone validation: RECOVERY backup/full readback, fresh password RW, 64 KiB
+  Files create/read/rename/read/delete, fresh-boot absence, native format authorization
+  and cancellation, normal cleanup, and final fresh idle readiness. BOOT was unchanged.
+- Offline validation: 317 backend tests, UI unlock/format scenarios, 106 UI self-tests,
+  3 Files workflows, rendered screens and 24 image audit checks. Actual data erasure,
+  a physical busy experiment and a touchscreen walkthrough were not performed.
+  [Evidence scope and usage](docs/permanent-rw-ui-20261116.uk.md).
+
 ## 1.0.2 (2026-11-14)
 
 - **The app writes into the recovery's settings in `misc`, and no password undoes another.**

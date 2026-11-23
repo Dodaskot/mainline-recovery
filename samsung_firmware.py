@@ -164,10 +164,17 @@ def read_file(context, volume, token, file_path, name):
                 'size': st.st_size, 'md5': md5, 'tar_bytes': body, 'identity': flash.identity(fd), 'members': members}
 
 
-def inspect(context, volume, token, path):
+def no_fbe_blockers(context):
+    """Why Android's data cannot be left unencrypted here (nofbe.py): vbmeta must not verify vendor."""
+    import root
+    return [] if root.verification_state(context) is False else ['NO_FBE_NEEDS_VERIFICATION_OFF']
+
+
+def inspect(context, volume, token, path, no_fbe=False):
     """The plan for one firmware: every image of every file with what happens to it. The AP is
     chosen; one regional file (CSC before HOME_CSC, of the AP's version first), BL and CP are
-    found beside it."""
+    found beside it. NO_FBE (2026-11-21): after super, its vendor's fstab asks for no encryption
+    (nofbe.py), so Android's data stays plain."""
     relative = fs.clean_path(path)
     folder, _, chosen = relative.rpartition('/')
     where = lambda name: '/' + (folder + '/' + name if folder else name).lstrip('/')
@@ -218,14 +225,18 @@ def inspect(context, volume, token, path):
     if 'super' not in writes or 'boot' not in writes:
         blockers.append('AP_INCOMPLETE')
     ordered = [writes[t] for t in ORDER if t in writes]
+    if no_fbe:
+        blockers += no_fbe_blockers(context)
     plan = {'files': [{k: f[k] for k in ('name', 'path', 'identity', 'size')} for f in files],
             'writes': [{k: w[k] for k in ('target', 'path', 'member', 'size')} for w in ordered],
             'erase': ['userdata', 'metadata', 'cache']}
+    if no_fbe:
+        plan['no_fbe'] = True
     digest = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     return {'volume': volume, 'path': where(chosen), 'build': ap['build'], 'version': version,
             'files': [{k: f[k] for k in ('name', 'path', 'kind', 'build', 'size', 'md5')} for f in files], 'rows': rows,
             'writes': ordered, 'erase': plan['erase'], 'warnings': warnings, 'blockers': sorted(set(blockers)),
-            'plan_sha256': digest, 'write_bytes': sum(w['size'] for w in ordered)}
+            'plan_sha256': digest, 'write_bytes': sum(w['size'] for w in ordered), 'no_fbe': bool(no_fbe)}
 
 
 UNPACK_STORE = 'A22xFirmware'
@@ -521,10 +532,12 @@ def held_lock(context):
                 os.environ[ENV_FD] = before
 
 
-def install_firmware(context, volume, token, path, expected_plan, confirmed, progress):
+def install_firmware(context, volume, token, path, expected_plan, confirmed, progress, no_fbe=False):
     require(confirmed, 'CONFIRMATION_REQUIRED', 'Installing firmware must be confirmed')
     with held_lock(context):
-        plan = inspect(context, volume, token, path)
+        import format_authorization
+        format_authorization.require_unprotected(context.fs)
+        plan = inspect(context, volume, token, path, no_fbe=no_fbe)
         require(plan['plan_sha256'] == expected_plan, 'PLAN_CHANGED',
                 'The firmware files changed since they were reviewed. Review them again')
         require(not plan['blockers'], 'PLAN_BLOCKED', 'This firmware cannot be installed', blockers=plan['blockers'])
@@ -545,19 +558,25 @@ def install_firmware(context, volume, token, path, expected_plan, confirmed, pro
         saved = saved_boot.keep_current_boot(context, progress)['kept']
         written = [flash_one(context, volume, token, write, progress) for write in plan['writes'] if write['target'] not in kept]
         written += [{'target': label, 'sha256': '', 'kind': 'kept', 'kept': state} for label, state in kept.items()]
+        unencrypted = None
+        if no_fbe:
+            import nofbe
+            unencrypted = nofbe.patch(context, True, progress)
         reset = android_data(context, progress)
         return {'build': plan['build'], 'md5_checked': checked, 'written': written, 'saved_boot': saved, **reset,
-                'next': 'Restart into Android. The first start takes several minutes.'}
+                'no_fbe': unencrypted, 'next': 'Restart into Android. The first start takes several minutes.'}
 
 
-def android_data(context, progress):
+def android_data(context, progress, *, format_authorization=None):
     """What Samsung's recovery does after Odin, and TWRP's Format Data: cache wiped but for the
     recovery's folder, userdata formatted for Android (f2fs as Samsung's), metadata's start erased."""
-    progress('Wiping', {'label': 'cache', 'size_bytes': 1}, 0)
-    wiped = fs.wipe_contents(context.fs, 'cache', confirmed=True)
+    import format_authorization as authorization
+    with authorization.writer_lease(context.fs):
+        authorization.preflight(context.fs, context.fs.volume('userdata'), 'f2fs',
+                                'android-reset', format_authorization)
     progress('Formatting', {'label': 'userdata', 'size_bytes': 1}, 0)
     userdata = context.fs.volume('userdata')
-    if userdata['mounted']:
+    if userdata['mounted'] and format_authorization is None:
         try:
             context.fs.unmount('userdata', userdata['volume_token'])
         except fs.FilesystemError as error:
@@ -565,11 +584,25 @@ def android_data(context, progress):
                  'Data for Android', reason=error.code)
     # A fresh context reads the mounts as they are now: the one from the start of the installation
     # still saw userdata mounted (2026-11-10, on the phone: PARTITION_MOUNTED after every image).
-    context.fresh().reset_android()
+    fresh = context.fresh()
+    if format_authorization is None:
+        fresh.reset_android()
+    else:
+        fresh.reset_android(format_authorization=format_authorization)
     progress('Formatting', {'label': 'userdata', 'size_bytes': 1}, 1)
+    # Authentication, normal cleanup and the verified data reset precede all cache writes.
+    # Busy/expired/unknown authorization therefore leaves cache untouched.
+    try:
+        progress('Wiping', {'label': 'cache', 'size_bytes': 1}, 0)
+        wiped = fs.wipe_contents(context.fs, 'cache', confirmed=True)
+    except Exception as error:
+        fail('DATA_RESET_CACHE_FAILED',
+             'Android data was reset, but cache could not be cleared. Do not repeat the data reset.',
+             data_erased=True, reason=getattr(error, 'code', 'CACHE_IO_ERROR'))
     # 2026-11-10: Android's own request for this (boot-recovery, --prompt_and_wipe_data in misc) is done.
     import bcb
     try:
+        authorization.consume_android_reset()
         cleared = bcb.clear_wipe_request(context)
     except OSError:
         cleared = False
@@ -585,11 +618,11 @@ def android_data(context, progress):
     return {'cache_removed': wiped['removed'], 'userdata': 'android', 'metadata': 'erased', 'request_cleared': cleared}
 
 
-def reset_data(context, confirmed, progress):
+def reset_data(context, confirmed, progress, *, format_authorization=None):
     """Wipe, Data for Android: only the reset, for a GSI or an Android that lost its data."""
     require(confirmed, 'CONFIRMATION_REQUIRED', 'Formatting data must be confirmed')
     with held_lock(context):
-        return android_data(context, progress)
+        return android_data(context, progress, format_authorization=format_authorization)
 
 
 def parser():
@@ -609,6 +642,7 @@ def parser():
     boot.add_argument('--path', required=True)
     reset = commands.add_parser('reset-data', help="Format userdata and metadata for Android (TWRP's Format Data)")
     reset.add_argument('--confirm', action='store_true')
+    reset.add_argument('--format-authorization')
     for name in ('inspect', 'install'):
         command = commands.add_parser(name)
         command.add_argument('--volume', required=True)
@@ -616,6 +650,8 @@ def parser():
         command.add_argument('--path', required=True)
     commands.choices['install'].add_argument('--expected-plan', required=True)
     commands.choices['install'].add_argument('--confirm', action='store_true')
+    for name in ('inspect', 'install'):
+        commands.choices[name].add_argument('--no-fbe', action='store_true', help="Android's data without encryption (nofbe.py)")
     return result
 
 
@@ -634,16 +670,16 @@ def main(argv=None):
     try:
         context = install.FixtureContext(args.fixture) if args.fixture else install.DeviceContext()
         if args.command == 'inspect':
-            result = inspect(context, args.volume, args.volume_token, args.path)
+            result = inspect(context, args.volume, args.volume_token, args.path, no_fbe=args.no_fbe)
         elif args.command == 'unpack':
             result = unpack_zip(context, args.volume, args.volume_token, args.path, args.confirm, progress)
         elif args.command == 'extract-boot':
             result = extract_boot(context, args.volume, args.volume_token, args.path, progress)
         elif args.command == 'reset-data':
-            result = reset_data(context, args.confirm, progress)
+            result = reset_data(context, args.confirm, progress, format_authorization=args.format_authorization)
         else:
             result = install_firmware(context, args.volume, args.volume_token, args.path, args.expected_plan,
-                                      args.confirm, progress)
+                                      args.confirm, progress, no_fbe=args.no_fbe)
         print(json.dumps({'ok': True, 'operation': args.command, **result}, separators=(',', ':')), flush=True)
         return 0
     except Exception as error:  # noqa: BLE001 - every refusal reaches the page as JSON (RecoveryError too)

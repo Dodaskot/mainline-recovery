@@ -31,8 +31,15 @@ LOCK = RUN / 'display.lock'
 RECORD = RUN / 'display-service.json'
 BACKLIGHT_RECORD = RUN / 'display-backlight.json'
 BACKLIGHT_CLASS = Path('/sys/class/backlight')
-PANEL_COMPATIBLE = b'jdi,hx83112f-a22x'
-PANEL_DRIVER = 'panel-jdi-hx83112f'
+# Native A22x panels and the driver each must be bound to. The Tianma and Truly ones are driven
+# only on their field-test paths (kernel parameters mtk_a22x_display_select.tianma_native=1 and
+# truly_native=1); all three expose the same eight-bit raw DCS backlight (0x51, 0-255).
+# 2026-11-22 audit: a Truly (FT8722) phone had no brightness or blanking: its panel was not listed.
+PANELS = {b'jdi,hx83112f-a22x': 'panel-jdi-hx83112f',
+          b'tianma,nt36672c-a22x': 'panel-tianma-nt36672c-a22x',
+          b'truly,ft8722-a22x': 'panel-truly-ft8722-a22x',
+          # TXD ILI7807S (kernel #164, native only with mtk_a22x_display_select.ili_native=1)
+          b'txd,ili7807s-a22x': 'panel-txd-ili7807s-a22x'}
 BACKLIGHT_SCHEMA = 'a22x.display.backlight.v1'
 SAFE_PERCENT = 50
 MAX_REQUEST = 1024
@@ -106,6 +113,12 @@ def mount_for(path):
     return max(matches)
 
 
+def panel_driver(compatible):
+    """The driver a native A22x panel with this compatible list must use, or None."""
+    names = [name for name in compatible if name in PANELS]
+    return PANELS[names[0]] if len(names) == 1 else None
+
+
 def backlight_unavailable(reason):
     return {'brightness_supported': False, 'blank_supported': False,
             'brightness_percent': None, 'brightness_raw': None, 'brightness_max': None,
@@ -138,10 +151,10 @@ class BacklightIO:
             require(self.mount[-1] == 'sysfs', 'BACKLIGHT_PATH_INVALID', 'Backlight attributes must reside on sysfs')
             self.device = (self.real / 'device').resolve(strict=True)
             require(self.device.is_relative_to('/sys/devices'), 'BACKLIGHT_PATH_INVALID', 'Unexpected backlight parent')
-            compatible = bounded_read(self.device / 'of_node/compatible', 512).split(b'\0')
-            require(PANEL_COMPATIBLE in compatible, 'BACKLIGHT_WRONG_PANEL', 'Backlight must belong to the native A22x panel')
+            expected = panel_driver(bounded_read(self.device / 'of_node/compatible', 512).split(b'\0'))
+            require(expected is not None, 'BACKLIGHT_WRONG_PANEL', 'Backlight must belong to the native A22x panel')
             self.driver = (self.device / 'driver').resolve(strict=True)
-            require(self.driver.is_relative_to('/sys/bus') and self.driver.name == PANEL_DRIVER,
+            require(self.driver.is_relative_to('/sys/bus') and self.driver.name == expected,
                     'BACKLIGHT_WRONG_DRIVER', 'Backlight must use the qualified native A22x panel driver')
             self.identity = str(self.real)
             for name in ('brightness', 'actual_brightness', 'max_brightness', 'bl_power'):
@@ -213,8 +226,7 @@ def discover_backlight_io():
     candidates = []
     for entry in entries:
         try:
-            compatible = bounded_read(entry / 'device/of_node/compatible', 512).split(b'\0')
-            if PANEL_COMPATIBLE in compatible:
+            if panel_driver(bounded_read(entry / 'device/of_node/compatible', 512).split(b'\0')):
                 candidates.append(entry)
         except FileNotFoundError:
             continue

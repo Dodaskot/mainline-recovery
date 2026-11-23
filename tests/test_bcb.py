@@ -47,6 +47,27 @@ class Request(unittest.TestCase):
         self.assertEqual((code, found['command'], found['wipe'], found['cleared']), (0, 'boot-recovery', False, True))
         self.assertEqual(self.misc.read_bytes(), message())  # what lies after the message stays
 
+    def test_samsungs_reset_in_cache_is_read_when_misc_names_no_arguments(self):
+        """2026-11-21, the owner's phone: Samsung wrote "boot-recovery" alone to misc and the reset to
+        /cache/recovery/command, as AOSP's recovery reads it."""
+        self.misc.write_bytes(message(b'boot-recovery'))
+        (self.root / 'cache-command').write_text('--wipe_data\n--requested_time=2026/11/21 00:57:03.378\n'
+                                                 '--reason=MasterClearConfirm,2026-11-21T00:57:18Z\n--locale=uk-UA\n')
+        code, found = self.run_helper('arrive')
+        self.assertEqual((code, found['wipe'], found['source'], found['cleared']), (0, True, 'cache', False))
+        self.assertEqual(found['reason'], 'MasterClearConfirm,2026-11-21T00:57:18Z')
+        self.assertEqual(self.misc.read_bytes(), message(b'boot-recovery'))
+        code, found = self.run_helper('forget')
+        self.assertEqual((code, found['wipe'], found['cleared']), (0, False, True))
+        self.assertFalse((self.root / 'cache-command').exists())
+        self.assertEqual(self.misc.read_bytes(), message())
+
+    def test_a_command_in_cache_never_overrides_arguments_in_misc(self):
+        self.misc.write_bytes(message(b'boot-recovery', b'recovery\n'))
+        (self.root / 'cache-command').write_text('--wipe_data\n')
+        code, found = self.run_helper('read')
+        self.assertEqual((found['recovery'], found['wipe']), (['recovery'], False))
+
     def test_a_reset_from_the_settings_stays_until_it_is_done_or_forgotten(self):
         """Android's Factory data reset: --wipe_data. Arriving here does not clear it."""
         asked = message(b'boot-recovery', b'recovery\n--wipe_data\n--reason=MasterClearConfirm\n--locale=uk_UA\n')

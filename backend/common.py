@@ -160,8 +160,8 @@ def same_archive(one, other):
 
 
 def directory_identity(st, filesystem):
-    """What names a directory between two runs: exFAT numbers an inode only while it stays cached."""
-    return {"device": st.st_dev, "inode": None if filesystem == "exfat" else st.st_ino}
+    """What names a directory between two runs: exFAT and FAT number an inode only while it stays cached."""
+    return {"device": st.st_dev, "inode": None if filesystem in ("exfat", "vfat", "msdos") else st.st_ino}
 
 
 def fsync_directory(path: Path):

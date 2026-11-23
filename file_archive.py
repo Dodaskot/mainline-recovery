@@ -33,6 +33,7 @@ import tarfile
 import time
 
 import archive_crypt as ac
+import file_types
 import filesystem as fs
 import partition_archive as pa
 from filesystem import fail
@@ -290,7 +291,9 @@ def destination_name(path):
     return folder, name
 
 
-def pack(context, volume, token, path, everything, names, dest_volume, dest_token, destination, confirmed, progress):
+def pack(context, volume, token, path, everything, names, dest_volume, dest_token, destination, confirmed, progress,
+         kinds=None):
+    """KINDS (file_types, 2026-11-20): only files of these kinds, with every folder kept."""
     context.confirm(confirmed)
     folder = fs.clean_path(path)
     dest_folder, dest_name = destination_name(destination)
@@ -299,6 +302,9 @@ def pack(context, volume, token, path, everything, names, dest_volume, dest_toke
         try:
             for name in chosen_names(directory, everything, names):
                 walk(directory, name, source.stat.st_dev, name, entries)
+            if kinds:
+                entries = [e for e in entries if e[1] is None or stat.S_ISDIR(e[2].st_mode)
+                           or file_types.kind_of(e[1]) in kinds]
             files = [e for e in entries if e[1] is not None]
             opened = [e[0] for e in entries if e[1] is None]
             left_out = []
@@ -321,17 +327,21 @@ def pack(context, volume, token, path, everything, names, dest_volume, dest_toke
                             os.stat(dest_name, dir_fd=parent, follow_symlinks=False)
                             fail('DESTINATION_EXISTS', 'An existing destination will not be overwritten')
                         part_name = '.part-' + dest_name
-                        with contextlib.suppress(FileNotFoundError):
-                            os.unlink(part_name, dir_fd=parent)
-                        out = os.open(part_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644,
-                                      dir_fd=parent)
+                        # A partial from another attempt is not ours to delete.
+                        try:
+                            out = os.open(part_name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, 0o644,
+                                          dir_fd=parent)
+                        except FileExistsError:
+                            fail('DESTINATION_EXISTS', 'An unfinished archive with this name already exists',
+                                 file=part_name)
                         try:
                             crypt = contextlib.ExitStack()
                             dest = crypt.enter_context(ac.sink(out, pa.PASSWORD if pa.ENCRYPT else None))
                             done = write_archive(dest, files, total, progress, left_out=left_out)
                             manifest = json.dumps({'schema': SCHEMA, 'source': {'volume': volume, 'label': source_label,
                                                    'folder': folder}, 'created': int(time.time()), 'entries': len(files),
-                                                   'bytes': done, 'top': sorted({e[3].split('/')[0] for e in files})[:64]},
+                                                   'bytes': done, 'top': sorted({e[3].split('/')[0] for e in files})[:64],
+                                                   **({'types': list(kinds)} if kinds else {})},
                                                   ensure_ascii=False, separators=(',', ':')).encode()
                             footer(dest, manifest)
                             crypt.close()
@@ -594,6 +604,7 @@ def parser():
             command.add_argument('--destination-volume', required=True)
             command.add_argument('--expected-destination-volume-token')
             command.add_argument('--destination', required=True)
+            command.add_argument('--kinds', help='Only files of these kinds: ' + ','.join(file_types.NAMES))
     return p
 
 
@@ -616,12 +627,16 @@ def main(argv=None):
                                   'phase': 'Packing' if operation == 'pack' else 'Unpacking', 'partition': label[-120:],
                                   'bytes_done': done, 'bytes_total': max(total, 1)}, separators=(',', ':')),
                       file=sys.stderr, flush=True)
-        with context.operation_lock():
+        with context.operation_lock(shared=True):
             if operation == 'pack':
                 everything, names = fs.selection_file(args.selection_file)
+                try:
+                    kinds = file_types.parse(args.kinds)
+                except ValueError:
+                    fail('INVALID_FILE_TYPES', 'Unknown kind of files', allowed=list(file_types.NAMES))
                 value = pack(context, args.volume, args.expected_volume_token, args.path, everything, names,
                              args.destination_volume, args.expected_destination_volume_token, args.destination,
-                             args.confirm, progress)
+                             args.confirm, progress, kinds=kinds)
             elif operation == 'unpack':
                 value = unpack(context, args.volume, args.expected_volume_token, args.path, args.confirm, progress)
             else:

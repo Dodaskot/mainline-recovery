@@ -20,8 +20,12 @@ on the phone: the write was dropped), so this recovery prepares that vbmeta on c
 in Download mode (Heimdall or Odin); seeing it there, the next install erases Android's data once,
 and the prepared copy is removed, so later installs need no reset.
 
-KernelSU and KernelSU Next are not offered: their modules load only into GKI kernels (5.10 and
-newer), and this phone's Android kernel is 4.14 (2026-11-10, at the user's word: they do not install).
+KernelSU Next (2026-11-21, the owner's request): its modules load only into GKI kernels, so this
+recovery's project builds a kernel for it: Samsung's 4.14.186 source (A226BXXSBDYA1) with KernelSU
+Next's legacy branch, as an AnyKernel3 ZIP published in the project's own GitHub releases (tag
+kernelsu-next-a22x-*, with GitHub's SHA-256 of the asset). It is downloaded and checked here like
+Magisk's APK, then installed by this recovery's ZIP installer, which shows its review first: the
+ZIP replaces only BOOT's kernel. Its manager app is queued for Android like Magisk's.
 
 APatch (2026-11-11, asked for by the phone's owner) puts KernelPatch into the kernel itself, which
 the 4.14 kernel allows (CONFIG_KALLSYMS and CONFIG_KALLSYMS_ALL are on). BOOT is patched by the
@@ -30,14 +34,25 @@ image and the owner's SuperKey, kptools repack. The APK's kptools needs Android'
 recovery carries kptools built from KernelPatch's source at the version of the APK's kpimg, and
 that kpimg: nothing is downloaded. The SuperKey is typed on the phone, reaches this helper in a
 file of the private RAM folder, and is kept nowhere; the APatch app in Android asks for it.
+After Android starts, install the verified APatch Manager 11282 and use the generated bootstrap
+with already authorized APatch su. The bootstrap checks the installed package and sets up APD
+using the Manager's extracted libraries. If recovery already seeded the verified APD for first
+boot, the bootstrap keeps it and creates the missing APatch directory. Re-run with --verify-only
+after reboot.
 
     root.py --device|--fixture DIR list
     root.py ... install --id magisk --expected-sha256 SHA --confirm
     root.py ... install --id apatch --expected-sha256 SHA --superkey-file FILE --confirm
+    root.py --device apatch-bootstrap --manager-apk FILE > apatch-bootstrap.sh
+    adb -d install --no-incremental -r FILE
+    adb -d push apatch-bootstrap.sh /data/local/tmp/a22x-apatch-bootstrap.sh
+    adb -d shell -T "su -c 'sh /data/local/tmp/a22x-apatch-bootstrap.sh'"
+    adb -d shell -T "su -c 'sh /data/local/tmp/a22x-apatch-bootstrap.sh --verify-only'"
 """
 import argparse
 import contextlib
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -62,9 +77,22 @@ import saved_boot
 TOOLS = {
     'magisk': {'name': 'Magisk', 'repo': 'topjohnwu/Magisk', 'asset': re.compile(r'^Magisk-v[0-9.]+\.apk$'), 'supported': True},
     'apatch': {'name': 'APatch', 'bundled': True, 'supported': True},
+    'kernelsu-next': {'name': 'KernelSU Next', 'repo': 'Dodaskot/mainline-recovery', 'tag_prefix': 'kernelsu-next-a22x-',
+                      'asset': re.compile(r'^KernelSU-Next-A226B-[A-Za-z0-9._+-]{1,48}-AnyKernel3\.zip$'), 'supported': True,
+                      'zip': True, 'kernel_root': 'kernelsu'},
 }
+KERNEL_ZIP_DIR = 'a22x-recovery/kernels'
+ZIP_LIMIT = 64 << 20
 # KernelPatch's tool and image, part of this recovery (tools/build-image.sh takes them from apatch/out).
 APATCH_DIR = Path('/opt/a22x-recovery/apatch')
+APATCH_MANAGER = {
+    'package': 'me.bmax.apatch',
+    'version_code': 11282,
+    'file': 'APatch_11282_e8e4651_HEAD-release-signed.apk',
+    'sha256': 'd6bf0dbcab95fb9a3aa111c35efd945267bcce3a41377c3297c3c1a9eab421a5',
+    'size': 6716426,
+}
+APATCH_LIBRARIES = ('apd', 'busybox', 'kptools')
 # The APatch app's rule for a SuperKey: 8 to 63 characters with a letter and a digit. Here also
 # without spaces: it is typed again in Android.
 SUPERKEY = re.compile(r'(?=.*[A-Za-z])(?=.*[0-9])[!-~]{8,63}')
@@ -75,6 +103,8 @@ MAGISK_FILES = (('lib/arm64-v8a/libmagiskboot.so', 'magiskboot'), ('lib/arm64-v8
                 ('assets/util_functions.sh', 'util_functions.sh'))
 APK_LIMIT = 64 << 20
 ROOT_DIR = 'a22x-recovery/root'
+# The Magisk APK of the last install, kept for a new system's first start (android_root_adb, 2026-11-20).
+MAGISK_APK_DIR = 'a22x-recovery/magisk'
 WORK = Path('/run/a22x-recovery/root-work')
 API = 'https://api.github.com/repos/%s/releases/latest'
 PATCH_SECONDS = 300
@@ -87,6 +117,165 @@ abort() { ui_print "$1"; exit 1; }
 SOURCEDMODE=true
 set -- boot.img
 . ./boot_patch.sh
+'''
+
+# Run by the operator under an already authorized su on fully booted Android. This writes only
+# a fresh runtime; Android's Manager owns existing configs and runtime files.
+APATCH_BOOTSTRAP = r'''
+PATH=/system/bin:/system/xbin
+ADB=/data/adb
+AP="$ADB/ap"
+APD="$ADB/apd"
+stage="$ADB/.a22x-apatch-bootstrap"
+label=u:object_r:adb_data_file:s0
+
+fail() {
+    printf '%s\n' "$*" >&2
+    exit 1
+}
+
+present() { [ -e "$1" ] || [ -L "$1" ]; }
+plain_file() { [ -f "$1" ] && [ ! -L "$1" ]; }
+plain_directory() { [ -d "$1" ] && [ ! -L "$1" ]; }
+
+matches_hash() {
+    plain_file "$1" || return 1
+    hash=$(sha256sum "$1") || return 1
+    [ "${hash%% *}" = "$2" ]
+}
+
+matches_label() {
+    context=$(ls -Zd "$1") || return 1
+    [ "${context%% *}" = "$label" ]
+}
+
+apd_matches() {
+    matches_hash "$1" "$APD_SHA256" && [ -x "$1" ] && matches_label "$1"
+}
+
+runtime_matches() {
+    plain_directory "$1" && plain_directory "$1/bin" && plain_directory "$1/log" || return 1
+    apd_matches "$2" || return 1
+    matches_hash "$1/bin/busybox" "$BUSYBOX_SHA256" && [ -x "$1/bin/busybox" ] || return 1
+    matches_hash "$1/bin/kptools" "$KPTOOLS_SHA256" && [ -x "$1/bin/kptools" ] || return 1
+    plain_file "$1/package_config" && plain_file "$1/su_path" && [ -s "$1/su_path" ] || return 1
+    for link in apd magiskpolicy resetprop; do
+        [ -L "$1/bin/$link" ] && [ "$(readlink "$1/bin/$link")" = "$APD" ] || return 1
+    done
+    for path in "$1" "$1/bin" "$1/log" "$1/bin/busybox" "$1/bin/kptools" "$1/package_config" "$1/su_path"; do
+        matches_label "$path" || return 1
+    done
+    # The earlier supervised installer did not write this marker. The daemon hash
+    # and the installed Manager still bind its runtime to this version.
+    if present "$1/version"; then
+        plain_file "$1/version" && [ "$(cat "$1/version")" = "$MANAGER_VERSION_CODE" ] &&
+            matches_label "$1/version" || return 1
+    fi
+}
+
+case "${1:-}" in
+    ''|--verify-only) [ "$#" -le 1 ] || fail "Usage: sh apatch-bootstrap.sh [--verify-only]" ;;
+    *) fail "Usage: sh apatch-bootstrap.sh [--verify-only]" ;;
+esac
+[ "$(id -u)" = 0 ] && [ "$(getprop sys.boot_completed)" = 1 ] ||
+    fail "APATCH_ANDROID_REQUIRED: use authorized APatch su in booted Android"
+
+package=$(pm list packages --show-versioncode --user 0 "$MANAGER_PACKAGE" </dev/null) ||
+    fail "APATCH_MANAGER_MISSING: Android package manager is unavailable"
+[ "$package" = "package:$MANAGER_PACKAGE versionCode:$MANAGER_VERSION_CODE" ] ||
+    fail "APATCH_MANAGER_VERSION: install the verified APatch Manager $MANAGER_VERSION_CODE for Android user 0"
+package_path=$(pm path --user 0 "$MANAGER_PACKAGE" </dev/null) ||
+    fail "APATCH_MANAGER_MISSING: Android could not find the Manager APK"
+case "$package_path" in
+    package:/data/app/*/base.apk) apk=${package_path#package:} ;;
+    *) fail "APATCH_MANAGER_MISSING: expected the Manager APK under /data/app" ;;
+esac
+matches_hash "$apk" "$MANAGER_SHA256" ||
+    fail "APATCH_MANAGER_HASH: the installed APK differs from the verified release"
+libs="${apk%/*}/lib/arm64"
+plain_directory "$libs" &&
+    matches_hash "$libs/libapd.so" "$APD_SHA256" &&
+    matches_hash "$libs/libbusybox.so" "$BUSYBOX_SHA256" &&
+    matches_hash "$libs/libkptools.so" "$KPTOOLS_SHA256" ||
+    fail "APATCH_MANAGER_LIBRARIES: the Manager's extracted arm64 libraries are missing or different"
+
+plain_directory "$ADB" || fail "APATCH_ADB_MISSING: expected Android's /data/adb directory"
+if present "$stage"; then
+    fail "APATCH_BOOTSTRAP_BUSY: there is already a bootstrap staging directory"
+fi
+if present "$AP"; then
+    runtime_matches "$AP" "$APD" ||
+        fail "APATCH_RUNTIME_CONFLICT: the existing runtime is partial or differs from the verified setup"
+    status=already-configured
+else
+    apd_source="$stage/apd"
+    seed_identity=
+    if present "$APD"; then
+        # Recovery may have seeded APD for the first Android boot. Keep its inode and labels.
+        apd_matches "$APD" || fail "APATCH_RUNTIME_CONFLICT: the existing APatch daemon does not match the verified seed"
+        seed_identity=$(stat -c '%d:%i' "$APD")
+        apd_source="$APD"
+    fi
+    [ "${1:-}" != --verify-only ] || fail "APATCH_RUNTIME_MISSING: the APatch runtime has not been set up"
+    umask 077
+    mkdir "$stage" || fail "APATCH_BOOTSTRAP_BUSY: could not reserve the bootstrap staging directory"
+    ap_identity=
+    apd_identity=
+    committed=0
+    cleanup() {
+        # Only roll back entries with the same identity as the files staged by this invocation.
+        trap - HUP INT TERM
+        if [ "$committed" = 0 ]; then
+            if [ -n "$apd_identity" ] && [ "$(stat -c '%d:%i' "$APD" 2>/dev/null)" = "$apd_identity" ]; then
+                mv -nT "$APD" "$stage/apd"
+            fi
+            if [ -n "$ap_identity" ] && [ "$(stat -c '%d:%i' "$AP" 2>/dev/null)" = "$ap_identity" ]; then
+                mv -nT "$AP" "$stage/ap"
+            fi
+        fi
+        rm -rf "$stage"
+    }
+    trap cleanup EXIT
+    trap 'exit 1' HUP INT TERM
+    if present "$AP" || { [ -z "$seed_identity" ] && present "$APD"; }; then
+        fail "APATCH_RUNTIME_CONFLICT: an existing runtime appeared during setup"
+    fi
+    mkdir "$stage/ap" "$stage/ap/bin" "$stage/ap/log"
+    if [ -z "$seed_identity" ]; then
+        cp "$libs/libapd.so" "$stage/apd"
+        chmod 0755 "$stage/apd"
+    fi
+    cp "$libs/libbusybox.so" "$stage/ap/bin/busybox"
+    cp "$libs/libkptools.so" "$stage/ap/bin/kptools"
+    chmod 0755 "$stage/ap/bin/busybox" "$stage/ap/bin/kptools"
+    : > "$stage/ap/package_config"
+    printf '%s\n' /system/bin/su > "$stage/ap/su_path"
+    printf '%s\n' "$MANAGER_VERSION_CODE" > "$stage/ap/version"
+    restorecon -R "$stage" || fail "APATCH_STAGE_INVALID: the staged SELinux labels could not be set"
+    for link in apd magiskpolicy resetprop; do
+        ln -s "$APD" "$stage/ap/bin/$link"
+    done
+    runtime_matches "$stage/ap" "$apd_source" ||
+        fail "APATCH_STAGE_INVALID: the staged files or SELinux labels did not match"
+    ap_identity=$(stat -c '%d:%i' "$stage/ap")
+    mv -nT "$stage/ap" "$AP"
+    [ ! -e "$stage/ap" ] || fail "APATCH_RUNTIME_CONFLICT: the APatch directory already exists"
+    if [ -z "$seed_identity" ]; then
+        apd_identity=$(stat -c '%d:%i' "$stage/apd")
+        mv -nT "$stage/apd" "$APD"
+        [ ! -e "$stage/apd" ] || fail "APATCH_RUNTIME_CONFLICT: the APatch daemon already exists"
+    elif [ "$(stat -c '%d:%i' "$APD")" != "$seed_identity" ]; then
+        fail "APATCH_RUNTIME_CONFLICT: the verified APatch daemon changed during setup"
+    fi
+    runtime_matches "$AP" "$APD" ||
+        fail "APATCH_RUNTIME_INVALID: the installed files or SELinux labels did not match"
+    sync
+    committed=1
+    status=configured
+fi
+
+printf 'APATCH_ENV=VERIFIED\nSTATUS=%s\nMANAGER_VERSION_CODE=%s\nAPD_SHA256=%s\nSELINUX_LABEL=%s\n' \
+    "$status" "$MANAGER_VERSION_CODE" "$APD_SHA256" "$label"
 '''
 
 
@@ -105,6 +294,23 @@ def latest(repo, asset_name):
             return {'version': release.get('tag_name', ''), 'file': asset['name'], 'url': asset['browser_download_url'],
                     'size': int(asset['size']), 'sha256': digest, 'published': (release.get('published_at') or '')[:10]}
     fail('ROOT_RELEASE_UNUSABLE', 'The newest release has no file this recovery can use')
+
+
+def tagged(repo, prefix, asset_name):
+    """As latest, the newest release whose tag starts with PREFIX (a project's second line of releases)."""
+    request = urllib.request.Request((API % repo).rsplit('/', 1)[0] + '?per_page=30',
+                                     headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'a22x-recovery'})
+    with urllib.request.urlopen(request, timeout=30, context=tls_context()) as reply:
+        releases = json.loads(reply.read(8 << 20))
+    for release in releases:
+        if release.get('draft') or not str(release.get('tag_name', '')).startswith(prefix):
+            continue
+        for asset in release.get('assets', []):
+            digest = (asset.get('digest') or '').removeprefix('sha256:')
+            if asset_name.match(asset.get('name', '')) and re.fullmatch(r'[0-9a-f]{64}', digest):
+                return {'version': release['tag_name'][len(prefix):], 'file': asset['name'], 'url': asset['browser_download_url'],
+                        'size': int(asset['size']), 'sha256': digest, 'published': (release.get('published_at') or '')[:10]}
+    fail('ROOT_RELEASE_UNUSABLE', 'No release has a file this recovery can use')
 
 
 def tls_context():
@@ -128,6 +334,27 @@ def apatch_bundle(context):
     return {'kptools': tool, 'kpimg': image, 'version': version, 'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}
 
 
+def apatch_bootstrap(manager_apk):
+    """Generate the Android-side bootstrap for the exact Manager APK validated on the phone."""
+    with manager_apk.open('rb') as stream:
+        data = stream.read(APATCH_MANAGER['size'] + 1)
+    manager_sha = hashlib.sha256(data).hexdigest()
+    require(len(data) == APATCH_MANAGER['size'] and manager_sha == APATCH_MANAGER['sha256'],
+            'APATCH_MANAGER_HASH', 'Use the verified APatch Manager APK', manager=APATCH_MANAGER)
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        hashes = {name: hashlib.sha256(archive.read(f'lib/arm64-v8a/lib{name}.so')).hexdigest()
+                  for name in APATCH_LIBRARIES}
+    settings = [
+        '#!/system/bin/sh',
+        'set -eu',
+        f'MANAGER_PACKAGE={APATCH_MANAGER["package"]}',
+        f'MANAGER_VERSION_CODE={APATCH_MANAGER["version_code"]}',
+        f'MANAGER_SHA256={manager_sha}',
+        *(f'{name.upper()}_SHA256={sha}' for name, sha in hashes.items()),
+    ]
+    return '\n'.join(settings) + '\n' + APATCH_BOOTSTRAP
+
+
 def tool_row(context, ident, tool):
     """One root tool with its newest version; without network, why it needs it."""
     row = {'id': ident, 'name': tool['name'], 'supported': tool['supported'], 'reason': tool.get('reason', '')}
@@ -135,14 +362,15 @@ def tool_row(context, ident, tool):
         bundle = apatch_bundle(context)
         if bundle:
             row.update({'version': "KernelPatch " + bundle['version'], 'file': 'kpimg', 'size': bundle['size'],
-                        'sha256': bundle['sha256'], 'bundled': True, 'needs_key': True})
+                        'sha256': bundle['sha256'], 'bundled': True, 'needs_key': True, 'manager': APATCH_MANAGER})
         else:
             row.update({'supported': False, 'reason': 'This build of the recovery has no APatch'})
     elif context.mode == 'fixture':
         row.update((context.config.get('root') or {}).get(ident, {}))
     else:
         try:
-            row.update(latest(tool['repo'], tool['asset']))
+            row.update(tagged(tool['repo'], tool['tag_prefix'], tool['asset']) if tool.get('tag_prefix')
+                       else latest(tool['repo'], tool['asset']))
         except (OSError, ValueError, fs.FilesystemError) as error:
             row['error'] = getattr(error, 'code', None) or 'NETWORK_UNAVAILABLE'
     return row
@@ -212,7 +440,7 @@ def download(context, url, size, sha256, target, progress):
                 done += len(data)
                 require(done <= APK_LIMIT, 'DOWNLOAD_TOO_LARGE', 'The download is larger than its release says')
                 out.write(data)
-                progress('Downloading', {'label': 'magisk', 'size_bytes': size}, done)
+                progress('Downloading', {'label': Path(target).name[:40], 'size_bytes': size}, done)
     digest = hashlib.sha256(Path(target).read_bytes()).hexdigest()
     require(os.path.getsize(target) == size and digest == sha256, 'DOWNLOAD_CHECKSUM_MISMATCH',
             'The download differs from its release. Try again.')
@@ -260,14 +488,20 @@ def patch_apatch(context, bundle, boot, work, superkey):
 
     def run(*args, need=True):
         # By its name in WORK: without privileges the folders above WORK cannot be passed (2026-11-11, on the phone).
-        done = subprocess.run(['./kptools', *args], cwd=work, env={'PATH': '/bin:/usr/bin', 'HOME': '.'},
-                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=PATCH_SECONDS,
-                              **identity)
+        try:
+            done = subprocess.run(['./kptools', *args], cwd=work, env={'PATH': '/bin:/usr/bin', 'HOME': '.'},
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=PATCH_SECONDS,
+                                  **identity)
+        except subprocess.TimeoutExpired:
+            fail('APATCH_PATCH_FAILED', 'The APatch patch command timed out', step=args[0])
+        except (OSError, subprocess.SubprocessError):
+            fail('APATCH_PATCH_FAILED', 'The APatch patch command could not run', step=args[0])
         text = done.stdout.decode('utf-8', 'replace')
         # The SuperKey is an argument of one step: it never reaches a log.
-        log.extend(line.replace(superkey, '***') for line in text.splitlines() if line.strip())
+        lines = text.replace(superkey, '***').splitlines()
+        log.extend(line for line in lines if line.strip())
         require(done.returncode == 0 or not need, 'APATCH_PATCH_FAILED', 'The kernel in BOOT could not be patched for APatch', step=args[0],
-                log=[line.replace(superkey, '***') for line in text.splitlines()[-6:]])
+                log=lines[-6:])
         return text
 
     run('unpack', 'boot.img')
@@ -329,8 +563,10 @@ def install_root(context, ident, expected_sha256, confirmed, progress, erase_dat
     state = boot_state(context)
     require(state['kind'] == 'android', 'ROOT_NEEDS_ANDROID_BOOT', 'Root goes into the BOOT of Android: install Android first')
     # Magisk lives in the ramdisk and APatch in the kernel: one BOOT carries one of them.
-    require(state['root'] in ('', ident), 'ROOT_OTHER_PRESENT',
+    require(state['root'] in ('', tool.get('kernel_root', ident)), 'ROOT_OTHER_PRESENT',
             'This BOOT already has another root: flash the stock BOOT back first (Remove root)', present=state['root'])
+    require(not (reset and tool.get('zip')), 'ROOT_NEEDS_DATA_RESET',
+            'Android data must be erased once for root on this Samsung: install Magisk first, then KernelSU Next')
     if tool.get('bundled'):
         require(isinstance(superkey, str) and SUPERKEY.fullmatch(superkey), 'SUPERKEY_INVALID',
                 'The SuperKey needs 8 to 63 characters without spaces, with a letter and a digit')
@@ -342,6 +578,9 @@ def install_root(context, ident, expected_sha256, confirmed, progress, erase_dat
     require(release.get('supported'), 'ROOT_UNSUPPORTED', release.get('reason') or 'Not for this phone')
     require(release.get('sha256') == expected_sha256, 'ROOT_RELEASE_CHANGED', 'A newer release came out since it was shown. Review again')
     work = WORK if context.mode == 'device' else context.root / 'root-work'
+    if tool.get('zip'):
+        with work_folder(context, work):
+            return fetch_kernel_zip(context, ident, tool, release, work, progress)
     with work_folder(context, work):
         result = patch_and_flash(context, ident, tool, release, work, progress, superkey)
     if reset:
@@ -416,8 +655,46 @@ def patch_and_flash(context, ident, tool, release, work, progress, superkey=None
     # The patched BOOT is in the partition now and can be made again: cache keeps only the ways back.
     with contextlib.suppress(fs.FilesystemError, OSError):
         saved_boot.remove_from_cache(context, path)
+    if not bundle and context.mode == 'device':
+        keep_magisk_apk(context, apk, release, progress)
     return {'root': ident, 'name': tool['name'], 'version': release['version'], 'apk': '' if bundle else release['file'], 'boot': path,
             'sha256': written['sha256'], 'kept_boot': written.get('kept_boot'), 'log': log[-12:]}
+
+
+def fetch_kernel_zip(context, ident, tool, release, work, progress):
+    """The kernel's AnyKernel3 ZIP downloaded, checked against its release and kept on cache, for the
+    ZIP installer's review: nothing is written to BOOT here."""
+    require(0 < release['size'] <= ZIP_LIMIT, 'DOWNLOAD_TOO_LARGE', 'The kernel ZIP is larger than this recovery takes')
+    local = work / release['file']
+    download(context, release['url'], release['size'], release['sha256'], local, progress)
+    data = local.read_bytes()
+    try:
+        with zipfile.ZipFile(local) as archive:
+            names = set(archive.namelist())
+    except zipfile.BadZipFile:
+        fail('KERNEL_ZIP_INVALID', 'The download is no ZIP')
+    require({'anykernel.sh', 'Image.gz', 'META-INF/com/google/android/update-binary'} <= names, 'KERNEL_ZIP_INVALID',
+            'The download is no AnyKernel3 ZIP with a kernel')
+    path = saved_boot.save_on_cache(context, release['file'], data, {'kind': 'kernel-zip', 'root': ident, 'version': release['version']},
+                                    progress, keep_mounted=True, folder_name=KERNEL_ZIP_DIR)
+    cache = context.fs.volume('cache')
+    return {'root': ident, 'name': tool['name'], 'version': release['version'], 'apk': '',
+            'zip': {'volume': 'cache', 'volume_token': cache['volume_token'], 'path': path, 'sha256': release['sha256']}}
+
+
+def keep_magisk_apk(context, apk, release, progress):
+    """The installed Magisk's APK on cache (only the newest), so that a new system's fresh data can get
+    Magisk's files before its first start; a failure here does not undo the install."""
+    try:
+        data = Path(apk).read_bytes()
+        name = 'Magisk-' + re.sub(r'[^A-Za-z0-9._+-]', '_', release['version'])[:24] + '.apk'
+        for old in saved_boot.saved_boots(context, MAGISK_APK_DIR):
+            if old['name'] != name:
+                saved_boot.remove_from_cache(context, old['path'])
+        saved_boot.save_on_cache(context, name, data, {'kind': 'magisk-apk', 'version': release['version']}, progress,
+                                 folder_name=MAGISK_APK_DIR)
+    except (OSError, fs.FilesystemError, ValueError, KeyError):
+        pass
 
 
 def fixture_patch(context, boot, work):
@@ -433,6 +710,8 @@ def parser():
     commands = result.add_subparsers(dest='command', required=True)
     commands.add_parser('list')
     commands.add_parser('prepare-vbmeta')
+    bootstrap = commands.add_parser('apatch-bootstrap', help='Generate a bootstrap script for booted Android')
+    bootstrap.add_argument('--manager-apk', required=True, type=Path, help='Verified APatch Manager 11282 APK')
     command = commands.add_parser('install')
     command.add_argument('--id', required=True)
     command.add_argument('--expected-sha256', required=True)
@@ -454,6 +733,9 @@ def main(argv=None):
             last[:] = [phase, now]
 
     try:
+        if args.command == 'apatch-bootstrap':
+            print(apatch_bootstrap(args.manager_apk), end='', flush=True)
+            return 0
         context = install.FixtureContext(args.fixture) if args.fixture else install.DeviceContext()
         if args.command == 'list':
             result = tools(context)
@@ -471,7 +753,8 @@ def main(argv=None):
     except Exception as error:  # noqa: BLE001 - every refusal reaches the page as JSON
         code = getattr(error, 'code', None) or ('OPERATION_BUSY' if isinstance(error, BlockingIOError) else 'IO_ERROR')
         print(json.dumps({'ok': False, 'operation': args.command, 'error': {
-            'code': code, 'message': str(error), 'details': getattr(error, 'details', {})}}, separators=(',', ':')), flush=True)
+            'code': code, 'message': str(error), 'details': getattr(error, 'details', {})}}, separators=(',', ':')),
+              file=sys.stderr if args.command == 'apatch-bootstrap' else sys.stdout, flush=True)
         return 2
 
 

@@ -31,7 +31,7 @@ import sys
 import termios
 import time
 
-from operation_lock import DEVICE_LOCK, ENV_FD, operation_lock
+from operation_lock import DEVICE_LOCK, ENV_FD, ENV_SHARED, operation_lock
 
 SCHEMA = 'a22x.terminal.service.v1'
 RING_BYTES = 256 * 1024
@@ -150,11 +150,12 @@ def environment(mode, *, root=None, lease=None):
     value = {'PATH': '/bin:/sbin:/usr/bin:/usr/sbin', 'TERM': 'vt100',
              'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', 'PYTHONDONTWRITEBYTECODE': '1',
              'HOME': '/root' if mode == 'device' else str(root),
-             'HISTFILE': '/dev/null', 'HISTSIZE': '0', 'PS1': 'a22x# '}
+             'HISTFILE': '/dev/null', 'HISTSIZE': '0', 'PS1': 'a22x:${PWD}# '}
     if mode == 'device':
         value.update(PYTHONHOME='/usr', LD_LIBRARY_PATH='/usr/lib')
     if lease is not None:
         value[ENV_FD] = str(lease)
+        value[ENV_SHARED] = '1'  # the terminal's lease is shared: USB files and copies run beside it
     return value
 
 
@@ -665,7 +666,7 @@ def serve(context, args):
         require(not previous or (previous.get('clean') and not process_live(previous)),
                 'SERVICE_STALE', 'An existing or unclean terminal session requires review')
         try:
-            lease = stack.enter_context(operation_lock(context.lock_path, context.mode))
+            lease = stack.enter_context(operation_lock(context.lock_path, context.mode, shared=True))
             context.save(record)
             if context.socket_path.exists():
                 path_without_links(context.socket_path)

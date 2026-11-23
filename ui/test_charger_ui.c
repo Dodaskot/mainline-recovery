@@ -18,7 +18,8 @@ int main(int argc,char**argv){
         return 2;
     initialize(a);a->device=true;copy(a->python,sizeof(a->python),script);copy(a->distro_helper,sizeof(a->distro_helper),"/opt/a22x-recovery/distro.py");
     #define C(n,e) do{if(!(e)){fprintf(stderr,"charger-ui check %d failed: %s\n",n,#e);return n;}}while(0)
-    screen(a,TOOLS);render(a);
+    /* The charging screen's row is under the Tools tab's utilities (2026-11-22): scrolled to it. */
+    screen(a,TOOLS);render(a);a->tools_scroll=400;render(a);
     Button*b=test_button(a,A_CHARGER_OFF);
     C(3,b&&!b->enabled);   /* Unknown until read. */
     C(4,start_charger_job(a,0));

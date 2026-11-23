@@ -1,5 +1,9 @@
 # Android crypto and filesystem status — A22x recovery
 
+> Historical kernel #107 audit from 2026-11-05. For the subsequently implemented
+> and hardware-verified kernel #145 Evolution password RO/RW path, see
+> [current validation](permanent-rw-ui-20261116.uk.md). The observations below are preserved.
+
 Date: 2026-11-05. Target: Samsung SM-A226B / a22x / MT6833.
 
 ## Result

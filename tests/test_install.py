@@ -188,6 +188,16 @@ class Formats(unittest.TestCase):
         self.assertEqual(result['target_sha256'], hashlib.sha256(prefix + bytes(4096)).hexdigest())
         self.assertEqual(result['payload_bytes'], 12288)
 
+    def test_fixed_chunks_reuses_aligned_bytes_and_preserves_chunk_boundaries(self):
+        first = b'A' * i.CHUNK
+        second = bytearray(b'B' * i.CHUNK)
+        ready, full, tail = i.fixed_chunks(iter((first, b'xy', second, b'z')))
+        self.assertIs(ready, first)
+        self.assertEqual(full, b'xy' + second[:-2])
+        self.assertEqual(tail, b'BBz')
+        self.assertIsInstance(full, bytes)
+        self.assertIsInstance(tail, bytes)
+
     def test_full_megabyte_gzip_boundaries_and_fixed_chunk_cursor(self):
         raw = b'A' * i.CHUNK + os.urandom(91)
         result = self.inspect(gzip.compress(raw, mtime=0), target=len(raw), compression='gzip')
@@ -525,6 +535,23 @@ class Lifecycle(unittest.TestCase):
         self.error('BOOT_SAFETY_UNPROVEN', lambda: i.boot_check(f.context))
         other = tb.boot(tb.kernel(), tb.ramdisk({'ro.product.bootimage.device': 'a32x'}))
         f.target_paths['boot'].write_bytes(other + bytes(size - len(other)))
+        self.error('BOOT_SAFETY_UNPROVEN', lambda: i.boot_check(f.context))
+
+    def test_an_empty_vbmeta_system_is_allowed_when_vbmeta_turns_verification_off(self):
+        # 2026-11-20, a tester's ROM: vbmeta_system without an AVB header and the main vbmeta's flags
+        # 3; the bootloader never reads the chained partition then.
+        f = self.f
+        size = len(f.old_bytes['vbmeta'])
+        header = bytearray(256)
+        header[0:4] = b'AVB0'
+        struct.pack_into('>II', header, 4, 1, 0)
+        struct.pack_into('>I', header, 120, 3)
+        f.target_paths['vbmeta'].write_bytes(bytes(header) + bytes(size - 256))
+        f.target_paths['vbmeta_system'].write_bytes(bytes(len(f.old_bytes['vbmeta_system'])))
+        value = i.boot_check(f.context)
+        self.assertEqual((value['verified_by_contents'], value['unverified_chained_vbmeta']), (['vbmeta'], ['vbmeta_system']))
+        struct.pack_into('>I', header, 120, 0)  # verification on: the empty vbmeta_system would stop the start
+        f.target_paths['vbmeta'].write_bytes(bytes(header) + bytes(size - 256))
         self.error('BOOT_SAFETY_UNPROVEN', lambda: i.boot_check(f.context))
 
     def test_unchanged_linux_boot_allowed_with_unrelated_empty_or_absent_sd(self):

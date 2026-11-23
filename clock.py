@@ -8,7 +8,13 @@ When Wi-Fi gives an address, the time comes from a time server (SNTP, as phones 
 screen shows the exact time and downloads work; the hardware clock is left alone.
 
     clock.py sync     the clock set from the first time server that answers
+    clock.py hardware the clock set at start-up from the hardware clock in Android's form
+
+2026-11-19: the form is known now, so the date is right without Wi-Fi too. Samsung's Android stores
+the year as year - 1968 (58 for 2026). This kernel's mt6397 driver reads a register below 68 as
+1900 + r and moves it into its 128-year window by 46751 days, hence 2086 and one day early.
 """
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -49,6 +55,37 @@ def ask(host, port=123, timeout=3.0):
     seconds, fraction = struct.unpack('!II', reply[40:48])
     server = seconds - NTP_EPOCH + fraction / 2 ** 32
     return server + (received - sent) / 2 - received
+
+
+ANDROID_FORM_SHIFT = timedelta(days=46751)  # 1900-01-01 to 2028-01-01, the driver's window move
+
+
+def from_android_form(now):
+    """The real time for a kernel clock read from a hardware clock Android wrote, or None when the
+    kernel time does not come from that form (any year outside 2028..2095 as read)."""
+    read = datetime.fromtimestamp(now, timezone.utc)
+    if not 2028 <= read.year < 2096:
+        return None
+    register = read - ANDROID_FORM_SHIFT  # 1900 + r, the date the driver started from
+    try:
+        real = register.replace(year=register.year + 68)  # 1968 + r; both years agree on leap days
+    except ValueError:
+        return None
+    value = real.timestamp()
+    return value if plausible(value) else None
+
+
+def from_hardware(set_clock=True, now=None):
+    """At start-up: a clock read from Android's hardware form is set to the time it means."""
+    now = time.time() if now is None else now
+    if plausible(now):
+        return {'set': False, 'reason': 'plausible'}
+    value = from_android_form(now)
+    if value is None:
+        return {'set': False, 'reason': 'unknown form'}
+    if set_clock:
+        time.clock_settime(time.CLOCK_REALTIME, value + (time.time() - now))
+    return {'set': True, 'utc': int(value)}
 
 
 def sync(servers=SERVERS, set_clock=True, state=STATE):
@@ -93,8 +130,12 @@ def sync_in_background():
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv == ['hardware']:
+        result = from_hardware()
+        print(json.dumps(result), flush=True)
+        return 0 if result['set'] else 1
     if argv[:1] != ['sync']:
-        print('usage: clock.py sync', file=sys.stderr)
+        print('usage: clock.py sync | hardware', file=sys.stderr)
         return 64
     result = sync()
     print(json.dumps(result), flush=True)

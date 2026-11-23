@@ -440,8 +440,10 @@ class DeviceContext:
         if not path.is_dir():
             fail("INVALID_REPOSITORY", "Repository must be an existing mounted directory")
         mount = self._mount_for(path)
-        if mount["filesystem"] not in {"ext4", "f2fs", "btrfs", "xfs", "exfat", "ntfs3"}:
-            fail("UNSUPPORTED_REPOSITORY_FS", "A durable external filesystem with large-file support is required",
+        # 2026-11-20, the owner: every filesystem the recovery writes; FAT32 too, whose 4 GiB file
+        # limit is checked as an image is written (FILE_TOO_LARGE).
+        if mount["filesystem"] not in {"ext4", "f2fs", "btrfs", "xfs", "exfat", "ntfs3", "udf", "vfat"}:
+            fail("UNSUPPORTED_REPOSITORY_FS", "A filesystem the recovery can write is required",
                  filesystem=mount["filesystem"])
         read_only = "ro" in mount["options"]
         if writing and read_only:

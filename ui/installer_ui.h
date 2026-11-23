@@ -86,7 +86,7 @@ static int catalog_chips(App*a,int y,unsigned int count,const char*const*labels,
         const char*label=raw&&n?labels[n]:tr(labels[n]);
         int w=text_width(label,0)+40;if(x+w>692){x=28;y+=64;}
         Rect r={x,y,w,52};rounded(a,r,26,selected==n?ORANGE:PANEL);
-        raw_text(raw&&n);centered(a,r,0,selected==n?ui_theme->hero_text:TEXT,labels[n]);raw_text(false);
+        raw_text(raw&&n);centered(a,r,0,selected==n?ON_ORANGE:TEXT,labels[n]);raw_text(false);
         register_button(a,r,base+(int)n,true,0);x+=w+10;any=true;
     }
     return any?y+64:y;
@@ -126,7 +126,7 @@ static void render_systems_new(App*a){
     else heading(a,"New system","A clean installation, like the installer of a live disk.",true);
     /* 2026-11-11: with Android on userdata there is nothing to mount: a new system formats it when
        its installation starts, so the file is chosen at once (the row did nothing there before). */
-    bool fresh=!a->systems_adding&&systems_fresh(a),ready=systems_ready(a)||fresh,free_ui=ui_free(a);
+    bool fresh=!a->systems_adding&&systems_new_android(a),ready=systems_ready(a)||fresh,free_ui=ui_free(a);
     installer_card(a,(Rect){28,236,664,168},2,ICON_BROWSER,"From the internet","Minimal images from the catalog, downloaded over Wi-Fi",A_NEW_INTERNET,free_ui);
     installer_card(a,(Rect){28,420,664,168},1,A_FILES,"From a file","A system image on a USB stick or SD card",A_NEW_FILE,free_ui&&ready);
     installer_card(a,(Rect){28,604,664,168},3,ICON_PHONE,"Saved on the phone",fresh?"Userdata holds Android: no images are saved there":"Images in the phone's memory, no SD card needed",A_NEW_SAVED,free_ui&&!fresh);
@@ -172,14 +172,7 @@ static void render_catalog(App*a){
     else if(a->catalog_saving)heading(a,"Download to the phone","Saved in the phone's memory and checked, for installing later.",true);
     else heading(a,a->catalog_only==2?"Android images":(a->catalog_only==1?"Linux systems":"Catalog"),"Official images, downloaded and checked during the installation.",true);
     bool busy=a->job.pid&&a->job.kind==J_CATALOG,checking=a->job.pid&&a->job.kind==J_CATALOG_CHECK,free_ui=ui_free(a)&&!busy;
-    /* One list that scrolls under the finger, with the chips and the state of the check (2026-11-08). */
-    a->page_scroll=(int64_t)scroll_clamp((double)a->page_scroll,(double)page_max_scroll(a));int y=232-(int)a->page_scroll;
-    a->clip_active=true;a->clip=page_viewport(a);
-    if(a->catalog_known&&!a->catalog_network){
-        rounded(a,(Rect){28,y,664,112},22,PANEL);icon(a,ICON_WIFI,48,y+30,44,ORANGE);
-        wrapped(a,108,y+18,380,0,TEXT,"Recovery is not connected to Wi-Fi.",2);
-        button(a,(Rect){512,y+20,160,72},"Wi-Fi",A_CATALOG_WIFI,free_ui,true,0);y+=128;
-    }
+    int y=232;
     /* The category first (2026-11-10), as a chip each when both are in the catalog. */
     /* 2026-11-11: opened to install Linux, or Android, the catalog shows that category only, so the
        other installation is not one tap away; from Home it is a catalog of both. */
@@ -189,7 +182,7 @@ static void render_catalog(App*a){
         int x=28;
         for(unsigned int n=0;n<CATEGORIES;n++){
             Rect r={x,y,322,60};rounded(a,r,30,a->catalog_category==n?ORANGE:PANEL);
-            centered(a,r,1,a->catalog_category==n?ui_theme->hero_text:TEXT,catalog_categories[n]);
+            centered(a,r,1,a->catalog_category==n?ON_ORANGE:TEXT,catalog_categories[n]);
             register_button(a,r,A_CATALOG_CATEGORY+(int)n,true,0);x+=342;
         }
         y+=80;
@@ -212,7 +205,18 @@ static void render_catalog(App*a){
         static const char*const fit_labels[]={"For this phone","All phones"};
         y=catalog_chips(a,y,2,fit_labels,a->catalog_all_phones?1:0,A_CATALOG_FIT,NULL,false);
     }
-    y+=0;
+    a->catalog_list_top=y;
+    a->page_scroll=(int64_t)scroll_clamp((double)a->page_scroll,(double)page_max_scroll(a));
+    Rect list=page_viewport(a);
+    a->clip_active=true;a->clip=list;y-=(int)a->page_scroll;
+    if(a->catalog_known&&!a->catalog_network){
+        rounded(a,(Rect){28,y,664,112},22,PANEL);icon(a,ICON_WIFI,48,y+30,44,ORANGE);
+        wrapped(a,108,y+18,380,0,TEXT,"Recovery is not connected to Wi-Fi.",2);
+        button(a,(Rect){512,y+20,160,72},"Wi-Fi",A_CATALOG_WIFI,free_ui,true,0);y+=128;
+    }else if(a->catalog_network&&!checking){
+        button(a,(Rect){28,y,664,64},"Check for updates",A_CATALOG_REFRESH,!a->job.pid,false,0);
+        y+=80;
+    }
     /* What the check of the servers found: newer images, images gone, or no answer, and why. */
     if(a->catalog_network&&(checking||a->catalog_check_done)){
         char line[160];uint32_t ink=MUTED;
@@ -223,7 +227,8 @@ static void render_catalog(App*a){
         raw_text(true);ellipsis(a,40,y,640,0,ink,line);raw_text(false);y+=40;
         if(!checking&&a->catalog_failed&&a->catalog_problem[0]){raw_text(true);ellipsis(a,40,y,640,0,MUTED,a->catalog_problem);raw_text(false);y+=36;}
     }else y+=8;
-    if(!a->catalog_count){wrapped(a,40,y+12,640,0,MUTED,busy?"Reading the catalog...":"The catalog is empty in this recovery.",3);y+=80;}
+    if(!a->catalog_count&&a->catalog_busy){wrapped(a,40,y+12,640,0,TEXT,"Storage is busy: the terminal or another operation is running. Close the terminal in the recent screens, then open the catalog again.",4);y+=150;}
+    else if(!a->catalog_count){wrapped(a,40,y+12,640,0,MUTED,busy?"Reading the catalog...":"The catalog is empty in this recovery.",3);y+=80;}
     for(unsigned int i=0;i<a->catalog_count;i++){
         const CatalogImage*c=&a->catalog[i];if(!catalog_shown(a,c))continue;
         Rect r={28,y,664,112};unsigned int tone=catalog_android(c)?(c->fits?2:4):catalog_tone(c->family);bool usable=free_ui&&c->reachable;
@@ -254,7 +259,9 @@ static void render_catalog(App*a){
         icon(a,ICON_CHEVRON,646,y+40,30,usable?MUTED:PANEL2);
         register_button(a,r,A_CATALOG_ITEM+(int)i,usable,0);y+=124;
     }
-    a->page_content=y+a->page_scroll-230+16;a->clip_active=false;scroll_indicator(a,(Rect){698,230,5,1254},a->page_scroll,a->page_content,ORANGE);
+    a->page_content=y+a->page_scroll-list.y+16;a->clip_active=false;
+    if(a->page_scroll>page_max_scroll(a)){a->page_scroll=page_max_scroll(a);a->dirty=true;}
+    scroll_indicator(a,(Rect){698,list.y,5,list.h},a->page_scroll,a->page_content,ORANGE);
     if(a->systems_mount_sheet)render_systems_mount(a);
 }
 
@@ -288,8 +295,13 @@ static void complete_catalog_job(App*a,const Json*j,bool ok,bool check){
         /* A failed check leaves the list as it was read. */
         if(!ok||!j){a->dirty=true;return;}
     }
-    a->catalog_known=true;a->catalog_count=0;
-    if(!ok||!j){a->catalog_network=false;a->dirty=true;return;}
+    a->catalog_known=true;a->catalog_count=0;a->catalog_busy=false;
+    if(!ok||!j){
+        /* Busy is not offline (2026-11-20: a terminal left open kept the storage lease, and the page
+           said there was no Wi-Fi). */
+        char code[48]="";if(j){int error=json_get(j,0,"error");if(error>=0)jstring(j,error,"code",code,sizeof(code));}
+        a->catalog_busy=!strcmp(code,"OPERATION_BUSY");a->catalog_network=a->catalog_busy;a->dirty=true;return;
+    }
     a->catalog_https=json_bool(j,json_get(j,0,"https"),0);a->catalog_network=json_bool(j,json_get(j,0,"network"),0);
     int list=json_get(j,0,"images");
     if(list>=0)for(int i=list+1;i<json_next(j,list)&&a->catalog_count<CATALOG_MAX;i=json_next(j,i)){
@@ -315,8 +327,6 @@ static void complete_catalog_job(App*a,const Json*j,bool ok,bool check){
         if(c->id[0]&&c->name[0]&&c->file[0]&&catalog_android(c))a->catalog_count++;
     }
     a->dirty=true;
-    /* With Wi-Fi, the servers are asked for newer images once per opening of the page. */
-    if(!check&&a->catalog_network&&!a->catalog_checked&&a->screen==SYSTEMS_CATALOG)start_catalog_check(a);
 }
 
 /* An image chosen from the catalog goes through the same install pages as a file. */
@@ -331,10 +341,10 @@ static void catalog_choose(App*a,const CatalogImage*c){
 
 static bool installer_action(App*a,int id){
     if(id==A_SYS_NEW){if(ui_free(a)){a->systems_mount_sheet=false;a->systems_adding=false;screen(a,SYSTEMS_NEW);}return true;}
-    if(id==A_HOME_CATALOG){
-        if(ui_free(a)){a->systems_adding=false;a->catalog_saving=false;a->catalog_only=0;a->catalog_return=HOME;a->catalog_family=0;a->catalog_page=0;a->page_scroll=0;a->catalog_checked=a->catalog_check_done=false;screen(a,SYSTEMS_CATALOG);
-            /* The install pages need the state of userdata; the catalog is read right after it. */
-            a->catalog_after_status=a->distro_helper[0]!=0;if(!a->catalog_after_status||!start_systems_job(a,J_SYS_STATUS)){a->catalog_after_status=false;start_catalog_job(a);}}
+    /* The browser opens beside an operation too: it needs no storage (2026-11-22, the owner). */
+    if(id==A_HOME_CATALOG){if(ui_free(a)||(a->job.pid&&!terminal_job(a->job.kind)))screen(a,WEB_BROWSER);return true;}
+    if(id==A_WEB_CATALOG&&a->screen==WEB_BROWSER){
+        if(ui_free(a)){a->systems_adding=false;a->catalog_saving=false;a->catalog_only=0;a->catalog_return=WEB_BROWSER;a->catalog_family=0;a->catalog_page=0;a->page_scroll=0;a->catalog_checked=a->catalog_check_done=false;screen(a,SYSTEMS_CATALOG);if(a->web_pid)a->web_catalog_pending=true;else start_catalog_job(a);}
         return true;
     }
     if(a->screen==SYSTEMS_NEW){
@@ -343,7 +353,7 @@ static bool installer_action(App*a,int id){
         if(id==A_NEW_INTERNET){a->catalog_saving=false;a->catalog_only=1;a->catalog_return=HOME;a->catalog_family=0;a->catalog_page=0;a->page_scroll=0;a->catalog_checked=a->catalog_check_done=false;screen(a,SYSTEMS_CATALOG);start_catalog_job(a);return true;}
         if(id==A_NEW_FILE){
             if(a->source_sheet)return false;
-            if(!systems_ready(a)&&!(!a->systems_adding&&systems_fresh(a)))return true;
+            if(!systems_ready(a)&&!(!a->systems_adding&&systems_new_android(a)))return true;
             /* The sheet asks where the image is, and mounts the card that is chosen (2026-11-11). */
             a->systems_remote_id[0]=0;a->systems_wipe=!a->systems_adding;a->systems_pick_manifest=true;a->systems_pick_script=false;a->systems_plan_page=0;
             source_open(a);return true;
@@ -364,6 +374,7 @@ static bool installer_action(App*a,int id){
         if(id>=A_CATALOG_REGION&&id<=A_CATALOG_REGION+(int)CATALOG_REGIONS){a->catalog_region=(unsigned int)(id-A_CATALOG_REGION);a->page_scroll=0;a->dirty=true;return true;}
         if(id==A_CATALOG_FIT||id==A_CATALOG_FIT+1){a->catalog_all_phones=id==A_CATALOG_FIT+1;a->page_scroll=0;a->dirty=true;return true;}
         if(id==A_CATALOG_WIFI){a->wifi_from_catalog=true;return wifi_action(a,A_WIFI);}
+        if(id==A_CATALOG_REFRESH){if(a->catalog_network)start_catalog_check(a);return true;}
         if(id>=A_CATALOG_FAMILY&&id<A_CATALOG_FAMILY+(int)CATALOG_FAMILIES){a->catalog_family=(unsigned int)(id-A_CATALOG_FAMILY);a->catalog_page=0;a->page_scroll=0;a->dirty=true;return true;}
         if(id==A_CATALOG_PREV){if(a->catalog_page)a->catalog_page--;a->dirty=true;return true;}
         if(id==A_CATALOG_NEXT){a->catalog_page++;a->dirty=true;return true;}
@@ -372,9 +383,12 @@ static bool installer_action(App*a,int id){
             /* An Android image opens its own page: what it is, whether it fits, download and install. */
             if(n<a->catalog_count&&catalog_android(&a->catalog[n])){if(ui_free(a))open_android_image(a,(int)n);return true;}
             if(n<a->catalog_count&&a->catalog[n].reachable&&ui_free(a)){
+                if(!a->systems_known&&!a->preview&&start_systems_job(a,J_SYS_STATUS)){
+                    a->catalog_pending=n+1;return true;
+                }
                 /* Userdata not mounted: mounted here, then this image goes on (2026-11-08). */
                 /* On Android's userdata a new system needs no mount: its installation formats it. */
-                if(!systems_ready(a)&&!(systems_fresh(a)&&!a->systems_adding&&!a->catalog_saving)){
+                if(!systems_ready(a)&&!(systems_new_android(a)&&!a->systems_adding&&!a->catalog_saving)){
                     if(systems_can_mount(a)){a->catalog_pending=n+1;a->systems_mount_sheet=true;a->dirty=true;}
                     /* Nothing to mount and nothing to install on (an interrupted switch, no platform
                        profile): the page stays, and says where the reason is shown. */

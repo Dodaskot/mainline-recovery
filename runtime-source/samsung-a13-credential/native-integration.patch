@@ -1,0 +1,80 @@
+--- a/unlock_main.cpp
++++ b/unlock_main.cpp
+@@ -1,6 +1,7 @@
+ // SPDX-License-Identifier: MIT
+ #include "crypto.h"
+ #include "password_data.h"
++#include "credential_codec.h"
+ #include "sp_hidl.h"
+ #include "../source-audit/gk-build-v2/gatekeeper_client.h"
+ extern "C" {
+@@ -60,27 +61,6 @@
+     close(fd);
+     return ok;
+ }
+-static bool credential_frame(int fd,g3::Secret* out) {
+-    struct stat st{};struct statfs fs{};int flags=fcntl(fd,F_GETFL);
+-    if(flags<0||(flags&O_ACCMODE)!=O_RDONLY||fstat(fd,&st)||fstatfs(fd,&fs)||
+-       !S_ISFIFO(st.st_mode)||uint64_t(fs.f_type)!=0x50495045)return false;
+-    // A pipe can be supplied in advance. No interactive retry or echo exists.
+-    uint8_t header[4]={};size_t at=0;
+-    while(at<4) {
+-        pollfd p{fd,POLLIN,0};if(poll(&p,1,5000)!=1)return false;
+-        ssize_t n=read(fd,header+at,4-at);if(n<=0)return false;at+=size_t(n);
+-    }
+-    uint32_t n=uint32_t(header[0])|uint32_t(header[1])<<8|uint32_t(header[2])<<16|uint32_t(header[3])<<24;
+-    g3::wipe(header,4);if(!n||n>256)return false;
+-    out->bytes.resize(n);at=0;
+-    while(at<n){pollfd p{fd,POLLIN,0};if(poll(&p,1,5000)!=1){out->clear();return false;}
+-        ssize_t got=read(fd,out->bytes.data()+at,n-at);if(got<=0){out->clear();return false;}at+=size_t(got);}
+-    uint8_t extra=0;pollfd p{fd,POLLIN,0};bool eof=poll(&p,1,5000)==1&&read(fd,&extra,1)==0;g3::wipe(&extra,1);
+-    if(!eof){out->clear();return false;}
+-    // First qualified profile is the supplied ASCII password. No UTF8 guessing.
+-    for(uint8_t c:out->bytes)if(c<32||c>126){out->clear();return false;}
+-    return true;
+-}
+ static bool prepare_failed(bool prepare,bool failed,const char* name) {
+     if(prepare&&failed)fprintf(stderr,"G3 SP_PREPARE_NATIVE_GUARD name=%s\n",name);
+     return failed;
+@@ -110,7 +90,7 @@
+     const auto* profile=sp_resolved_profile(resolved);
+     const bool legacy=profile && profile->ce_profile==SP_CE_LEGACY_HW_SCRYPT;
+     const bool software=profile && profile->ce_profile==SP_CE_SOFTWARE_NONE;
+-    if(prepare_failed(prepare,!profile,"PROFILE_MISSING")||prepare_failed(prepare,(profile->sp_version!=3),"PROFILE_SP_VERSION")||prepare_failed(prepare,(profile->secure_mode!=0),"PROFILE_SECURE_MODE")||prepare_failed(prepare,(profile->credential_type!=4),"PROFILE_CREDENTIAL_TYPE")||
++    if(prepare_failed(prepare,!profile,"PROFILE_MISSING")||prepare_failed(prepare,(profile->sp_version!=3),"PROFILE_SP_VERSION")||prepare_failed(prepare,(profile->secure_mode!=0),"PROFILE_SECURE_MODE")||prepare_failed(prepare,(profile->credential_type!=1&&profile->credential_type!=4),"PROFILE_CREDENTIAL_TYPE")||
+        prepare_failed(prepare,(!profile->ce_checked),"PROFILE_CE_CHECKED")||prepare_failed(prepare,(!profile->ce_secdiscardable),"PROFILE_CE_SECDISCARDABLE")||prepare_failed(prepare,(profile->ce_candidates!=1),"PROFILE_CE_CANDIDATES")||
+        prepare_failed(prepare,(profile->user_id_seen!=1),"PROFILE_USER_ID")||prepare_failed(prepare,(profile->creation_datetime_keystore_seen!=1),"PROFILE_CREATION_DATETIME")||prepare_failed(prepare,((!legacy&&!software)),"PROFILE_CE_KIND"))return 67;
+     if(legacy && (prepare_failed(prepare,(profile->ce_scrypt_log_n!=15),"LEGACY_CE_KDF_N")||prepare_failed(prepare,(profile->ce_scrypt_log_r!=3),"LEGACY_CE_KDF_R")||
+@@ -122,7 +102,7 @@
+        prepare_failed(prepare,(!artifact(resolved,root,SP_ARTIFACT_BLOB,59,65536,&sp_blob)),"SP_BLOB_READ")||
+        prepare_failed(prepare,(!artifact(resolved,root,SP_ARTIFACT_SECDIS,16384,16384,&secdis)),"SP_SECDIS_READ"))return 67;
+     sp::PasswordData pwd;
+-    if(prepare_failed(prepare,(!sp::parse_samsung_password_data(password_data,&pwd)),"PWD_PARSE")||prepare_failed(prepare,(pwd.secure_mode!=0),"PWD_SECURE_MODE")||prepare_failed(prepare,(pwd.credential_type!=4),"PWD_CREDENTIAL_TYPE")||
++    if(prepare_failed(prepare,(!sp::parse_samsung_password_data(password_data,&pwd)),"PWD_PARSE")||prepare_failed(prepare,(pwd.secure_mode!=0),"PWD_SECURE_MODE")||prepare_failed(prepare,(pwd.credential_type!=int32_t(profile->credential_type)),"PWD_CREDENTIAL_TYPE")||
+        prepare_failed(prepare,(pwd.log_n!=profile->log_n),"PWD_PROFILE_KDF_N")||prepare_failed(prepare,(pwd.log_r!=profile->log_r),"PWD_PROFILE_KDF_R")||prepare_failed(prepare,(pwd.log_p!=profile->log_p),"PWD_PROFILE_KDF_P")||
+        prepare_failed(prepare,(sp_blob.bytes[0]!=3),"SP_BLOB_VERSION")||prepare_failed(prepare,(sp_blob.bytes[1]!=0),"SP_BLOB_TYPE"))return 67;
+     password_data.clear();
+@@ -148,10 +128,11 @@
+         "G3 SP_PREPARE_CE_BLOB disk_bytes=%zu normalized_bytes=%zu wrapping=%s\n",
+         profile->ce_keymaster_blob_bytes,ce_blob.bytes.size(),
+         ce_blob.bytes.size()==profile->ce_keymaster_blob_bytes?"RAW":"PKMBLOB_HW_V0");
++    if(prepare)fprintf(stderr,"G3 SP_PREPARE_CREDENTIAL type=%s\n",profile->credential_type==1?"pattern":"password");
+     if(prepare){fprintf(stderr,"G3 SP_PREPARE_READY auth_calls=0 ce_profile=%s\n",
+                         legacy?"legacy_hw_scrypt_v1":"software_v1_none");return 0;}
+     g3::Secret credential_bytes,token,gk_input,sec_hash,application,software_hash,software_key,hardware_envelope;
+-    if(!credential_frame(credential,&credential_bytes))return 65;
++    if(!sp::read_samsung_credential_frame(credential,profile->credential_type,&credential_bytes))return 65;
+     close(credential);
+     token.bytes.resize(32);
+     ok=EVP_PBE_scrypt(reinterpret_cast<const char*>(credential_bytes.bytes.data()),credential_bytes.bytes.size(),
+--- a/snapshot.c
++++ b/snapshot.c
+@@ -76,7 +76,7 @@
+  struct stat st;struct pwd_header h;int fail=fstat(fd,&st)||pwd_public_header(fd,st.st_size,&h);
+  close(fd);
+  if(fail||st.st_size!=93||h.salt_bytes!=16||h.handle_bytes!=58||h.trailer_bytes!=4||
+-    h.secure_mode!=0||h.credential_type!=4||h.log_n!=11||h.log_r!=3||h.log_p!=1)return SP_RESOLVE_PROFILE;
++    h.secure_mode!=0||(h.credential_type!=1&&h.credential_type!=4)||h.log_n!=11||h.log_r!=3||h.log_p!=1)return SP_RESOLVE_PROFILE;
+  r->public.credential_type=(unsigned)h.credential_type;r->public.log_n=h.log_n;
+  r->public.log_r=h.log_r;r->public.log_p=h.log_p;r->public.secure_mode=(unsigned)h.secure_mode;
+  fd=sp_resolved_open_artifact(r,root,SP_ARTIFACT_BLOB);if(fd<0)return SP_RESOLVE_PROFILE;

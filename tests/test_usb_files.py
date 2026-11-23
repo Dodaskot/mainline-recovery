@@ -356,6 +356,25 @@ class StopAndSignalTests(unittest.TestCase):
         found = json.loads(out[-1])
         self.assertEqual((code, found['ok'], found['reason']), (0, True, 'USB_STOP_PENDING'))
 
+    def test_stop_while_stopping_never_queues_on_the_socket(self):
+        """2026-11-20, #3: each press of Stop during a long stop waited in the supervisor's listen
+        queue until connect() failed with EAGAIN, shown as OPERATION_BUSY [Errno 11]."""
+        from unittest import mock
+        record = {'state': 'stopping', 'stage': 'flush', 'pid': os.getpid(),
+                  'process_start': usb.process_start(os.getpid()),
+                  'session_token': 'c' * 64, 'exports': [], 'clean': False}
+        for answer in (AssertionError('no request while stopping'), BlockingIOError(errno.EAGAIN, 'queue full')):
+            out = []
+            with mock.patch.object(usb.Context, 'record', return_value=dict(record)), \
+                    mock.patch.object(usb, 'request', side_effect=answer), \
+                    mock.patch('builtins.print', lambda text, **k: out.append(text)):
+                code = usb.main(['--mode', 'fixture', '--fixture', str(self.root), 'stop',
+                                 '--expected-session-token', 'c' * 64])
+            found = json.loads(out[-1])
+            self.assertEqual((code, found['ok'], found['state'], found['reason'], found['stage']),
+                             (0, True, record['state'], 'USB_STOP_PENDING', 'flush'))
+            record['state'] = 'active'  # the second round: the request itself meets a full queue
+
     def test_a_signal_during_setup_unwinds_through_the_cleanup(self):
         from unittest import mock
         selected = usb.status(self.context)['candidates'][0]

@@ -24,6 +24,9 @@ import stat
 import struct
 import subprocess
 import sys
+# Keep the shared adapter exception identical when this file is the CLI entry.
+if __name__ == '__main__':
+    sys.modules['filesystem'] = sys.modules[__name__]
 import time
 
 import dm_linear
@@ -42,8 +45,13 @@ MOUNT_BASE = Path('/mnt/volumes')
 RAM_STATE = Path('/run/a22x-recovery')
 BUSYBOX = '/bin/busybox'
 BLKROSET, BLKROGET = 0x125d, 0x125e
-SUPPORTED_FS = frozenset(('ext4', 'f2fs', 'vfat', 'exfat', 'erofs'))
-BACKUP_FILESYSTEMS = frozenset(('ext4', 'exfat'))
+SUPPORTED_FS = frozenset(('ext4', 'f2fs', 'vfat', 'exfat', 'erofs', 'btrfs', 'udf'))
+# Every filesystem the kernel writes can hold backups (2026-11-20, the owner); on FAT32 each file
+# stops at 4 GiB, and a backup that needs more says so (FILE_TOO_LARGE) instead of failing late.
+BACKUP_FILESYSTEMS = frozenset(('ext4', 'exfat', 'f2fs', 'btrfs', 'udf', 'vfat'))
+# The ones the recovery creates and checks itself: Btrfs and UDF have no tools here (their programs
+# outgrow the recovery's 40 MiB), so a volume made on a computer is used as it is.
+FORMAT_EXTERNAL = ('ext4', 'exfat', 'vfat', 'f2fs')
 # Positive admission happens before opening a partition for a signature probe.
 # No bootloader, TEE, modem, calibration or other opaque partition is opened.
 FS_LABELS = frozenset(('userdata', 'cache', 'metadata', 'system', 'vendor',
@@ -73,17 +81,192 @@ def format_admitted(volume, fs_type, external):
         fail('FORMAT_FORBIDDEN', 'Only removable storage, userdata and cache can be formatted')
     if volume.get('mounted'):
         fail('VOLUME_MOUNTED', 'Unmount the volume before formatting it')
-    if fs_type not in (('ext4', 'f2fs') if internal else ('ext4', 'vfat')):
+    if fs_type not in (('ext4', 'f2fs') if internal else FORMAT_EXTERNAL):
         fail('UNSUPPORTED_FILESYSTEM', 'This filesystem is not offered for this volume')
 
 
-# TWRP's "Repair file system": e2fsck for ext2/3/4; since 2026-11-13 fsck.f2fs and fsck.fat too
-# (Arch Linux ARM's f2fs-tools and dosfstools, run with the recovery's bundled glibc).
+# TWRP's "Repair file system": e2fsck for ext2/3/4; since 2026-11-13 fsck.f2fs and fsck.fat too,
+# since 2026-11-20 fsck.exfat (Arch Linux ARM's f2fs-tools, dosfstools and exfatprogs, run with the
+# recovery's bundled glibc).
 EXT_TYPES = frozenset(('ext2', 'ext3', 'ext4'))
-CHECK_TYPES = EXT_TYPES | frozenset(('f2fs', 'vfat'))
+CHECK_TYPES = EXT_TYPES | frozenset(('f2fs', 'vfat', 'exfat'))
 E2FSCK = '/sbin/e2fsck'
 FSCK_F2FS = '/bin/fsck.f2fs'
 FSCK_FAT = '/bin/fsck.fat'
+FSCK_EXFAT = '/bin/fsck.exfat'
+MKFS_EXFAT = '/bin/mkfs.exfat'
+
+
+FS_IOC_GET_ENCRYPTION_POLICY_EX = 0xC0096616  # _IOWR('f', 22, __u8[9])
+# Top-level folders Android creates in its data; on file-based encryption each has a policy.
+ANDROID_DATA_FOLDERS = ('media', 'data', 'app', 'system', 'system_ce', 'system_de', 'misc', 'misc_ce', 'misc_de',
+                        'user', 'user_de', 'vendor', 'vendor_ce', 'vendor_de')
+
+
+def encryption_policy(fd):
+    """True: the folder has an fscrypt policy; False: it has none; None: this cannot be told."""
+    request = bytearray(8 + 64)
+    struct.pack_into('<Q', request, 0, 64)
+    try:
+        fcntl.ioctl(fd, FS_IOC_GET_ENCRYPTION_POLICY_EX, request, True)
+        return True
+    except OSError as error:
+        return False if error.errno == errno.ENODATA else None
+
+
+# Data just formatted for Android that no Android has started on (2026-11-20): only these at its root.
+# /data/adb is KernelSU's and Magisk's own folder, which this recovery may prepare before a first start.
+FRESH_DATA_ENTRIES = frozenset({'lost+found', 'adb'})
+FRESH_PROBE_INODES = 64
+FRESH_PROBE = Path('/run/a22x-recovery/fresh-data-probe')
+
+
+def fresh_android_data(root):
+    """Whether the data at ROOT (a directory descriptor) is freshly formatted for Android: nothing but
+    FRESH_DATA_ENTRIES at its root, none of them encrypted. Android's first start gives every folder
+    it makes in /data an encryption policy, so encrypted data never looks like this."""
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return False
+    if not set(names) <= FRESH_DATA_ENTRIES or encryption_policy(root) is not False:
+        return False
+    for name in names:
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=root)
+        except OSError:
+            return False
+        try:
+            if encryption_policy(fd) is not False:
+                return False
+        finally:
+            os.close(fd)
+    return True
+
+
+def f2fs_checkpoint(path):
+    """(version, valid inode count) of an F2FS device's newest checkpoint, or None."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        sb = os.pread(fd, 4096, 1024)
+        if len(sb) < 96 or sb[:4] != b'\x10\x20\xf5\xf2':
+            return None
+        log_blocks_per_seg, cp_blkaddr = struct.unpack_from('<I', sb, 20)[0], struct.unpack_from('<I', sb, 76)[0]
+        if log_blocks_per_seg > 12:
+            return None
+        packs = []
+        for pack in (0, 1):
+            cp = os.pread(fd, 4096, (cp_blkaddr + pack * (1 << log_blocks_per_seg)) * 4096)
+            if len(cp) == 4096:
+                packs.append((struct.unpack_from('<Q', cp, 0)[0], struct.unpack_from('<I', cp, 148)[0]))
+        return max(packs) if packs else None
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def f2fs_inode_count(path):
+    """The valid inode count of an F2FS device's newest checkpoint, or None."""
+    found = f2fs_checkpoint(path)
+    return found[1] if found else None
+
+
+USERDATA_PROBE = Path('/run/a22x-recovery/userdata-probe.json')
+
+
+def plain_kind(root):
+    """'fresh', 'unencrypted' or None for the Android data at ROOT (a directory descriptor)."""
+    if fresh_android_data(root):
+        return 'fresh'
+    return 'unencrypted' if android_data_unencrypted(root) else None
+
+
+def plain_userdata(context, volume):
+    """Internal userdata that needs no decryption (2026-11-20): 'fresh' (just formatted for Android,
+    never started), 'unencrypted' (Android data that uses no encryption: LineageOS 20 for this phone has
+    no fileencryption in its fstab), or None. Not mounted, it is looked at through a short read-only
+    mount without roll-forward recovery while no other operation holds the lease; the answer is kept in
+    RAM for the filesystem's newest checkpoint, which every write changes."""
+    if (volume.get('id') != 'userdata' or volume.get('external') or volume.get('fs_type') != 'f2fs'
+            or not volume.get('fscrypt_feature') or getattr(context, 'mode', None) != 'device'):
+        return None
+    if volume.get('mounted'):
+        try:
+            root = os.open(volume['mountpoint'], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        except (OSError, KeyError, TypeError):
+            return None
+        try:
+            return plain_kind(root)
+        finally:
+            os.close(root)
+    checkpoint = f2fs_checkpoint(volume['path'])
+    if checkpoint is None:
+        return None
+    key = {'device': volume.get('device'), 'uuid': volume.get('filesystem_uuid'), 'checkpoint': checkpoint[0]}
+    try:
+        kept = json.loads(USERDATA_PROBE.read_text())
+        if kept.get('key') == key and kept.get('kind') in ('fresh', 'unencrypted', None):
+            return kept['kind']
+    except (OSError, ValueError, AttributeError):
+        pass
+    import operation_lock
+    try:
+        with operation_lock.lease(context.lock_path, context.mode):
+            if any(m['devno'] == volume['device'] for m in all_namespace_mounts()):
+                return None
+            FRESH_PROBE.mkdir(mode=0o700, parents=True, exist_ok=True)
+            done = subprocess.run([BUSYBOX, 'mount', '-t', 'f2fs', '-o', 'ro,norecovery', volume['path'], str(FRESH_PROBE)],
+                                  capture_output=True, timeout=30)
+            if done.returncode:
+                return None
+            try:
+                root = os.open(FRESH_PROBE, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                try:
+                    kind = plain_kind(root)
+                finally:
+                    os.close(root)
+            finally:
+                subprocess.run([BUSYBOX, 'umount', str(FRESH_PROBE)], capture_output=True, timeout=30)
+    except (BlockingIOError, OSError, subprocess.TimeoutExpired):
+        return None
+    with suppress(OSError):
+        partial = USERDATA_PROBE.with_name(USERDATA_PROBE.name + '.partial')
+        partial.write_text(json.dumps({'key': key, 'kind': kind}))
+        os.replace(partial, USERDATA_PROBE)
+    return kind
+
+
+def fresh_userdata(context, volume):
+    """Whether internal userdata holds data just formatted for Android (plain_userdata)."""
+    return plain_userdata(context, volume) == 'fresh'
+
+
+def android_data_unencrypted(root):
+    """Android data whose filesystem has the encrypt feature but uses it nowhere (2026-11-19, a tester's
+    One UI port without encryption): the root and at least two of Android's own folders have no policy.
+    Anything that cannot be read as 'no policy' counts as encrypted. Freshly formatted data
+    (fresh_android_data) counts as unencrypted too."""
+    if fresh_android_data(root):
+        return True
+    checked = 0
+    for name in ('',) + ANDROID_DATA_FOLDERS:
+        try:
+            fd = os.open(name or '.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=root)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            return False
+        try:
+            if encryption_policy(fd) is not False:
+                return False
+        finally:
+            os.close(fd)
+        checked += bool(name)
+    return checked >= 2
 
 
 def check_admitted(volume, external):
@@ -93,7 +276,7 @@ def check_admitted(volume, external):
     if volume.get('mounted'):
         fail('VOLUME_MOUNTED', 'Unmount the volume before checking it')
     if volume.get('fs_type') not in CHECK_TYPES:
-        fail('UNSUPPORTED_FILESYSTEM', 'This recovery checks and repairs ext2, ext3, ext4, F2FS and FAT')
+        fail('UNSUPPORTED_FILESYSTEM', 'This recovery checks and repairs ext2, ext3, ext4, F2FS, FAT and exFAT')
     if volume.get('fscrypt_feature') and volume.get('fs_type') == 'f2fs':
         # Android's own data: Android checks it itself at every start, with the fsck made for it.
         fail('CHECK_FORBIDDEN', "Android's encrypted data is checked by Android itself at its start")
@@ -113,12 +296,14 @@ def run_e2fsck(path, tool=E2FSCK):
 
 
 def run_fsck(path, fs_type, tools=None):
-    """Check and repair one filesystem by its kind. fsck.f2fs and fsck.fat exit as fsck does: 0 for a
-    clean filesystem, 1 after repairs, 4 when errors stay, 8 or more when they could not work."""
-    tools = tools or {'f2fs': FSCK_F2FS, 'vfat': FSCK_FAT, 'ext': E2FSCK}
+    """Check and repair one filesystem by its kind. fsck.f2fs, fsck.fat and fsck.exfat exit as fsck
+    does: 0 for a clean filesystem, 1 after repairs (fsck.exfat 2 when a restart would be wanted),
+    4 when errors stay, 8 or more when they could not work."""
+    tools = {'f2fs': FSCK_F2FS, 'vfat': FSCK_FAT, 'exfat': FSCK_EXFAT, 'ext': E2FSCK, **(tools or {})}
     if fs_type in EXT_TYPES:
         return run_e2fsck(path, tools['ext'])
-    argv = [tools['f2fs'], '-f', '-y', str(path)] if fs_type == 'f2fs' else [tools['vfat'], '-a', '-w', str(path)]
+    argv = {'f2fs': [tools['f2fs'], '-f', '-y', str(path)], 'exfat': [tools['exfat'], '-y', str(path)]}.get(
+        fs_type, [tools['vfat'], '-a', '-w', str(path)])
     if not os.path.exists(argv[0]):
         fail('CHECK_UNAVAILABLE', 'This build of the recovery has no check for this filesystem', tool=argv[0])
     done = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
@@ -268,6 +453,20 @@ def read_mounts():
     return parse_mountinfo(Path('/proc/self/mountinfo').read_text())
 
 
+def block_claimed(path):
+    """Whether a filesystem holds this block device anywhere. A mount outside a process's root (the
+    browser's, 2026-11-20 on the phone) is missing from every mountinfo, yet the kernel still has the
+    device open exclusively: an exclusive open says EBUSY."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_EXCL | os.O_CLOEXEC)
+    except OSError as error:
+        if error.errno == errno.EBUSY:
+            return True
+        raise
+    os.close(fd)
+    return False
+
+
 def all_namespace_mounts():
     """Admission checks must also see an offline filesystem mounted elsewhere."""
     result, seen = [], set()
@@ -322,11 +521,15 @@ def uuid_text(raw):
     return '-'.join((value[:8], value[8:12], value[12:16], value[16:20], value[20:]))
 
 
+PROBE_BYTES = 0x10000 + 4096  # through the Btrfs superblock at 64 KiB
+
+
 def probe_magic(data):
     """Bounded read-only superblock detection; no blkid executable is required.
 
-    Offsets follow ext4_super_block, f2fs_super_block, erofs_super_block and the
-    FAT/exFAT on-disk boot sectors. Unknown signatures are never guessed ext4.
+    Offsets follow ext4_super_block, f2fs_super_block, erofs_super_block, btrfs_super_block,
+    the UDF volume recognition sequence and the FAT/exFAT on-disk boot sectors. Unknown signatures
+    are never guessed ext4. PROBE_BYTES from the start of a volume reach every one of them.
     """
     out = {'fs_type': None, 'filesystem_uuid': None, 'filesystem_label': '',
            'fscrypt_feature': None, 'encrypted_container': False,
@@ -361,6 +564,18 @@ def probe_magic(data):
         if 9 <= sb[12] <= 16:
             out.update(fs_type='erofs', filesystem_uuid=uuid_text(sb[48:64]),
                        filesystem_label=sb[64:80].split(b'\0', 1)[0].decode('utf-8', 'replace'))
+            return out
+    # Btrfs: its superblock lies at 64 KiB (btrfs_super_block: fsid at 32, magic at 64, label at 299).
+    if len(data) >= 0x10000 + 556 and data[0x10040:0x10048] == b'_BHRfS_M':
+        sb = data[0x10000:]
+        out.update(fs_type='btrfs', filesystem_uuid=uuid_text(sb[32:48]),
+                   filesystem_label=sb[299:555].split(b'\0', 1)[0].decode('utf-8', 'replace'))
+        return out
+    # UDF (ECMA-167): the volume recognition sequence at 32 KiB, BEA01 and then NSR02 or NSR03.
+    if len(data) >= 32768 + 3 * 2048 and data[32769:32774] == b'BEA01':
+        names = [data[32769 + n * 2048:32774 + n * 2048] for n in range(1, 3)]
+        if b'NSR02' in names or b'NSR03' in names:
+            out.update(fs_type='udf')
             return out
     if len(data) >= 512 and data[510:512] == b'\x55\xaa':
         if data[3:11] == b'EXFAT   ' and 9 <= data[108] <= 12 and data[110] in (1, 2):
@@ -417,10 +632,17 @@ def logical_partitions(fd, size):
                                            and (e['start'] + e['sectors']) * 512 <= size for e in extents)
         info = {'fs_type': None, 'filesystem_uuid': None, 'filesystem_label': '', 'fscrypt_feature': None}
         if usable:
-            info = probe_magic(os.pread(fd, min(8192, extents[0]['sectors'] * 512), extents[0]['start'] * 512))
+            info = probe_magic(os.pread(fd, min(PROBE_BYTES, extents[0]['sectors'] * 512), extents[0]['start'] * 512))
         rows.append({'name': part['name'], 'size_bytes': sum(e['sectors'] for e in extents) * 512,
                      'extents': [[e['start'], e['sectors']] for e in extents], 'usable': usable, 'info': info})
     return rows
+
+
+def backup_partition(ident):
+    """A partition that may hold backups: any of a USB drive or of the card, its first one too when it is
+    mounted in Files (2026-11-21, the owner: the card's exFAT first partition showed as 'not mounted or
+    unavailable' among the destinations while Files had it mounted for writing)."""
+    return isinstance(ident, str) and (ident.startswith('usb-') or ident.startswith('sdcard-'))
 
 
 def mount_options(fs_type, mode):
@@ -433,6 +655,11 @@ def mount_options(fs_type, mode):
         options.append('noload')
     if mode == 'ro' and fs_type == 'f2fs':
         options.append('norecovery')
+    if mode == 'ro' and fs_type == 'btrfs':
+        options.append('rescue=nologreplay')  # read-only means its log is not replayed either
+    if fs_type == 'vfat':
+        # The kernel's FAT default is ISO 8859-1: Cyrillic names came out as '?' (2026-11-20).
+        options.append('utf8')
     return ','.join(options)
 
 
@@ -496,24 +723,27 @@ class BaseContext:
         return volume
 
     @contextmanager
-    def operation_lock(self):
+    def operation_lock(self, shared=False):
         path = absolute_no_symlinks(self.lock_path, missing=True)
         with ExitStack() as stack:
             try:
                 # Kept, so that a helper can lend the lease to a step it runs itself (distro.py: BOOT).
-                self.lock_fd = stack.enter_context(recovery_operation_lock(path, self.mode))
+                self.lock_fd = stack.enter_context(recovery_operation_lock(path, self.mode, shared))
             except BlockingIOError:
                 if ssh_session_active():
                     fail('OPERATION_BUSY', 'A computer is connected over SSH or SFTP: close that session, then try again')
-                fail('OPERATION_BUSY', 'Storage is busy: stop USB files, or wait for the running operation to finish')
+                fail('OPERATION_BUSY', 'Storage is in use: USB files, the terminal or another operation holds it'
+                     if not shared else 'Storage is busy: an operation that needs it alone is running')
             except OSError as exc:
                 fail('INVALID_LOCK', 'The recovery operation lock is unavailable or changed', errno=exc.errno)
             yield
 
     def inventory(self):
-        return {'volumes': self.volumes(), 'crypto': {
-            'android_decryption': False, 'credential_unlock': False,
-            'teegris_transport_qualified': False, 'fscrypt_key_installation': False,
+        volumes = self.volumes()
+        android = any(v.get('decrypt_supported') or v.get('ce_authenticated') for v in volumes)
+        return {'volumes': volumes, 'crypto': {
+            'android_decryption': android, 'credential_unlock': android,
+            'teegris_transport_qualified': android, 'fscrypt_key_installation': android,
             'note': 'A recognizable filesystem or a successful mount does not imply Android data is decrypted.'},
             'capabilities': {'mount': True, 'read_files': True, 'write_files': True,
                              'raw_partition_restore': False, 'logical_super_mapping': self.mode == 'device',
@@ -529,24 +759,33 @@ class BaseContext:
         return [{key: volume[key] for key in ('id', 'fs_type', 'mountpoint', 'read_only')} | {'size_bytes': volume.get('size_bytes', 0)}
                 for volume in self.volumes() if volume['id'].startswith('usb-') and volume['mounted']]
 
+    def backup_volumes(self):
+        """Every mounted partition of a stick or the card that can hold backups (2026-11-20, the owner:
+        any partition, in any filesystem the kernel writes). The store of storage.py at /mnt/backup is
+        listed apart."""
+        return [{key: volume[key] for key in ('id', 'fs_type', 'mountpoint', 'read_only')} | {'size_bytes': volume.get('size_bytes', 0)}
+                for volume in self.volumes()
+                if backup_partition(volume['id']) and volume['mounted'] and volume.get('fs_type') in BACKUP_FILESYSTEMS
+                and volume.get('mountpoint') != '/mnt/backup']
+
     def prepare_usb_backup(self, ident, confirmed=False):
-        """Open a stick for writing and make its backup folder."""
+        """Open a partition of a stick or the card for writing and make its backup folder."""
         volume = self.volume(ident)
-        if not ident.startswith('usb-'):
-            fail('NOT_USB_VOLUME', 'Only a USB stick can be prepared here')
+        if not backup_partition(ident):
+            fail('NOT_BACKUP_VOLUME', 'Only a partition of a USB drive or of the SD card can be prepared here')
         if volume['fs_type'] not in BACKUP_FILESYSTEMS:
-            fail('BACKUP_FILESYSTEM_UNSUITED', 'Backups need ext4 or exFAT. FAT32 cannot hold files over 4 GiB')
+            fail('BACKUP_FILESYSTEM_UNSUITED', 'Backups need a filesystem this recovery writes: ext4, exFAT, F2FS, Btrfs, UDF or FAT32')
         self.mount(ident, 'rw', confirmed, volume['volume_token'])
         folder = Path(self.volume(ident)['mountpoint']) / 'A22xBackups'
         folder.mkdir(mode=0o700, exist_ok=True)
-        return {'repository': str(folder)}
+        return {'repository': str(folder), 'volumes': self.backup_volumes()}
 
     def eject_usb(self):
         """Unmount every USB volume, so the stick can be pulled out."""
         os.sync()
         for volume in self.usb_volumes():
             self.unmount(volume['id'])
-        return {'volumes': self.usb_volumes()}
+        return {'volumes': self.backup_volumes()}
 
 
 class FixtureContext(BaseContext):
@@ -598,6 +837,8 @@ class FixtureContext(BaseContext):
                            'mountpoint': str(path), 'path': str(path), 'mode': 'fixture',
                            'volume_token': token, 'mount_id': 'fixture:' + token,
                            'mount_owner': 'filesystem', 'fscrypt_feature': fscrypt,
+                           # Android data that encrypts nothing, as a fixture states it (2026-11-21).
+                           'unencrypted_android_data': bool(spec.get('unencrypted_android_data', False)) and not fscrypt,
                            'write_supported': mountable and filesystem != 'erofs' and not fscrypt,
                            'reason': None if mountable else reason_text('ENCRYPTED_OR_UNSUPPORTED_FILESYSTEM'),
                            'reason_code': None if mountable else 'ENCRYPTED_OR_UNSUPPORTED_FILESYSTEM',
@@ -671,7 +912,7 @@ class FixtureContext(BaseContext):
         return False
 
     def sync_usb(self):
-        return {'mounted': [], 'dropped': [], 'volumes': self.usb_volumes()}
+        return {'mounted': [], 'dropped': [], 'volumes': self.backup_volumes()}
 
 
 class DeviceContext(BaseContext):
@@ -768,7 +1009,7 @@ class DeviceContext(BaseContext):
                     if struct.unpack('Q', fcntl.ioctl(fd, 0x80081272, bytes(8)))[0] != size:
                         fail('BLOCK_GEOMETRY_CHANGED', 'Kernel and block geometry disagree', volume=ident)
                     block_read_only = bool(struct.unpack('i', fcntl.ioctl(fd, BLKROGET, bytes(4)))[0])
-                    info = probe_magic(os.pread(fd, min(8192, size), 0))
+                    info = probe_magic(os.pread(fd, min(PROBE_BYTES, size), 0))
                 finally:
                     os.close(fd)
             holders = list((real / 'holders').iterdir()) if (real / 'holders').is_dir() else []
@@ -806,10 +1047,25 @@ class DeviceContext(BaseContext):
                     reason = 'VOLUME_MOUNTED_OUTSIDE_MANAGER'
                 elif owner == 'filesystem' and readonly and record.get('block_ro_guard') and not block_read_only:
                     reason = 'READ_ONLY_GUARD_LOST'
+            fscrypt_unused = False
+            if (info.get('fscrypt_feature') and label == 'userdata' and owner == 'filesystem' and reason is None
+                    and fs in ('ext4', 'f2fs')):
+                # Mounted by Files: whether the data really uses encryption can be read now.
+                try:
+                    root = os.open(target, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                except OSError:
+                    root = None
+                if root is not None:
+                    try:
+                        fscrypt_unused = fd_mount_id(root) == mount_id and android_data_unencrypted(root)
+                    finally:
+                        os.close(root)
             write_reason = ('BLOCK_DEVICE_READ_ONLY' if block_read_only and not own_ro_guard else
                             ('READ_ONLY_FILESYSTEM' if fs == 'erofs' else
-                            ('FSCRYPT_KEYS_UNAVAILABLE' if info.get('fscrypt_feature') else
+                            ('FSCRYPT_KEYS_UNAVAILABLE' if info.get('fscrypt_feature') and not fscrypt_unused else
                              ('VERIFIED_ANDROID_FILESYSTEM_RW_NOT_QUALIFIED' if label in VERIFIED_LABELS else None))))
+            if fscrypt_unused:
+                info = {**info, 'fscrypt_unused': True}
             volume = {'id': ident, 'label': label or ident, 'path': str(path), 'device': devno,
                       'device_identity': hashlib.sha256(cid).hexdigest(),
                       'partition_number': number, 'size_bytes': size, 'external': external,
@@ -827,7 +1083,9 @@ class DeviceContext(BaseContext):
             result += self._logical_volumes(container, supported, state, mounts)
         if len({v['id'] for v in result}) != len(result):
             fail('DUPLICATE_VOLUME_ID', 'GPT volume identifiers are not unique')
-        return result
+        import android_decrypt
+        import format_authorization
+        return format_authorization.annotate(self, android_decrypt.decorate(self, result))
 
     def _logical_volumes(self, container, supported, state, mounts):
         """Android's partitions in super, each a volume of its own (2026-11-12). They are opened for
@@ -1023,7 +1281,7 @@ class DeviceContext(BaseContext):
             cid = medium_identity(disk, '/usb' in str(sysfs))
             if hashlib.sha256(cid).hexdigest() != volume['device_identity']:
                 fail('BLOCK_IDENTITY_CHANGED', 'The physical medium changed before the read-only guard')
-            observed_fs = probe_magic(os.pread(fd, min(8192, volume['size_bytes']), 0))
+            observed_fs = probe_magic(os.pread(fd, min(PROBE_BYTES, volume['size_bytes']), 0))
             if (observed_fs['fs_type'], observed_fs['filesystem_uuid']) != (volume['fs_type'], volume['filesystem_uuid']):
                 fail('BLOCK_IDENTITY_CHANGED', 'The filesystem identity changed before the read-only guard')
             holders = sysfs / 'holders'
@@ -1079,8 +1337,13 @@ class DeviceContext(BaseContext):
                  'The kernel refused the filesystem operation', detail=proc.stderr.strip()[:1024],
                  exit_code=proc.returncode)
 
-    def mount(self, ident, mode, confirmed=False, expected=None):
+    def mount(self, ident, mode, confirmed=False, expected=None, *, credential_fd=None, android_user=0):
         volume = self.volume(ident, expected)
+        if volume.get('decrypt_supported') or volume.get('decrypt_state'):
+            import android_decrypt
+            return android_decrypt.mount(self, volume, mode, confirmed, credential_fd, android_user)
+        if credential_fd is not None:
+            fail('UNSUPPORTED_PROFILE', 'This volume does not accept an Android password.')
         if not volume['mountable']:
             fail('VOLUME_NOT_MOUNTABLE', 'This partition cannot be mounted', reason=volume['reason'])
         if mode == 'rw':
@@ -1133,16 +1396,36 @@ class DeviceContext(BaseContext):
             fail('MOUNT_STATE_MISMATCH', 'The new mount was not admitted')
         return {'volume': result, 'mount_options': options}
 
-    def format(self, ident, fs_type, confirmed=False, expected=None):
-        """Erase one removable card or stick. Internal storage is never admitted."""
+    def format(self, ident, fs_type, confirmed=False, expected=None, *, format_authorization=None):
+        """Format an admitted volume; Android userdata needs fresh password authorization."""
         self.confirm(confirmed)
-        volume = self.volume(ident, expected)
+        import format_authorization as authorization
+        volume = self.volume(ident, None if format_authorization is not None else expected)
+        before_format = dict(volume)
+        if format_authorization is not None:
+            require_hash(expected, 'expected-volume-token')
+            if ident != 'userdata' or authorization.physical(volume)['token'] != expected:
+                fail('FORMAT_TARGET_CHANGED', 'The format authorization target changed.')
+        if ident == 'userdata':
+            volume = authorization.prepare_write(self, volume, fs_type, 'format', format_authorization)
+        elif format_authorization is not None:
+            fail('FORMAT_INTENT_INVALID', 'Android authorization applies only to userdata.')
         format_admitted(volume, fs_type, volume.get('external') is True)
+        # 2026-11-20, on the phone: a card was formatted FAT32 while the browser's namespace still held
+        # its old ext4 mount, unseen here. A mount in any namespace keeps the volume as it is.
+        if any(m['devno'] == volume['device'] for m in all_namespace_mounts()) or block_claimed(volume['path']):
+            fail('VOLUME_MOUNTED_ELSEWHERE', 'The partition is mounted in another namespace')
         label = 'userdata' if ident == 'userdata' else ('cache' if ident == 'cache' else 'A22X')
         tool = {'ext4': ['/sbin/mkfs.ext4', '-F', '-q', '-L', label],
                 'f2fs': ['/bin/make_f2fs', '-g', 'android', '-f', '-O', 'project_quota,extra_attr', '-O', 'casefold',
                          '-C', 'utf8', '-O', 'compression', '-O', 'extra_attr'],
-                'vfat': ['/bin/busybox', 'mkdosfs', '-F', '32', '-n', 'A22X']}[fs_type]
+                'vfat': ['/bin/busybox', 'mkdosfs', '-F', '32', '-n', 'A22X'],
+                'exfat': [MKFS_EXFAT, '-L', 'A22X']}[fs_type]
+        if fs_type == 'f2fs' and volume.get('external') is True:
+            # A card or a stick in F2FS (2026-11-20): plain, with a name, without Android's ownership.
+            tool = ['/bin/make_f2fs', '-f', '-l', 'A22X']
+        if not os.path.exists(tool[0]):
+            fail('FORMAT_UNAVAILABLE', 'This build of the recovery has no tool for this filesystem', tool=tool[0])
         if ident == 'userdata' and fs_type == 'f2fs':
             # 2026-11-12 review: userdata for Android gets the features install.py's reset uses, the
             # ones Samsung's own userdata.img has and its kernel 4.14 mounts (no casefold).
@@ -1153,6 +1436,7 @@ class DeviceContext(BaseContext):
             fail('FORMAT_FAILED', 'The filesystem could not be created', output=done.stdout[-400:])
         os.sync()
         if ident == 'userdata':
+            authorization.record_initialized(self, 'format', before_format, fs_type)
             # 2026-11-12 review: an unfinished switch of Linux systems went with userdata; its guard in
             # RAM (distro.py) would block installing and a normal start until the recovery restarted.
             with suppress(FileNotFoundError):
@@ -1173,12 +1457,17 @@ class DeviceContext(BaseContext):
         self.confirm(confirmed)
         volume = self.volume(ident, expected)
         check_admitted(volume, volume.get('external') is True)
+        if any(m['devno'] == volume['device'] for m in all_namespace_mounts()) or block_claimed(volume['path']):
+            fail('VOLUME_MOUNTED_ELSEWHERE', 'The partition is mounted in another namespace')
         result = run_fsck(volume['path'], volume['fs_type'])
         os.sync()
         return {'volume': self.volume(ident), 'checked': volume['fs_type'], **result}
 
     def unmount(self, ident, expected=None):
         volume = self.volume(ident, expected)
+        if volume.get('mount_owner') == 'android-decrypt' or volume.get('decrypt_state') == 'session_unmounted':
+            import android_decrypt
+            return android_decrypt.unmount(self, volume)
         if volume.get('container') == 'super':
             return self._unmount_logical(volume)
         if not volume['mounted']:
@@ -1225,7 +1514,7 @@ class DeviceContext(BaseContext):
                 except FilesystemError:
                     continue
                 mounted.append({'id': volume['id'], 'size_bytes': volume['size_bytes']})
-        return {'mounted': mounted, 'dropped': dropped, 'volumes': self.usb_volumes()}
+        return {'mounted': mounted, 'dropped': dropped, 'volumes': self.backup_volumes()}
 
     def unmount_all(self):
         self.drop_vanished()
@@ -1233,7 +1522,11 @@ class DeviceContext(BaseContext):
         for volume in self.volumes():
             if volume.get('container') == 'super':
                 continue
-            if volume['mounted'] and volume['mount_owner'] == 'filesystem':
+            if volume.get('mount_owner') == 'android-decrypt' or volume.get('decrypt_state') in ('session_unmounted','awaiting_credential'):
+                import android_decrypt
+                android_decrypt.close_session(self, volume)
+                result.append(volume['id'])
+            elif volume['mounted'] and volume['mount_owner'] == 'filesystem':
                 self.unmount(volume['id'], volume['volume_token'])
                 result.append(volume['id'])
             elif not volume['mounted'] and self.state()['volumes'].get(volume['id'], {}).get('block_ro_guard'):
@@ -1259,7 +1552,7 @@ class PinnedVolume:
         self.context = context
         self.volume = context.volume(ident, expected)
         v = self.volume
-        if not v['mounted'] or not v['mountable'] or v['mount_owner'] not in ('filesystem', 'storage'):
+        if not v['mounted'] or not v['mountable'] or v['mount_owner'] not in ('filesystem', 'storage', 'android-decrypt'):
             fail('VOLUME_NOT_MOUNTED', 'Mount the selected volume before browsing files', volume=ident)
         if writing and (v['read_only'] or not v['write_supported']):
             fail('VOLUME_READ_ONLY', 'Enable writes on this volume before changing files', volume=ident)
@@ -1568,19 +1861,37 @@ def change_metadata(context, ident, path, *, mode=None, uid=None, gid=None,
             os.close(handle)
 
 
-def list_files(context, ident, path='/', offset=0, limit=64, expected=None):
+LIST_TYPES = ('all', 'file', 'directory', 'symlink', 'other')
+LIST_AGES = (0, 7, 30)
+LIST_ORDERS = ('name', 'newest', 'oldest', 'largest')
+
+
+def list_files(context, ident, path='/', offset=0, limit=64, expected=None, *,
+               query='', kind='all', age_days=0, order='name'):
     if offset < 0 or not 1 <= limit <= MAX_PAGE:
         fail('INVALID_PAGE', 'Offset must be nonnegative and limit must be 1..256')
+    if (type(query) is not str or len(os.fsencode(query)) > 256 or kind not in LIST_TYPES
+            or type(age_days) is not int or age_days not in LIST_AGES or order not in LIST_ORDERS):
+        fail('INVALID_FILE_FILTER', 'Folder filters are outside the supported ranges')
+    query = query.casefold()
+    oldest = time.time_ns() - age_days * 86_400_000_000_000 if age_days else None
     relative = clean_path(path)
     with PinnedVolume(context, ident, expected) as pin, pin.directory(path) as fd:
         entries = []
         for name in os.listdir(fd):
+            if query and query not in name.casefold():
+                continue
             try:
                 st = os.stat(name, dir_fd=fd, follow_symlinks=False)
             except FileNotFoundError:
                 continue
+            if ((kind != 'all' and entry_type(st) != kind)
+                    or (oldest is not None and st.st_mtime_ns < oldest)):
+                continue
             entries.append(entry_record(pin, relative.rstrip('/') + '/' + name, st))
-        entries.sort(key=lambda e: (e['type'] != 'directory', e['name'].casefold(), e['name']))
+        sort_value = {'name': lambda e: 0, 'newest': lambda e: -e['mtime_ns'],
+                      'oldest': lambda e: e['mtime_ns'], 'largest': lambda e: -e['size']}[order]
+        entries.sort(key=lambda e: (e['type'] != 'directory', sort_value(e), e['name'].casefold(), e['name']))
         pin.recheck()
         return {'volume': ident, 'path': relative, 'read_only': pin.volume['read_only'],
                 'offset': offset, 'total': len(entries), 'has_more': offset + limit < len(entries),
@@ -2267,7 +2578,65 @@ def selection_file(path):
     return bool(data.get('all', False)), names
 
 
-def delete_many(context, ident, path, everything, names, confirmed=False, expected=None, progress=None):
+def selected_names(directory, everything, names):
+    if everything:
+        excluded = set(names)
+        chosen = sorted(name for name in os.listdir(directory) if name not in excluded)
+    else:
+        chosen = list(dict.fromkeys(names))
+    if len(chosen) > MANY_LIMIT:
+        fail('SELECTION_TOO_LARGE', 'Too many entries are selected at once', count=len(chosen))
+    return chosen
+
+
+def delete_selection(context, pin, directory, folder, chosen):
+    """Measure selected regular files without crossing mounts or following links."""
+    total = 0
+    seen = 0
+    identity = hashlib.sha256()
+
+    def record(parent, name, relative):
+        nonlocal total, seen
+        before = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        seen += 1
+        if seen > 250_000:
+            fail('SELECTION_TOO_LARGE', 'Too many files to review in one selection', count=seen)
+        if stat.S_ISREG(before.st_mode):
+            total += before.st_size
+        identity.update(json.dumps([relative, stamp(before)], ensure_ascii=True,
+                                   separators=(',', ':')).encode('ascii') + b'\n')
+        return before
+
+    for name in chosen:
+        before = record(directory, name, name)
+        if not stat.S_ISDIR(before.st_mode):
+            continue
+        path = folder.rstrip('/') + '/' + name
+        if (before.st_dev != pin.stat.st_dev or context.is_mountpoint(pin.volume, path)
+                or context.nested_mounts(pin.volume, path)):
+            fail('NESTED_MOUNT', 'A folder holding another mount is not deleted')
+        def walk_error(error):
+            raise error
+        for relative, dirs, files, current in os.fwalk(
+                name, follow_symlinks=False, dir_fd=directory, onerror=walk_error):
+            pin.check_fd(current)
+            dirs.sort()
+            for child in sorted(dirs + files):
+                record(current, child, relative + '/' + child)
+        verify_named(directory, name, stamp(before))
+    pin.recheck()
+    return {'bytes': total, 'selected_count': len(chosen), 'selection_sha256': identity.hexdigest()}
+
+
+def preview_delete(context, ident, path, everything, names, expected=None):
+    folder = clean_path(path)
+    with PinnedVolume(context, ident, expected) as pin, pin.directory(folder) as directory:
+        chosen = selected_names(directory, everything, names)
+        return {'volume': ident, 'path': folder, **delete_selection(context, pin, directory, folder, chosen)}
+
+
+def delete_many(context, ident, path, everything, names, confirmed=False, expected=None,
+                progress=None, expected_selection=None):
     """Several entries of one folder deleted at once (2026-11-13, the owner: select with a long press,
     delete the selected, select all). Folders go with everything in them, removed by descriptor so a
     symlink is removed and never followed; a folder holding another mount stays. With EVERYTHING,
@@ -2275,13 +2644,11 @@ def delete_many(context, ident, path, everything, names, confirmed=False, expect
     context.confirm(confirmed)
     deleted, failed, folder = [], [], clean_path(path)
     with PinnedVolume(context, ident, expected, writing=True) as pin, pin.directory(folder) as directory:
-        present = sorted(os.listdir(directory))
-        if everything:
-            chosen = [name for name in present if name not in set(names)]
-        else:
-            chosen = list(dict.fromkeys(names))
-        if len(chosen) > MANY_LIMIT:
-            fail('SELECTION_TOO_LARGE', 'Too many entries are selected at once', count=len(chosen))
+        chosen = selected_names(directory, everything, names)
+        if expected_selection is not None:
+            require_hash(expected_selection, 'expected-selection-sha256')
+            if delete_selection(context, pin, directory, folder, chosen)['selection_sha256'] != expected_selection:
+                fail('SELECTION_CHANGED', 'Review the selection again because the files changed')
         for at, name in enumerate(chosen):
             if progress:
                 progress(name, at, len(chosen))
@@ -2332,19 +2699,41 @@ def parser():
     erase = commands.add_parser('format')
     erase.add_argument('--volume', required=True)
     erase.add_argument('--expected-volume-token')
-    erase.add_argument('--fs', choices=('ext4', 'vfat', 'f2fs'), required=True)
+    erase.add_argument('--fs', choices=('ext4', 'vfat', 'exfat', 'f2fs'), required=True)
     erase.add_argument('--confirm', action='store_true')
+    erase.add_argument('--format-authorization')
+    authorize = commands.add_parser('format-authorize')
+    authorize.add_argument('--volume', choices=('userdata',), required=True)
+    authorize.add_argument('--expected-volume-token', required=True)
+    authorize.add_argument('--fs', choices=('ext4', 'f2fs'), required=True)
+    authorize.add_argument('--purpose', choices=('format', 'android-reset'), required=True)
+    authorize.add_argument('--credential-fd', type=int, required=True)
+    authorize.add_argument('--android-user', type=int, default=0)
+    revoke = commands.add_parser('format-cancel')
+    revoke.add_argument('--format-authorization', required=True)
     for name in ('check', 'resize', 'wipe'):
         repair = commands.add_parser(name)
         repair.add_argument('--volume', required=True)
         repair.add_argument('--expected-volume-token')
         repair.add_argument('--confirm', action='store_true')
-    many = commands.add_parser('delete-many')
-    many.add_argument('--volume', required=True)
-    many.add_argument('--expected-volume-token')
-    many.add_argument('--path', required=True)
-    many.add_argument('--selection-file', required=True)
-    many.add_argument('--confirm', action='store_true')
+    dalvik = commands.add_parser('wipe-dalvik')
+    dalvik.add_argument('--volume', choices=('userdata',), required=True)
+    dalvik.add_argument('--expected-volume-token', required=True)
+    dalvik.add_argument('--confirm', action='store_true')
+    for name in ('delete-many', 'preview-delete'):
+        many = commands.add_parser(name)
+        many.add_argument('--volume', required=True)
+        many.add_argument('--expected-volume-token')
+        many.add_argument('--path', required=True)
+        many.add_argument('--selection-file', required=True)
+        if name == 'delete-many':
+            many.add_argument('--confirm', action='store_true')
+            many.add_argument('--expected-selection-sha256')
+    for action in ('prepare-android', 'cancel-android-unlock'):
+        command = commands.add_parser(action)
+        command.add_argument('--volume', required=True)
+        command.add_argument('--expected-volume-token', required=True)
+        command.add_argument('--android-user', type=int, default=0)
     for action in ('mount', 'unmount', 'list', 'read', 'stat', 'resolve', 'chmod', 'chown',
                    'write', 'mkdir', 'rename', 'copy', 'copy-tree', 'delete'):
         command = commands.add_parser(action)
@@ -2356,9 +2745,15 @@ def parser():
             command.add_argument('--confirm', action='store_true')
         if action == 'mount':
             command.add_argument('--mode', choices=('ro', 'rw'), default='ro')
+            command.add_argument('--credential-fd', type=int)
+            command.add_argument('--android-user', type=int, default=0)
         if action == 'list':
             command.add_argument('--offset', type=int, default=0)
             command.add_argument('--limit', type=int, default=64)
+            command.add_argument('--query', default='')
+            command.add_argument('--kind', choices=LIST_TYPES, default='all')
+            command.add_argument('--age-days', type=int, choices=LIST_AGES, default=0)
+            command.add_argument('--order', choices=LIST_ORDERS, default='name')
         if action == 'read':
             command.add_argument('--max-bytes', type=int, default=MAX_TEXT)
         if action in ('stat', 'resolve', 'chmod', 'chown', 'copy-tree'):
@@ -2427,9 +2822,79 @@ def wipe_contents(context, ident, confirmed=False, expected=None):
     return {'volume': ident, 'removed': removed, 'freed_bytes': freed, 'kept': list(WIPE_KEEP[ident])}
 
 
+DALVIK_CACHE_PATHS = ('/dalvik-cache', '/misc/apexdata/com.android.art/dalvik-cache')
+
+
+def wipe_dalvik(context, expected, confirmed=False):
+    """Empty Android's two runtime cache directories, preserving the directories and their labels."""
+    context.confirm(confirmed)
+    volume = context.volume('userdata', expected)
+    if not volume['mounted'] or volume['read_only'] or not volume['write_supported']:
+        fail('ANDROID_CACHE_WRITE_REQUIRED', 'Mount Android data with write access to clear the Dalvik / ART cache.')
+    if context.mode == 'device' and not (
+            volume.get('mount_owner') == 'android-decrypt' and volume.get('android_user_id') == 0
+            and volume.get('ce_authenticated') is True and volume.get('fscrypt_policy_verified') is True):
+        fail('ANDROID_CACHE_AUTH_REQUIRED', 'Unlock Android data before clearing the Dalvik / ART cache.')
+    plans = {}
+    with PinnedVolume(context, 'userdata', expected, writing=True) as pin:
+        for path in DALVIK_CACHE_PATHS:
+            if context.is_mountpoint(pin.volume, path) or context.nested_mounts(pin.volume, path):
+                fail('NESTED_MOUNT', 'The Dalvik / ART cache contains a separate mount.', path=path)
+            try:
+                with pin.directory(path) as directory:
+                    chosen = selected_names(directory, True, ())
+                    if chosen:
+                        plans[path] = delete_selection(context, pin, directory, path, chosen)['selection_sha256']
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                if error.errno in (errno.ELOOP, errno.ENOTDIR):
+                    fail('ANDROID_CACHE_PATH_INVALID', 'A Dalvik / ART cache path is not a directory.', path=path)
+                raise
+    removed = 0
+    failed = 0
+    for path, identity in plans.items():
+        try:
+            result = delete_many(context, 'userdata', path, True, (), True, expected, expected_selection=identity)
+        except (FilesystemError, OSError) as error:
+            if removed:
+                fail('DALVIK_CACHE_PARTIAL', 'Some Dalvik / ART cache entries could not be cleared.',
+                     removed=removed, path=path, cause=getattr(error, 'code', 'IO_ERROR'))
+            raise
+        removed += result['deleted']
+        failed += result['failed_count']
+    if failed:
+        fail('DALVIK_CACHE_PARTIAL', 'Some Dalvik / ART cache entries could not be cleared.',
+             removed=removed, failed_count=failed)
+    return {'volume': 'userdata', 'removed': removed}
+
+
+# Work on the files of mounted volumes: it runs beside USB files, the terminal and other such work
+# (2026-11-21, the owner and a tester: "Why would storage be busy? MTP lets the host and a computer use
+# one storage at the same time"). Mounting, formatting, checking and Android's unlock hold storage alone.
+SHARED_ACTIONS = frozenset(('inventory', 'list', 'read', 'stat', 'resolve', 'write', 'mkdir', 'rename',
+                            'copy', 'copy-tree', 'delete', 'delete-many', 'preview-delete', 'chmod', 'chown'))
+
+
 def dispatch(context, args):
     action = args.operation
-    with context.operation_lock():
+    with context.operation_lock(shared=action in SHARED_ACTIONS):
+        if action in ('format-authorize', 'format-cancel'):
+            if context.mode != 'device':
+                fail('FIXTURE_CREDENTIAL_REFUSED', 'Android format authorization requires a qualified device session.')
+            import format_authorization
+            if action == 'format-cancel':
+                return format_authorization.cancel(context, args.format_authorization)
+            volume = context.volume(args.volume, args.expected_volume_token)
+            return format_authorization.authorize(context, volume, args.fs, args.purpose,
+                                                  args.credential_fd, args.android_user)
+        if action in ('prepare-android', 'cancel-android-unlock'):
+            if context.mode != 'device':
+                fail('FIXTURE_CREDENTIAL_REFUSED', 'Android preparation requires a qualified device session.')
+            volume = context.volume(args.volume, args.expected_volume_token)
+            import android_decrypt
+            function = android_decrypt.prepare_android if action == 'prepare-android' else android_decrypt.cancel_android_unlock
+            return function(context, volume, args.android_user)
         if action == 'inventory':
             return context.inventory()
         if action == 'unmount-all':
@@ -2442,22 +2907,38 @@ def dispatch(context, args):
             return context.prepare_usb_backup(args.volume, args.confirm)
         v, expected = args.volume, args.expected_volume_token
         if action == 'mount':
+            if context.mode == 'device':
+                return context.mount(v, args.mode, args.confirm, expected,
+                                     credential_fd=args.credential_fd, android_user=args.android_user)
+            if args.credential_fd is not None:
+                fail('FIXTURE_CREDENTIAL_REFUSED', 'A fixture never consumes a real Android password.')
             return context.mount(v, args.mode, args.confirm, expected)
         if action == 'unmount':
             return context.unmount(v, expected)
         if action == 'format':
+            if context.mode == 'device':
+                return context.format(v, args.fs, args.confirm, expected,
+                                      format_authorization=args.format_authorization)
+            if args.format_authorization is not None:
+                fail('FIXTURE_CREDENTIAL_REFUSED', 'Fixtures do not consume Android format authorizations.')
             return context.format(v, args.fs, args.confirm, expected)
         if action == 'wipe':
             return wipe_contents(context, v, args.confirm, expected)
-        if action == 'delete-many':
+        if action == 'wipe-dalvik':
+            return wipe_dalvik(context, expected, args.confirm)
+        if action in ('delete-many', 'preview-delete'):
             everything, names = selection_file(args.selection_file)
-            return delete_many(context, v, args.path, everything, names, args.confirm, expected)
+            if action == 'preview-delete':
+                return preview_delete(context, v, args.path, everything, names, expected)
+            return delete_many(context, v, args.path, everything, names, args.confirm, expected,
+                               expected_selection=args.expected_selection_sha256)
         if action == 'check':
             return context.check(v, args.confirm, expected)
         if action == 'resize':
             return context.resize(v, args.confirm, expected)
         if action == 'list':
-            return list_files(context, v, args.path, args.offset, args.limit, expected)
+            return list_files(context, v, args.path, args.offset, args.limit, expected,
+                              query=args.query, kind=args.kind, age_days=args.age_days, order=args.order)
         if action == 'read':
             return read_file(context, v, args.path, args.max_bytes, expected)
         if action == 'stat':

@@ -134,6 +134,17 @@ class Device:
         self.fs, self.lock_path = self.install.fs, self.install.lock_path
         self.identity = emmc_identity()
 
+    def format_userdata(self):
+        """Format Data as TWRP does (userdata f2fs for Android, metadata anew: install.reset_android, which
+        refuses Android data a password protects), then userdata mounted for writing by Files."""
+        volume = self.fs.volume('userdata')
+        if volume['mounted']:
+            self.fs.unmount('userdata', volume['volume_token'])
+        self.install.fresh().reset_android()
+        fresh = install.DeviceContext().fs
+        fresh.mount('userdata', 'rw', confirmed=True)
+        self.fs = fresh
+
     def parts(self):
         found = []
         raw = self.install.raw
@@ -227,6 +238,13 @@ class FixtureBoot:
 class Fixture:
     mode = 'fixture'
 
+    def format_userdata(self):
+        """A fixture's format: its userdata folder emptied."""
+        folder = fs.absolute_no_symlinks(Path(self.fs.volume('userdata')['mountpoint']))
+        require(self.root in folder.parents, 'FIXTURE_ESCAPE', 'Fixture targets stay beneath their owned directory')
+        for item in folder.iterdir():
+            shutil.rmtree(item) if item.is_dir() and not item.is_symlink() else item.unlink()
+
     def __init__(self, root):
         self.root = fs.absolute_no_symlinks(root)
         self.fs = fs.FixtureContext(self.root)
@@ -308,14 +326,28 @@ def read_part(context, part, progress, out=None, sink=None):
         os.close(fd)
 
 
+def backup_chunk(fd, position, length, stored):
+    """LENGTH bytes of a partition's file at POSITION; past the STORED end of the file, zeros.
+
+    read_part() leaves the zero blocks of a partition as holes and sets the file's size at the end. A
+    copy whose size was not set (2026-11-21, on an exFAT card: efs.img 7 of 8 MiB, keydata.img empty)
+    holds the partition all the same: its missing end is zeros, and the SHA-256 of the whole partition
+    in the manifest still decides whether the copy is right (2026-11-22: such copies were refused as
+    damaged, so EFS could not be restored from them)."""
+    if position >= stored:
+        return bytes(length)
+    data = os.pread(fd, min(length, stored - position), position)
+    return data
+
+
 def hash_file(folder, name, size, progress, label):
     fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=folder)
     try:
         st = os.fstat(fd)
-        require(stat.S_ISREG(st.st_mode) and st.st_size == size, 'BACKUP_DAMAGED', 'A file of the backup has the wrong size', label=label)
+        require(stat.S_ISREG(st.st_mode) and st.st_size <= size, 'BACKUP_DAMAGED', 'A file of the backup has the wrong size', label=label)
         digest, done = hashlib.sha256(), 0
         while done < size:
-            data = os.pread(fd, min(CHUNK, size - done), done)
+            data = backup_chunk(fd, done, min(CHUNK, size - done), st.st_size)
             require(data, 'BACKUP_DAMAGED', 'A file of the backup is shorter than recorded', label=label)
             digest.update(data)
             done += len(data)
@@ -693,11 +725,41 @@ def copies(context):
             continue
         writable = not volume['read_only'] and bool(volume.get('write_supported'))
         rows += [{**row, **place, 'writable': writable} for row in found]
+        if KIND == 'android':
+            rows += [{**row, **place, 'writable': writable} for row in userdata_copies(context, volume)]
     rows.sort(key=lambda row: row.get('created_utc') or '', reverse=True)
     return {'backups': rows[:COPIES_SHOWN], 'unmounted': waiting, 'folder': FOLDER}
 
 
+def userdata_copies(context, volume):
+    """Copies of userdata by its files on VOLUME, as rows of the list: one partition, userdata."""
+    import android_userdata
+    try:
+        found = android_userdata.listing(context.fs, volume['id'], volume['volume_token'])['copies']
+    except (OSError, fs.FilesystemError):
+        return []
+    return [{'path': c['path'], 'created_utc': c.get('created_utc'), 'same_phone': True, 'data_same_phone': True,
+             'partitions': 1, 'manifest_sha256': c['sha256'], 'bytes': (c.get('counts') or {}).get('file_bytes', c['bytes']),
+             'labels': ['userdata'], 'archive': True, 'file_bytes': c['bytes'], 'userdata_files': True,
+             'without_media': c.get('without_media', False)} for c in found if c.get('sha256')]
+
+
+def is_userdata(path):
+    return isinstance(path, str) and fs.clean_path(path).startswith(USERDATA_PREFIX)
+
+
+def volume_token(context, ident):
+    return next(v['volume_token'] for v in context.fs.volumes() if v['id'] == ident)
+
+
 def delete(context, args):
+    if is_userdata(args.path):
+        require(args.confirm, 'CONFIRMATION_REQUIRED', 'Deleting a copy must be confirmed')
+        import android_userdata
+        with operation_lock(context.lock_path, context.mode):
+            done = android_userdata.delete(context.fs, args.volume, volume_token(context, args.volume), args.path,
+                                           args.expected_manifest_sha256, True)
+        return {'deleted': done['deleted'], 'partitions': 1, 'bytes': 0}
     """Remove one copy from its volume (2026-11-11, as TWRP's Restore page does): only the folder
     whose manifest the page showed, on a volume mounted for writing."""
     require(args.confirm, 'CONFIRMATION_REQUIRED', 'Deleting a copy must be confirmed')
@@ -740,14 +802,44 @@ def listing(context):
             'bytes': sum(p['size_bytes'] for p in parts if p['label'] not in OPTIONAL), 'folder': FOLDER}
 
 
+# 2026-11-21: Android data that encrypts nothing is copied by its files (android_userdata), into the
+# same volume beside the archive of the partitions: a 50 GiB image of userdata did not fit on the card,
+# the files of LineageOS 20 took 81 MB, and they go back into a fresh format.
+USERDATA_PREFIX = '/A22xUserdataBackups/'
+
+
+def logical_userdata(context, parts):
+    """The userdata volume to copy by its files, when userdata is chosen and its data is not encrypted."""
+    if KIND != 'android' or not any(p['label'] == 'userdata' for p in parts):
+        return None
+    import android_data
+    volume = next((v for v in context.fs.volumes() if v['id'] == 'userdata'), None)
+    if volume is None:
+        return None
+    if context.mode == 'fixture':  # a fixture says so itself
+        return volume if volume.get('mounted') and volume.get('unencrypted_android_data') is True else None
+    return volume if android_data.plain_open(volume) else None
+
+
 def backup(context, args, progress):
     with operation_lock(context.lock_path, context.mode):
         parts = chosen_parts(context)
         require(parts, 'NO_IDENTITY_PARTITIONS', 'No partition of this kind was found')
+        logical = logical_userdata(context, parts)
+        if logical is not None:
+            parts = [p for p in parts if p['label'] != 'userdata']
         for part in parts:
             if part['label'] in OPTIONAL:  # A filesystem in use changes while it is read.
                 context.check_offline(part)
-        return save(context, args.volume, parts, progress)
+        result = save(context, args.volume, parts, progress) if parts else {}
+        if logical is not None:
+            import android_userdata
+            dest = next(v for v in context.fs.volumes() if v['id'] == args.volume)
+            copied = android_userdata._backup(context.fs, logical['volume_token'], args.volume, dest['volume_token'], True,
+                                              progress=lambda done, entries: progress('Copying Android data', 'userdata', done, 0))
+            result['userdata'] = copied['archive']
+            result.setdefault('path', copied['archive']['path'])
+        return result
 
 
 def facts(context, manifest, manifest_sha, progress):
@@ -796,6 +888,15 @@ def vbmeta_off(context, current):
 
 
 def verify(context, args, progress):
+    if is_userdata(args.path):
+        import android_userdata
+        expected = next((c['sha256'] for c in android_userdata.listing(context.fs, args.volume, volume_token(context, args.volume))['copies']
+                         if c['path'] == fs.clean_path(args.path) and c.get('sha256')), None)
+        require(expected, 'BACKUP_DAMAGED', 'The facts beside this copy are missing')
+        with operation_lock(context.lock_path, context.mode, shared=True):
+            done = android_userdata._verify(context.fs, args.volume, volume_token(context, args.volume), args.path, expected)
+        return {'manifest_sha256': expected, 'same_phone': True, 'restorable': True, 'data_restorable': True, 'locked': [],
+                'partitions': [{'label': 'userdata', 'size_bytes': done['counts']['file_bytes']}]}
     if is_archive(args.path):
         with backup_archive(context, args.volume, args.path) as (fd, manifest, manifest_sha, raw):
             verify_archive(fd, manifest, raw, progress)
@@ -969,6 +1070,22 @@ def restore_archive(context, args, progress):
 def restore(context, args, progress):
     require(args.confirm, 'CONFIRMATION_REQUIRED', 'Restoring identity partitions must be confirmed')
     with operation_lock(context.lock_path, context.mode):
+        if is_userdata(args.path):
+            # Into userdata the recovery formatted and Files mounted for writing (android_userdata checks it).
+            import android_userdata
+            # 2026-11-21, on the phone: the restore said that everything on userdata is replaced and was
+            # confirmed by a hold, then stopped at USERDATA_NOT_EMPTY ("format Android data first", in Files).
+            # With --replace-data the copy is checked whole first, then userdata formatted and mounted here.
+            if getattr(args, 'replace_data', False):
+                android_userdata._verify(context.fs, args.volume, volume_token(context, args.volume), args.path,
+                                         args.expected_manifest_sha256)
+                progress('Formatting', 'userdata', 0, 1)
+                context.format_userdata()
+                progress('Formatting', 'userdata', 1, 1)
+            android_userdata._restore(context.fs, args.volume, volume_token(context, args.volume), args.path,
+                                      args.expected_manifest_sha256, volume_token(context, 'userdata'), True,
+                                      lambda done, total: progress('Restoring Android data', 'userdata', done, total))
+            return {'restored': ['userdata'], 'identical': False, 'unchanged': [], 'left_locked': [], 'keeps_recovery': True}
         if is_archive(args.path):
             return restore_archive(context, args, progress)
         with backup_folder(context, args.volume, args.path) as (folder, manifest, manifest_sha):
@@ -1017,9 +1134,9 @@ def restore(context, args, progress):
                 source = os.open(row['file'], os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=folder)
                 writer = context.open(part, write=True)
                 try:
-                    digest, position = hashlib.sha256(), 0
+                    digest, position, stored = hashlib.sha256(), 0, os.fstat(source).st_size
                     while position < row['size_bytes']:
-                        data = os.pread(source, min(CHUNK, row['size_bytes'] - position), position)
+                        data = backup_chunk(source, position, min(CHUNK, row['size_bytes'] - position), stored)
                         require(data, 'BACKUP_DAMAGED', 'The backup file ended early', label=row['label'])
                         install.write_all(writer, data, offset=position)
                         digest.update(data)
@@ -1063,6 +1180,8 @@ def parser():
     for name in ('restore', 'delete'):
         commands.choices[name].add_argument('--expected-manifest-sha256', required=True)
         commands.choices[name].add_argument('--confirm', action='store_true')
+    commands.choices['restore'].add_argument('--replace-data', action='store_true',
+                                             help='a userdata copy: check it, format userdata, then put it back')
     commands.add_parser('backups').add_argument('--volume', required=True)
     commands.add_parser('copies')
     return result

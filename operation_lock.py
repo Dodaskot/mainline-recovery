@@ -10,6 +10,10 @@ import threading
 import time
 
 ENV_FD = 'A22X_RECOVERY_LOCK_FD'
+# Set beside ENV_FD when the lent lease is shared (2026-11-21, the owner: the terminal, USB files and
+# other work with files run at the same time). A step that needs storage to itself cannot run under it:
+# flock turns a shared lock into an exclusive one by dropping it first, and the lender would lose it.
+ENV_SHARED = 'A22X_RECOVERY_LOCK_SHARED'
 DEVICE_LOCK = '/run/lock/a22x-mainline-recovery.lock'
 # The leases this process holds now, by lock path. A second flock of the same file through a new
 # descriptor would be refused even inside the same process, so a step that needs the lease asks
@@ -52,7 +56,7 @@ def _held_elsewhere(path):
 
 
 @contextlib.contextmanager
-def lease(path=DEVICE_LOCK, mode='device'):
+def lease(path=DEVICE_LOCK, mode='device', shared=False):
     """The lease for PATH: this thread's own when it holds it already (a step run inside its caller's
     lease, as distro.py's saved Wi-Fi key), else a new one (2026-11-14 review: a second flock of the
     same file in one process is refused, and the step failed busy every time). Another thread of the
@@ -60,7 +64,7 @@ def lease(path=DEVICE_LOCK, mode='device'):
     if held(path):
         yield None
         return
-    with operation_lock(path, mode) as fd:
+    with operation_lock(path, mode, shared) as fd:
         yield fd
 
 
@@ -74,8 +78,12 @@ def _regular(fd, path):
 
 
 @contextlib.contextmanager
-def operation_lock(path, mode='device'):
+def operation_lock(path, mode='device', shared=False):
     """Yield the held FD. Borrowed inherited leases are never explicitly unlocked.
+
+    SHARED: work on the files of mounted volumes (USB files, the terminal, copies, exports), which runs
+    beside other such work; anything else (mounting, formatting, offline snapshots, flashing) holds the
+    lease alone and is refused while shared work runs, and the other way round.
 
     FD inheritance coordinates trusted root helpers; it is not a security boundary.
     A helper cannot bypass another session's lock by setting the environment: the
@@ -97,9 +105,15 @@ def operation_lock(path, mode='device'):
             fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
         _regular(fd, path)
         until = _wait_until() if inherited is None else 0.0
+        lent_shared = inherited is not None and os.environ.get(ENV_SHARED) == '1'
+        if lent_shared and not shared:
+            raise BlockingIOError(errno.EWOULDBLOCK, 'This step needs storage alone; the lent lease is shared')
+        # A lent exclusive lease covers shared work too and is kept as it is (LOCK_SH on it would first
+        # drop the lender's exclusive lock).
+        kind = fcntl.LOCK_SH if shared and (inherited is None or lent_shared) else fcntl.LOCK_EX
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(fd, kind | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
                 if time.monotonic() >= until:

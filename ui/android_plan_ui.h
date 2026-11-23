@@ -138,7 +138,7 @@ static void render_aplan(App*a){
         rounded(a,(Rect){28,242,664,330},24,PANEL);text(a,52,264,0,RED,"THE PLAN CANNOT BE USED");
         wrapped(a,52,312,606,0,TEXT,a->aplan_error[0]?a->aplan_error:"The plan from the Android app cannot be used.",6);
         wrapped(a,40,600,640,0,MUTED,"Prepare it again in the app, or discard it here.",3);
-        button(a,(Rect){28,1320,664,104},"Hold 2 seconds to discard the plan",A_APLAN_FORGET,ui_free(a)&&!a->job.pid&&a->aplan_sha[0],false,2000);
+        button(a,(Rect){28,1320,664,104},"Hold 1 second to discard the plan",A_APLAN_FORGET,ui_free(a)&&!a->job.pid&&a->aplan_sha[0],false,2000);
         return;
     }
     Rect hero={28,236,664,196};gradient(a,hero,36,ui_theme->hero_top,ui_theme->hero_bottom);

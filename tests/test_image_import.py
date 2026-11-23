@@ -23,6 +23,18 @@ import image_import as m
 from test_distro import Fixture, arm_elf
 
 
+# The tests' folders stand for a roomy userdata (2026-11-22): measured on the host, a /tmp that other work
+# had filled made 42 tests fail with INSUFFICIENT_SPACE. 64 GiB free; a test about room patches its own.
+ROOMY = os.statvfs_result((4096, 4096, 1 << 24, 1 << 24, 1 << 24, 1 << 20, 1 << 20, 1 << 20, 0, 255))
+
+
+def roomy_disk(test):
+    for name in ('fstatvfs', 'statvfs'):
+        patch = mock.patch.object(os, name, lambda _target: ROOMY)
+        patch.start()
+        test.addCleanup(patch.stop)
+
+
 class ImageFixture(Fixture):
     def __init__(self, parent):
         super().__init__(parent)
@@ -190,6 +202,7 @@ class TestImageInstall(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='a22x-image-')
         self.addCleanup(self.tmp.cleanup)
         self.f = ImageFixture(self.tmp.name)
+        roomy_disk(self)
 
     def plan(self, **kw):
         options = d.image_options(kw.get('desktop', 'console'), kw.get('account', 'keep'), kw.get('username'),
@@ -409,6 +422,82 @@ class TestImageInstall(unittest.TestCase):
         conf = (self.root(second) / 'etc/a22x/firstboot.conf').read_text()
         self.assertIn('PHONE_USER=olena', conf)
 
+    def new_user_beside(self, uid, live_extra=''):
+        """An install beside the original with a new user whose setup makes its home in the shared /home
+        (the provisioning runner stands for useradd -m; the home's owner is said through _walk, as a test
+        cannot give files away)."""
+        live = self.f.live
+        if live_extra:
+            with open(live / 'etc/passwd', 'a') as out:
+                out.write(live_extra)
+        (Path(os.environ['A22X_PLATFORM_HELPERS']) / 'wpa_supplicant').write_bytes(b'static wpa_supplicant')
+
+        def runner(root, on_line):
+            with open(root / 'etc/passwd', 'a') as out:
+                out.write('olena:x:%d:%d::/home/olena:/bin/bash\n' % (uid, uid))
+            with open(root / 'etc/group', 'a') as out:
+                out.write('olena:x:%d:\n' % uid)
+            (live / 'home/olena').mkdir()
+            (live / 'home/olena/.profile').write_text('# new\n')
+            return 0
+        real_walk = d._walk
+
+        def walk(tree, base, *rest):
+            for path, st in real_walk(tree, base, *rest):
+                if path == 'home/olena' or path.startswith('home/olena/'):
+                    st = os.stat_result((st.st_mode, st.st_ino, st.st_dev, st.st_nlink, uid, uid, st.st_size,
+                                         int(st.st_atime), int(st.st_mtime), int(st.st_ctime)))
+                yield path, st
+        real_acl = d.home_acl
+
+        def acl(tree, path, st):
+            if path == 'home/olena' or path.startswith('home/olena/'):
+                return real_acl(tree, path, tree.lstat(path))  # its ACL read with its real identity
+            return real_acl(tree, path, st)
+        d.PROVISION_RUNNER = runner
+        try:
+            with mock.patch.object(d, '_walk', walk), mock.patch.object(d, 'home_acl', acl):
+                return d.install(self.f.context, self.plan(desktop='phosh', account='new', username='olena', password='x'), True)
+        finally:
+            d.PROVISION_RUNNER = None
+
+    def test_a_new_user_installed_beside_the_others_keeps_its_shared_home(self):
+        """2026-11-22, live: Mobian beside Debian with a new user stopped at HOME_UNKNOWN_UID, its own home."""
+        result = self.new_user_beside(1501)
+        self.assertEqual(result['installed_slot'], 'distro-1-0')
+        self.assertEqual((self.f.live / 'home/olena/.profile').read_text(), '# new\n')
+
+    def test_a_refused_install_takes_back_the_home_it_made(self):
+        """2026-11-22, live: the refused install left the new user's home, which would refuse the next switch.
+        Here the new user's UID belongs to another account of the current system: refused as before."""
+        with self.assertRaises(d.DistroError) as caught:
+            self.new_user_beside(1502, live_extra='bob:x:1502:1502::/home/bob:/bin/bash\n')
+        self.assertIn(caught.exception.code, ('HOME_UID_ALIAS_MISMATCH', 'HOME_ACCOUNT_MISMATCH', 'HOME_UNKNOWN_UID'))
+        self.assertFalse((self.f.live / 'home/olena').exists())
+        self.assertFalse(any((self.f.live / d.MANAGER / 'staging').iterdir()))
+
+    def test_a_system_of_an_older_recovery_gets_the_new_platform_files_at_its_switch(self):
+        """2026-11-22, live: after a recovery update every other installed system was refused with
+        PLATFORM_PROFILE_MISMATCH although the kernel release was the same."""
+        self.platform_bundle()
+        slot = d.install(self.f.context, self.plan(), True)['installed_slot']
+        unit = 'usr/lib/systemd/system/a22x-fixture.service'
+        old = (self.root(slot) / unit).read_text()
+        # A newer recovery: one platform file differs in content, its profile and bundle say so.
+        (self.f.live / unit).write_text(old + '# a newer recovery\n')
+        self.f.profile = d.capture_profile(self.f.context, ['/usr/lib/modules/7.2.0-a22x+'],
+            ['/usr/lib/firmware'], ['/usr/lib/systemd/system/a22x-fixture.service',
+             '/etc/systemd/system/multi-user.target.wants/a22x-fixture.service'], 'systemd')['profile']
+        (self.f.path / 'distro-platform.json').write_bytes(d.canonical(self.f.profile))
+        self.platform_bundle()
+        plan = d.switch_plan(self.f.context, slot)['plan']
+        self.assertEqual((self.root(slot) / unit).read_text(), old + '# a newer recovery\n')
+        record = json.loads((self.f.live / d.MANAGER / 'slots' / slot / 'slot.json').read_text())
+        self.assertEqual(record['platform_profile_sha256'], d.digest(self.f.profile))
+        d.check_seal(record)
+        switched = d.switch(self.f.context, plan, True)
+        self.assertEqual((switched['active'], switched['status']), (slot, 'committed'))
+
     def test_the_new_root_is_open_to_every_user_during_the_setup(self):
         """2026-11-09: pacman's download user alpm could not reach "/" of a root made 0700."""
         seen = []
@@ -615,6 +704,7 @@ class TestCleanInstall(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='a22x-clean-')
         self.addCleanup(self.tmp.cleanup)
         self.f = ImageFixture(self.tmp.name)
+        roomy_disk(self)
         TestImageInstall.platform_bundle(self)
         for child in self.f.live.iterdir():
             if child.name != 'lost+found':
@@ -1428,6 +1518,7 @@ class TestImageStore(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix='a22x-store-')
         self.addCleanup(self.tmp.cleanup)
         self.f = ImageFixture(self.tmp.name)
+        roomy_disk(self)
         TestImageInstall.platform_bundle(self)
         self.store = self.f.live / d.STORE_DIR
 

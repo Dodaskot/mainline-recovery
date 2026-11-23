@@ -56,7 +56,7 @@ static void complete_updates_job(App*a,const Json*j,int kind,bool ok){
 static void render_updates(App*a){
     heading(a,"Updates","This recovery and the Linux BOOT, from the internet.",true);
     bool free_ui=ui_free(a);char line[192];
-    rounded(a,(Rect){28,236,664,330},24,PANEL);icon_tile(a,A_RESTORE,46,252,56,ICON_FILL);text(a,120,262,1,TEXT,"Recovery");
+    rounded(a,(Rect){28,236,664,260},24,PANEL);icon_tile(a,A_RESTORE,46,252,56,ICON_FILL);text(a,120,262,1,TEXT,"Recovery");
     if(!a->updates_known)wrapped(a,52,330,616,0,MUTED,a->job.pid?"Checking...":"Not checked yet.",2);
     else{
         snprintf(line,sizeof(line),T("Installed: %s"),a->upd_rec_installed[0]?a->upd_rec_installed:"?");text(a,52,330,0,TEXT,line);
@@ -66,21 +66,21 @@ static void render_updates(App*a){
             a->upd_rec_error[0]?failed:tr(a->upd_rec_newer?"A newer recovery is published.":"This recovery is up to date.");
         raw_text(true);wrapped(a,52,414,616,0,a->upd_rec_newer&&!a->upd_rec_error[0]?GREEN:MUTED,note,2);raw_text(false);
     }
-    button(a,(Rect){46,476,628,74},"Update recovery",A_UPDATES_RECOVERY,free_ui&&a->updates_known&&a->upd_rec_newer,true,0);
-    rounded(a,(Rect){28,590,664,330},24,PANEL);icon_tile(a,A_OS,46,606,56,ICON_FILL);text(a,120,616,1,TEXT,"Linux BOOT");
+    settings_row(a,512,A_RESTORE,"Update recovery","From the internet",A_UPDATES_RECOVERY,free_ui&&a->updates_known&&a->upd_rec_newer);
+    rounded(a,(Rect){28,636,664,220},24,PANEL);icon_tile(a,A_OS,46,652,56,ICON_FILL);text(a,120,662,1,TEXT,"Linux BOOT");
     if(a->updates_known){
         /* "unknown": BOOT could not be read, neither Android nor Linux (2026-11-14 review). */
         const char*note=strcmp(a->upd_boot_kind,"android")&&strcmp(a->upd_boot_kind,"linux")?"BOOT could not be read, so nothing is offered for it.":
             !strcmp(a->upd_boot_kind,"android")?"BOOT holds Android. It is changed in Install, Android.":
             (!strcmp(a->upd_boot_state,"current")?"BOOT holds the current Linux release.":
             (!strcmp(a->upd_boot_state,"older")?"A newer Linux BOOT is published.":"BOOT holds a Linux kernel of another build. Update only if you want the release."));
-        if(a->upd_boot_latest[0]){snprintf(line,sizeof(line),T("Published: %s"),a->upd_boot_latest);text(a,52,684,0,TEXT,line);}
-        wrapped(a,52,726,616,0,a->upd_boot_newer?GREEN:MUTED,note,3);
+        if(a->upd_boot_latest[0]){snprintf(line,sizeof(line),T("Published: %s"),a->upd_boot_latest);text(a,52,718,0,TEXT,line);}
+        wrapped(a,52,758,616,0,a->upd_boot_newer?GREEN:MUTED,note,3);
     }
     bool boot_ok=a->updates_known&&!strcmp(a->upd_boot_kind,"linux")&&valid_sha256(a->upd_boot_sha)&&strcmp(a->upd_boot_state,"current");
-    button(a,(Rect){46,830,628,74},"Update BOOT",A_UPDATES_BOOT,free_ui&&boot_ok,a->upd_boot_newer,0);
-    text_tile(a,946,0,MUTED,"The new image is downloaded and checked first. Then Flash a partition shows it: the old content is saved, and a hold writes it.",3);
-    button(a,(Rect){28,1190,664,84},"Check again",A_UPDATES_REFRESH,free_ui,false,0);
+    settings_row(a,872,A_OS,"Update BOOT","From the internet",A_UPDATES_BOOT,free_ui&&boot_ok);
+    text_tile(a,1000,0,MUTED,"The new image is downloaded and checked first. Then Flash a partition shows it: the old content is saved, and a hold writes it.",3);
+    settings_row(a,1190,ICON_BROWSER,"Check again","Updates",A_UPDATES_REFRESH,free_ui);
 }
 static bool updates_action(App*a,int id){
     if(id==A_UPDATES){if(!ui_free(a))return true;screen(a,UPDATES);if(!a->updates_known)start_updates_job(a,J_UPDATES_CHECK,"");return true;}

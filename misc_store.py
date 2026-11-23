@@ -31,6 +31,12 @@ a write that stopped between them.
 
 The size is the stock PIT's (A22X_EUR_OPEN.pit: misc 1024 blocks of 512 bytes, one PIT for every
 storage size of the model).
+
+The boot splash of the theme in use (boot_splash.py, 2026-11-21) is a store of its own in 128-384
+KiB: one record, two slots of 128 KiB in the same format, read before /init by the kernel's boot
+splash (drivers/gpu/drm/mediatek/mtk_boot_splash.c), so the first picture after the bootloader is
+the theme's. Its area is never part of the settings' (owned): bytes of another there never stop a
+save of the settings, nor settings' bytes a save of the splash.
 """
 import contextlib
 import errno
@@ -51,6 +57,14 @@ SLOT = 32 << 10
 PAYLOAD_MAX = SLOT - SECTOR
 # name -> offset of its first slot; the second follows it.
 AREAS = {'settings': 384 << 10, 'wifi': 448 << 10}
+# Bluetooth's pairings (bt_pairings.py, 2026-11-22): a store of their own in 64-128 KiB, beside Android's
+# first 64 KiB (on the phone that day: 64-128 KiB all zeros, Android's last bytes before 64 KiB), with
+# slots of 32 KiB. As the splash's, its area is never part of the settings': bytes of another there stop
+# only the pairings' saves (Foreign), never a save of the settings or of the Wi-Fi list.
+BLUETOOTH_AREAS = {'pairings': 64 << 10}
+# The boot splash's store: the same records with slots of 128 KiB (see above).
+SPLASH_AREAS = {'splash': 128 << 10}
+SPLASH_SLOT = 128 << 10
 END = 512 << 10
 HEADER = struct.Struct('<8s8sQII')  # magic, name, generation, length, flags (0)
 
@@ -90,15 +104,32 @@ def _open(write):
     return fd
 
 
+def _layout(name):
+    """(offset of the first slot, size of a slot, the records of its store) of record NAME."""
+    if name in AREAS:
+        return AREAS[name], SLOT, AREAS
+    if name in SPLASH_AREAS:
+        return SPLASH_AREAS[name], SPLASH_SLOT, SPLASH_AREAS
+    if name in BLUETOOTH_AREAS:
+        return BLUETOOTH_AREAS[name], SLOT, BLUETOOTH_AREAS
+    raise ValueError('No such record: %s' % name)
+
+
+def payload_max(name):
+    return _layout(name)[1] - SECTOR
+
+
 def _name(name):
-    if name not in AREAS:
-        raise ValueError('No such record: %s' % name)
-    return name.encode().ljust(8, b'\0')
+    _layout(name)
+    encoded = name.encode()
+    if len(encoded) > 8:  # the header's field: a longer name would be cut, and never read as its own
+        raise ValueError('A record name has at most 8 bytes: %s' % name)
+    return encoded.ljust(8, b'\0')
 
 
-def _read_slot(fd, offset):
-    data = os.pread(fd, SLOT, offset)
-    if len(data) != SLOT:
+def _read_slot(fd, offset, size=SLOT):
+    data = os.pread(fd, size, offset)
+    if len(data) != size:
         raise OSError(errno.EIO, 'misc ended before a record')
     return data
 
@@ -120,7 +151,7 @@ def classify(name, data):
         # This recovery's magic is this recovery's: a header cut inside its name, or one that is
         # not whole, is a copy cut short (2026-11-14 review: read as another's).
         return ('torn',)
-    if flags or length > PAYLOAD_MAX:
+    if flags or length > payload_max(name):
         return ('torn',)
     payload = data[SECTOR:SECTOR + length]
     digest = hashlib.sha256(data[:HEADER.size] + payload).digest()
@@ -133,17 +164,18 @@ def _slots(fd, name):
     """Both slots classified; one that cannot be read is 'unreadable', the other still counts
     (2026-11-14 review: an EIO in one copy failed the read of the whole one beside it)."""
     found = []
+    first, size, _ = _layout(name)
     for index in (0, 1):
         try:
-            found.append(classify(name, _read_slot(fd, AREAS[name] + index * SLOT)))
+            found.append(classify(name, _read_slot(fd, first + index * size, size)))
         except OSError:
             found.append(classify(name, None))
     return found
 
 
-def _area(fd):
-    """{name: its two slots} for every record."""
-    return {name: _slots(fd, name) for name in AREAS}
+def _area(fd, name='settings'):
+    """{name: its two slots} for every record of the store of record NAME."""
+    return {record: _slots(fd, record) for record in _layout(name)[2]}
 
 
 def owned(area):
@@ -183,7 +215,7 @@ def state(name):
     _name(name)
     fd = _open(False)
     try:
-        area = _area(fd)
+        area = _area(fd, name)
         slots = area[name]
         readable = not any(slot[0] == 'unreadable' for pair in area.values() for slot in pair)
         if not readable and not any(slot[0] == 'valid' for slot in slots) and any(slot[0] == 'foreign' for slot in slots):
@@ -202,17 +234,18 @@ def read(name):
 
 
 def _write_slot(fd, name, index, generation, payload):
-    offset = AREAS[name] + index * SLOT
+    first, size, _ = _layout(name)
+    offset = first + index * size
     head = HEADER.pack(MAGIC, _name(name), generation, len(payload), 0)
     head += hashlib.sha256(head + payload).digest()
     sector = head.ljust(SECTOR, b'\0')
-    body = payload.ljust(SLOT - SECTOR, b'\0')
+    body = payload.ljust(size - SECTOR, b'\0')
     os.pwrite(fd, sector, offset)
     os.fsync(fd)
     os.pwrite(fd, body, offset + SECTOR)
     os.fsync(fd)
     drop_cached(fd)
-    if os.pread(fd, SLOT, offset) != sector + body:
+    if os.pread(fd, size, offset) != sector + body:
         raise OSError(errno.EIO, 'misc did not keep the record')
 
 
@@ -223,11 +256,11 @@ def write(name, payload):
     of the record cannot be read now; Foreign when the area is not this recovery's and holds
     another's bytes, or a slot that cannot be read now (see owned)."""
     _name(name)
-    if len(payload) > PAYLOAD_MAX:
+    if len(payload) > payload_max(name):
         raise ValueError('The %s record is too large for misc' % name)
     fd = _open(True)
     try:
-        area = _area(fd)
+        area = _area(fd, name)
         slots = area[name]
         if not owned(area):
             # Taken only when every slot of the area was seen and none holds another's bytes: one
@@ -255,15 +288,15 @@ def write(name, payload):
 def clear(name):
     """Record NAME gone, both slots zeroed: the reset of damaged settings, which the owner asked for
     after userdata was erased; whatever stands there goes, another's bytes too."""
-    _name(name)
+    first, size, _ = _layout(name)
     fd = _open(True)
     try:
         for index in (0, 1):
-            os.pwrite(fd, bytes(SLOT), AREAS[name] + index * SLOT)
+            os.pwrite(fd, bytes(size), first + index * size)
             os.fsync(fd)
         drop_cached(fd)
         for index in (0, 1):
-            if any(_read_slot(fd, AREAS[name] + index * SLOT)):
+            if any(_read_slot(fd, first + index * size, size)):
                 raise OSError(errno.EIO, 'misc did not clear the record')
     finally:
         os.close(fd)
@@ -285,7 +318,7 @@ if __name__ == '__main__':
         print(field(sys.argv[2], sys.argv[3]))
         sys.exit(0)
     with contextlib.suppress(BrokenPipeError):
-        for record in AREAS:
+        for record in [*AREAS, *SPLASH_AREAS]:
             try:
                 value = read(record)
                 print(record, 'none' if value is None else '%d bytes' % len(value))

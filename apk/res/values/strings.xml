@@ -167,7 +167,7 @@
     <string name="update_unreadable">The releases could not be read. Check the network, then open this page again.</string>
     <string name="update_newer">A newer app is published.</string>
     <string name="update_current">This app is up to date.</string>
-    <string name="update_hold">Hold to update the app</string>
+    <string name="update_hold">Update the app</string>
     <string name="update_downloading">Downloading: %1$d%%</string>
     <string name="update_installing">Installing the update; the app closes and opens again.</string>
     <string name="boot_kept_title">Stock BOOT</string>

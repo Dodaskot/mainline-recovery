@@ -24,17 +24,29 @@ msgstr " байтів"
 msgid " bytes skipped / %s"
 msgstr " байтів пропущено / %s"
 
+msgid " MiB"
+msgstr ""
+
+msgid " over "
+msgstr ""
+
 msgid "%.120s / %.24s / %s free"
 msgstr "%.120s / %.24s / вільно %s"
 
 msgid "%s  /  for %s"
 msgstr "%s  /  для %s"
 
+msgid "%s  /  for %s, an update of the one installed"
+msgstr "%s  /  для %s, оновлення встановленого"
+
 msgid "%s  /  from the catalog, %s download"
 msgstr "%s  /  з каталогу, завантаження %s"
 
-msgid "%s %s is in BOOT. In Android, install the Magisk app that manages root: %s from github.com/topjohnwu/Magisk."
-msgstr "%s %s уже в BOOT. В Android встановіть застосунок Magisk, що керує root: %s з github.com/topjohnwu/Magisk."
+msgid "%s  ·  %s  ·  Download/"
+msgstr ""
+
+msgid "%s %s is in BOOT. The Magisk app that manages root can be installed by Android at its next start: the button below gets it from github.com/topjohnwu/Magisk."
+msgstr "%s %s уже в BOOT. Застосунок Magisk, що керує root, Android може встановити під час наступного запуску: кнопка нижче завантажить його з github.com/topjohnwu/Magisk."
 
 msgid "%s (%s) is in BOOT. In Android, install the APatch app from github.com/bmax121/APatch and enter your SuperKey in it."
 msgstr "%s (%s) уже в BOOT. В Android встановіть застосунок APatch з github.com/bmax121/APatch і введіть у ньому свій SuperKey."
@@ -63,6 +75,12 @@ msgstr "%s, %d %s"
 msgid "%s, password from the app"
 msgstr "%s, пароль із застосунку"
 
+msgid "%s: %s free of %s"
+msgstr "%s: вільно %s з %s"
+
+msgid "%u already held this firmware's image (dtbo, vbmeta) and were kept."
+msgstr "Ще %u вже містили образ цієї прошивки (dtbo, vbmeta) і лишилися як є."
+
 msgid "%u apps chosen"
 msgstr "Вибрано програм: %u"
 
@@ -75,6 +93,9 @@ msgstr "Активний режим дисплея: %u Гц."
 msgid "%u of %u partitions, %s"
 msgstr "%u з %u розділів, %s"
 
+msgid "%u of %u partitions, %s + userdata as its files"
+msgstr "%u з %u розділів, %s + userdata як його файли"
+
 msgid "%u partitions written and checked. userdata is ready for Android, and this recovery stays. The first start of Android takes several minutes."
 msgstr "Записано й перевірено розділів: %u. userdata готовий для Android, а Recovery лишається. Перший запуск Android триває кілька хвилин."
 
@@ -86,6 +107,9 @@ msgstr "Розділів: %u, %s. Усі контрольні суми збіг�
 
 msgid "%u selected"
 msgstr "Вибрано: %u"
+
+msgid "+%d more"
+msgstr "Ще %d"
 
 msgid "1 min"
 msgstr "1 хв"
@@ -102,14 +126,26 @@ msgstr "30 с"
 msgid "5 min"
 msgstr "5 хв"
 
+msgid "7 written"
+msgstr ""
+
 msgid "8 to 63 characters without spaces, with a letter and a digit. It is kept nowhere: remember it."
 msgstr "Від 8 до 63 символів без пробілів, з літерою та цифрою. Він ніде не зберігається: запам’ятайте його."
+
+msgid ":%dx%d"
+msgstr ""
 
 msgid "; %u device files left out"
 msgstr "; пропущено файлів пристроїв: %u"
 
+msgid "\\zxcvbnm,./"
+msgstr ""
+
 msgid "A backup can still be restored once one is installed"
 msgstr "Копію можна відновити, щойно систему буде встановлено"
+
+msgid "A backup or restore is still running. Wait until it finishes, then try again."
+msgstr "Резервне копіювання або відновлення ще триває. Дочекайтеся завершення і спробуйте ще раз."
 
 msgid "A backup with this name already exists"
 msgstr "Копія з такою назвою вже є"
@@ -131,6 +167,9 @@ msgstr "Для чистого встановлення потрібен нови
 
 msgid "A clean installation, like the installer of a live disk."
 msgstr "Чисте встановлення, як інсталятор із live-диска."
+
+msgid "A command in the terminal holds storage. Close the terminal, then try again."
+msgstr "Команда в терміналі тримає сховище. Закрийте термінал і спробуйте ще раз."
 
 msgid "A command is running in the terminal and holds storage. Wait for it to end, or stop it in the terminal."
 msgstr "У терміналі виконується команда, і носій зайнятий. Дочекайтеся її кінця або зупиніть її в терміналі."
@@ -178,7 +217,7 @@ msgid "A DT table entry is not a device tree"
 msgstr "Запис таблиці DT не є деревом пристроїв"
 
 msgid "A factory reset was asked for in Android's settings: Android restarted into this recovery to have its data erased."
-msgstr "У налаштуваннях Android замовлено скидання до заводських: Android перезапустився в це recovery, щоб стерти свої дані."
+msgstr "Скидання запущено з налаштувань Android."
 
 msgid "A FAT32 card cannot hold a file of 4 GiB or more"
 msgstr "Картка з FAT32 не вміщує файл від 4 ГіБ"
@@ -234,9 +273,6 @@ msgstr "Тека з образами, зроблена до появи архі�
 msgid "A GSI starts with Samsung's BOOT and vendor: flash the Samsung firmware first. Installing formats userdata for Android."
 msgstr "GSI запускається з BOOT і vendor від Samsung: спершу прошийте прошивку Samsung. Встановлення форматує userdata для Android."
 
-msgid "A GSI's system.img goes into system. When the image is larger, the partition grows into the free space of super; the other partitions stay as they are."
-msgstr "system.img з GSI прошивається в system. Якщо образ більший, розділ збільшується за рахунок вільного місця super; інші розділи лишаються як є."
-
 msgid "A hash descriptor is cut short"
 msgstr "Дескриптор хешу обірваний"
 
@@ -251,9 +287,6 @@ msgstr "У файл архіву потрапило більше байтів, �
 
 msgid "A module"
 msgstr "Модуль"
-
-msgid "A module needs Android data, which stays closed here: install it in the Magisk or APatch app"
-msgstr "Модулю потрібні дані Android, які тут лишаються закритими: встановіть його в застосунку Magisk або APatch"
 
 msgid "A network name has 1 to 32 bytes"
 msgstr "Назва мережі має від 1 до 32 байтів"
@@ -306,6 +339,9 @@ msgstr "Для цього плану встановлення потрібна �
 msgid "A private RAM directory is required for this reviewed plan."
 msgstr "Для цього плану потрібна приватна тека в RAM."
 
+msgid "A private recovery directory is required for this script."
+msgstr "Для скрипта потрібен приватний каталог recovery."
+
 msgid "A private runtime directory is required for reviewed plans."
 msgstr "Для планів потрібна приватна робоча тека."
 
@@ -320,6 +356,9 @@ msgstr "Захищеній копії потрібен пароль"
 
 msgid "A qualified stock profile is not available in this recovery."
 msgstr "У цьому recovery немає перевіреного стокового профілю."
+
+msgid "A reboot is required before another attempt."
+msgstr "Потрібне перезавантаження перед наступною спробою."
 
 msgid "A required rootfs directory is missing or symlinked"
 msgstr "Потрібна тека кореневої ФС відсутня або є посиланням"
@@ -348,8 +387,8 @@ msgstr "Образ системи на флешці чи SD-картці"
 msgid "A text login for a USB or Bluetooth keyboard. It starts the shell picked last."
 msgstr "Текстовий вхід для USB- або Bluetooth-клавіатури. Запускає оболонку, вибрану востаннє."
 
-msgid "A tile icon would be too hard to read"
-msgstr "Значок плитки було б надто важко розгледіти"
+msgid "A tile icon is hard to see"
+msgstr ""
 
 msgid "A tool that makes filesystems is missing"
 msgstr "Бракує інструмента для створення файлових систем"
@@ -378,9 +417,6 @@ msgstr "Запис у %s обірвався, і його не вдалося с�
 msgid "A write to %s was cut short: its old content was put back"
 msgstr "Запис у %s обірвався: попередній вміст повернуто"
 
-msgid "a22x-recovery: the recovery's settings and keys, saved Wi-Fi networks, plans from the Android app and setup scripts."
-msgstr "a22x-recovery: налаштування й ключі recovery, збережені мережі Wi-Fi, плани із застосунку Android і скрипти налаштування."
-
 msgid "About %u min"
 msgstr "Близько %u хв"
 
@@ -396,6 +432,12 @@ msgstr "ДОСТУП"
 msgid "Access stays open until the phone locks or restarts. The computer never sees the password."
 msgstr "Доступ діє, доки телефон не заблокується або не перезапуститься. Комп'ютер пароля не бачить."
 
+msgid "Access: read and write"
+msgstr "Доступ: читання і запис"
+
+msgid "Access: read-only"
+msgstr "Доступ: лише читання"
+
 msgid "ACCOUNT"
 msgstr "ОБЛІКОВИЙ ЗАПИС"
 
@@ -410,6 +452,9 @@ msgstr "Облікові записи, що вже були: %s"
 
 msgid "Accounts made: %s"
 msgstr "Створено облікові записи: %s"
+
+msgid "ACTION=add"
+msgstr ""
 
 msgid "active"
 msgstr "активна"
@@ -432,11 +477,23 @@ msgstr "Додати ще ZIP"
 msgid "Add colors from a file"
 msgstr "Додати кольори з файлу"
 
+msgid "Add files"
+msgstr "Додати файли"
+
+msgid "Add music or videos from Files"
+msgstr "Додайте музику або відео з «Файлів»"
+
 msgid "Add shells and choose how the phone signs in."
 msgstr "Додайте оболонки й виберіть, як входити в систему."
 
+msgid "Add to queue"
+msgstr "До черги"
+
 msgid "Added"
 msgstr "Додано"
+
+msgid "Added to the queue"
+msgstr "Додано до черги"
 
 msgid "Added until restart: no writable storage"
 msgstr "Додано до перезапуску: немає сховища для запису"
@@ -453,20 +510,35 @@ msgstr "Зміна яскравості."
 msgid "Africa"
 msgstr "Африка"
 
+msgid "After Android first boots, restoring old images may not restore migrated data or hardware-backed keys."
+msgstr "Після першого запуску Android старі образи можуть не відновити змінені дані або апаратні ключі."
+
+msgid "After verification, erasing needs a separate confirmation."
+msgstr "Після перевірки потрібне окреме підтвердження видалення."
+
 msgid "Afterwards: restart the system"
 msgstr "Після цього: перезапустити систему"
 
 msgid "Afterwards: stay in recovery"
 msgstr "Після цього: лишитися в recovery"
 
+msgid "Aktuelles Thema bearbeiten"
+msgstr ""
+
 msgid "All"
 msgstr "Усі"
+
+msgid "All modules"
+msgstr "Усі модулі"
 
 msgid "All phones"
 msgstr "Усі телефони"
 
 msgid "All regions"
 msgstr "Усі регіони"
+
+msgid "All tools"
+msgstr "Усі інструменти"
 
 msgid "All types"
 msgstr "Усі типи"
@@ -476,6 +548,9 @@ msgstr "Усі версії"
 
 msgid "Allow"
 msgstr "Дозволити"
+
+msgid "Allow a pair not yet qualified (how a pair is qualified; not offered by the UI)"
+msgstr ""
 
 msgid "Allow this computer"
 msgstr "Дозволити комп'ютер"
@@ -504,8 +579,14 @@ msgstr "Завжди"
 msgid "America"
 msgstr "Америка"
 
+msgid "AMOLED"
+msgstr ""
+
 msgid "An allowed computer is remembered. When the recovery has a password, it is asked as well."
 msgstr "Дозволений комп'ютер запам'ятовується. Якщо recovery має пароль, його теж буде запитано."
+
+msgid "An Android system volume is in use. Close the operation using it and try again."
+msgstr "Системний том Android зайнятий. Завершіть операцію, яка його використовує, і спробуйте ще раз."
 
 msgid "An ARM64 ISO, disk image (raw, qcow2, VHD), Vagrant box or rootfs archive."
 msgstr "ISO, образ диска (raw, qcow2, VHD), Vagrant box або архів rootfs для ARM64."
@@ -534,11 +615,23 @@ msgstr "Перерваний запис RECOVERY може потребувати
 msgid "An SD card or a USB drive. A tap mounts it read-only."
 msgstr "SD-картка або USB-накопичувач. Дотик монтує лише для читання."
 
+msgid "An unfinished archive with this name already exists"
+msgstr ""
+
+msgid "An update of this system that was checked on this phone: only the system is written. The way back is checked before anything is written; data the new system changes after its first start does not go back with it."
+msgstr "Оновлення цієї системи, перевірене на цьому телефоні: записується лише система. Шлях назад перевіряється до будь-якого запису; дані, які нова система змінить після першого запуску, разом із ним не повернуться."
+
+msgid "an update this recovery cannot apply"
+msgstr "оновлення, яке ця recovery не може застосувати"
+
 msgid "An X11 login screen with an on-screen keyboard, made for Xfce."
 msgstr "Екран входу X11 з екранною клавіатурою, зроблений для Xfce."
 
 msgid "and %u more"
 msgstr "і ще %u"
+
+msgid "Android  ·  Linux"
+msgstr "Android  ·  Linux"
 
 msgid "Android %s (%s)  /  %s  /  Linux %s"
 msgstr "Android %s (%s)  /  %s  /  Linux %s"
@@ -552,8 +645,11 @@ msgstr "Android просить скидання"
 msgid "Android boot image"
 msgstr "Завантажувальний образ Android"
 
+msgid "Android checked its password before it asked for this reset."
+msgstr "Android перевірив свій пароль, перш ніж попросити це скидання."
+
 msgid "Android could not open its data and asks to erase it. When it failed only once, starting it again may be enough: forget the request and restart."
-msgstr "Android не зміг відкрити свої дані й просить їх стерти. Якщо це сталося лише раз, може вистачити ще одного запуску: забудьте запит і перезапустіть."
+msgstr "Android не відкрив дані. Щоб спробувати знову, скасуйте запит і перезапустіть телефон."
 
 msgid "Android creates it again"
 msgstr "Android створить його знову"
@@ -561,8 +657,47 @@ msgstr "Android створить його знову"
 msgid "ANDROID DATA IS ERASED"
 msgstr "ДАНІ ANDROID БУДЕ СТЕРТО"
 
+msgid "Android data is in use. Close file operations or USB sharing and try again."
+msgstr "Дані Android зайняті. Завершіть операції з файлами або спільний доступ через USB і спробуйте ще раз."
+
+msgid "Android data is mounted for writing."
+msgstr "Дані Android змонтовано для запису."
+
+msgid "Android data is mounted in Files. Unmount it there before planning a new Linux installation. Android data is never adopted as a Linux system."
+msgstr "Дані Android змонтовано у Файлах. Відмонтуйте їх перед плануванням встановлення Linux. Дані Android не використовуються як система Linux."
+
+msgid "Android data is mounted read-only."
+msgstr "Дані Android змонтовано лише для читання."
+
+msgid "Android data is read-only. Reopen it with write access before changing module state."
+msgstr "Дані Android відкриті лише для читання. Для зміни модулів відкрийте їх із доступом для запису."
+
+msgid "Android data is unavailable."
+msgstr "Дані Android недоступні."
+
+msgid "Android data is unlocked for this recovery session."
+msgstr "Дані Android розблоковано до перезапуску recovery."
+
+msgid "Android data must be erased once for root on this Samsung: install Magisk first, then KernelSU Next"
+msgstr ""
+
+msgid "Android data password"
+msgstr "Запит пароля Android"
+
+msgid "Android data was erased, but cache cleanup failed. Use Wipe cache separately. Do not repeat the data reset."
+msgstr "Дані Android видалено, але кеш очистити не вдалося. Очистіть кеш окремо через меню Очищення. Не повторюйте скидання даних."
+
+msgid "Android data was reset, but cache could not be cleared. Do not repeat the data reset."
+msgstr "Дані Android скинуто, але кеш очистити не вдалося. Не повторюйте скидання даних."
+
+msgid "Android data: use Files / mounts to unmount"
+msgstr "Дані Android: відмонтуйте у Файлах"
+
 msgid "Android did not start"
 msgstr "Android не запустився"
+
+msgid "Android factory reset"
+msgstr "Заводське скидання"
 
 msgid "Android image"
 msgstr "Образ Android"
@@ -582,6 +717,12 @@ msgstr "Контейнер логічних розділів Android; його �
 msgid "Android matches the copy"
 msgstr "Android уже відповідає копії"
 
+msgid "Android modules"
+msgstr "Модулі Android"
+
+msgid "Android mount was not verified. Refreshing state."
+msgstr "Відкриття Android не підтверджено. Оновлюємо стан."
+
 msgid "Android partition inside super; opened for reading only"
 msgstr "Розділ Android усередині super; відкривається лише для читання"
 
@@ -593,6 +734,21 @@ msgstr "Розділи Android відновлено й перевірено"
 
 msgid "Android partitions saved"
 msgstr "Розділи Android збережено"
+
+msgid "Android password"
+msgstr "Пароль Android"
+
+msgid "Android password verified. Confirmation lasts two minutes."
+msgstr "Пароль Android перевірено. Підтвердження діє дві хвилини."
+
+msgid "Android pattern"
+msgstr "Графічний ключ Android"
+
+msgid "Android rebuilds these files during its next startup."
+msgstr "Android заново створить ці файли під час наступного запуску."
+
+msgid "Android removes the module on its next boot. Its uninstall script is not run in recovery."
+msgstr "Android видалить модуль при наступному запуску. Скрипт видалення у recovery не виконується."
 
 msgid "Android restarted the phone itself %s seconds after its start."
 msgstr "Android сам перезапустив телефон через %s с після запуску."
@@ -609,20 +765,41 @@ msgstr "Образ super Android"
 msgid "Android system partitions"
 msgstr "Системні розділи Android"
 
+msgid "Android unlock unavailable"
+msgstr "Розблокування Android недоступне"
+
+msgid "Android updated, data kept"
+msgstr "Android оновлено, дані збережено"
+
 msgid "Android uses userdata: the image is saved on the card %s"
 msgstr "Android займає userdata: образ буде збережено на картці %s"
 
 msgid "Android verified filesystem; writes are not qualified"
 msgstr "Перевірена ФС Android; запис не кваліфіковано"
 
+msgid "Android verified the password, but recovery could not finish mounting the data."
+msgstr "Android перевірив пароль, але recovery не вдалося завершити монтування даних."
+
+msgid "Android wechseln"
+msgstr ""
+
 msgid "Android's BOOT changed. On this Samsung, Android starts with a changed BOOT only after its data is formatted: everything in Android is erased, the SD card stays."
 msgstr "BOOT Android змінено. На цьому Samsung Android запускається зі зміненим BOOT лише після форматування його даних: усе в Android буде стерто, SD-картка лишиться."
+
+msgid "Android's BOOT is not on the phone: an update needs the system it updates."
+msgstr "На телефоні немає BOOT Android: оновлення потребує системи, яку воно оновлює."
+
+msgid "ANDROID'S DATA"
+msgstr "ДАНІ ANDROID"
 
 msgid "Android's data is erased once when root is installed."
 msgstr "Під час встановлення root дані Android буде один раз стерто."
 
 msgid "Android's data needs userdata and metadata together: choose both, or neither"
 msgstr "Даним Android потрібні userdata і metadata разом: виберіть обидва або жодного"
+
+msgid "Android's data stays unencrypted: the vendor's fstab asks for no encryption (no-FBE)."
+msgstr "Дані Android лишаються без шифрування: fstab у vendor не просить його (no-FBE)."
 
 msgid "Android's kernel stopped %s seconds after its start."
 msgstr "Ядро Android зупинилося через %s с після запуску."
@@ -645,8 +822,14 @@ msgstr "Інший телефон"
 msgid "Antarctica"
 msgstr "Антарктида"
 
+msgid "Any date"
+msgstr "Будь-яка дата"
+
 msgid "AOSP"
 msgstr "AOSP"
+
+msgid "APatch"
+msgstr ""
 
 msgid "APatch asks for it in its app in Android."
 msgstr "APatch запитує його у своєму застосунку в Android."
@@ -654,8 +837,17 @@ msgstr "APatch запитує його у своєму застосунку в A
 msgid "APatch is in it"
 msgstr "у ньому APatch"
 
+msgid "App data"
+msgstr ""
+
 msgid "App store"
 msgstr "Магазин"
+
+msgid "App-Daten"
+msgstr ""
+
+msgid "Apply"
+msgstr "Застосувати"
 
 msgid "Applying and checking %u Hz..."
 msgstr "Застосування та перевірка %u Гц..."
@@ -669,6 +861,9 @@ msgstr "ПРОГРАМИ"
 msgid "Apps"
 msgstr "Програми"
 
+msgid "Apps and their data stay"
+msgstr "Застосунки та їхні дані лишаються"
+
 msgid "April"
 msgstr "квітня"
 
@@ -677,6 +872,9 @@ msgstr "Arch"
 
 msgid "Architecture"
 msgstr "Архітектура"
+
+msgid "Archiv wird geprüft"
+msgstr ""
 
 msgid "ARCHIVE"
 msgstr "АРХІВ"
@@ -708,6 +906,9 @@ msgstr "Кореневі ФС ARM64 / спільний /home / наявний BO
 msgid "Arrived over adb: %s"
 msgstr "Надійшло через adb: %s"
 
+msgid "artist "
+msgstr ""
+
 msgid "As in image"
 msgstr "Як в образі"
 
@@ -717,11 +918,17 @@ msgstr "Як у recovery"
 msgid "As in recovery (%s)"
 msgstr "Як у recovery (%s)"
 
-msgid "As TWRP's Format Data and Samsung's recovery after Odin: Android sets up its encryption on its next start. The SD card is not touched."
-msgstr "Як Format Data у TWRP і стоковий Recovery Samsung після Odin: Android налаштує шифрування під час наступного запуску. SD-картку не зачеплено."
+msgid "asdfghjkl;'`"
+msgstr ""
 
 msgid "Asia"
 msgstr "Азія"
+
+msgid "Ask after recovery starts. Later mounts in this recovery session need no password."
+msgstr "Питає на початку recovery. Далі в цьому запуску монтує без пароля."
+
+msgid "Ask on the first mount. Later mounts in this recovery session need no password."
+msgstr "Питає при першому монтуванні. Далі в цьому запуску — без пароля."
 
 msgid "Asked at start and after the screen turns off"
 msgstr "Запит під час запуску й після вимкнення екрана"
@@ -735,17 +942,41 @@ msgstr "Щонайменше 4 символи."
 msgid "At least 6 characters. It is kept nowhere and asked again after a restart: without it the copies cannot be opened."
 msgstr "Щонайменше 6 символів. Він ніде не зберігається й після перезапуску питається знову: без нього копії не відкрити."
 
+msgid "At least 8 characters"
+msgstr ""
+
 msgid "At start"
 msgstr "При запуску"
 
 msgid "Atlantic"
 msgstr "Атлантика"
 
+msgid "Audio"
+msgstr "Аудіо"
+
+msgid "Auf Android"
+msgstr ""
+
 msgid "August"
 msgstr "серпня"
 
 msgid "Aurora"
 msgstr "Аврора"
+
+msgid "Aurora · compact"
+msgstr ""
+
+msgid "Aurora · connecting"
+msgstr ""
+
+msgid "Aurora · devices"
+msgstr ""
+
+msgid "Aurora · expanded"
+msgstr ""
+
+msgid "Aurora · music"
+msgstr ""
 
 msgid "Australia"
 msgstr "Австралія"
@@ -761,6 +992,9 @@ msgstr "Автоматичний вхід"
 
 msgid "AVAILABLE"
 msgstr "ДОСТУПНО"
+
+msgid "AVAILABLE DEVICES"
+msgstr "ДОСТУПНІ ПРИСТРОЇ"
 
 msgid "Available memory"
 msgstr "Вільна пам'ять"
@@ -783,6 +1017,9 @@ msgstr "Назад до підготовки"
 msgid "Back to recovery"
 msgstr "Назад до recovery"
 
+msgid "Back to this recovery from Linux: Restart into Recovery among the apps, or sudo a22x-reboot recovery in a terminal."
+msgstr "Повернення в це recovery з Linux: «Перезапуск у Recovery» серед програм або sudo a22x-reboot recovery у терміналі."
+
 msgid "Back to tools"
 msgstr "Назад до налаштувань"
 
@@ -803,6 +1040,9 @@ msgstr "Резервна копія"
 
 msgid "backup"
 msgstr "копія"
+
+msgid "BACKUP AND RESTORE"
+msgstr "РЕЗЕРВНІ КОПІЇ ТА ВІДНОВЛЕННЯ"
 
 msgid "Backup completed and verified."
 msgstr "Резервну копію створено й перевірено."
@@ -837,6 +1077,9 @@ msgstr "КОПІЇ НА КАРТКАХ І ФЛЕШКАХ"
 msgid "Backups will be saved to the USB stick"
 msgstr "Копії зберігатимуться на флешку"
 
+msgid "Backups will be saved to this partition"
+msgstr "Резервні копії зберігатимуться на цей розділ"
+
 msgid "Basic ANSI, UTF-8, history and completion. Full-screen programs may have limited display support."
 msgstr "Базовий ANSI, UTF-8, історія та доповнення. Повноекранні програми можуть відображатися обмежено."
 
@@ -846,6 +1089,9 @@ msgstr "Батарея"
 msgid "Beaver"
 msgstr "Бобер"
 
+msgid "becoming noisy"
+msgstr ""
+
 msgid "BEFORE INSTALLING"
 msgstr "ПЕРЕД ВСТАНОВЛЕННЯМ"
 
@@ -854,6 +1100,12 @@ msgstr "Поруч із поточним Linux"
 
 msgid "Beside the installed systems: they and /home stay."
 msgstr "Поруч із встановленими системами: вони й /home лишаються."
+
+msgid "Bluetooth"
+msgstr "Bluetooth"
+
+msgid "Bluetooth settings"
+msgstr "Налаштування Bluetooth"
 
 msgid "Blur dissolve"
 msgstr "Розмиття"
@@ -934,7 +1186,7 @@ msgid "BOOT source"
 msgstr "Джерело BOOT"
 
 msgid "BOOT stays as it is, and a root in it with it. Until the data is erased or the request is forgotten, a restart of the system comes back here."
-msgstr "BOOT лишається як є, а з ним і root у ньому. Поки дані не стерто або запит не забуто, перезапуск системи повертатиме сюди."
+msgstr "BOOT і root залишаться. Щоб завантажити Android без скидання, скасуйте запит."
 
 msgid "BOOT, DTBO, vbmeta and other images"
 msgstr "BOOT, DTBO, vbmeta та інші образи"
@@ -954,6 +1206,9 @@ msgstr "Блокування завантажувача"
 msgid "BRIGHTNESS"
 msgstr "ЯСКРАВІСТЬ"
 
+msgid "Brightness"
+msgstr "Яскравість"
+
 msgid "Brightness %u%% confirmed. Power turns the screen off."
 msgstr "Яскравість %u%% підтверджено. Кнопка живлення вимикає екран."
 
@@ -965,6 +1220,15 @@ msgstr "Перегляд і редагування"
 
 msgid "Browser"
 msgstr "Браузер"
+
+msgid "Browser connection busy"
+msgstr "Браузер зайнятий"
+
+msgid "Browser settings"
+msgstr "Налаштування браузера"
+
+msgid "Browser-downloads-"
+msgstr ""
 
 msgid "Build"
 msgstr "Збірка"
@@ -993,6 +1257,9 @@ msgstr "Не вдалося очистити кеш."
 msgid "Cache has no room to keep this BOOT"
 msgstr "У кеші немає місця, щоб зберегти цей BOOT"
 
+msgid "Cache is in use. Close the operation using it and try again."
+msgstr "Cache зайнятий. Завершіть операцію, яка його використовує, і спробуйте ще раз."
+
 msgid "Cache wiped"
 msgstr "Кеш очищено"
 
@@ -1020,11 +1287,44 @@ msgstr "Скасувати вибір копії"
 msgid "Cancel image selection"
 msgstr "Скасувати вибір образу"
 
+msgid "Cancel pending removal"
+msgstr "Скасувати видалення"
+
+msgid "Cancel requires a fresh recovery boot."
+msgstr "Скасування вимагає нового запуску recovery."
+
 msgid "Cancel selection"
 msgstr "Скасувати вибір"
 
+msgid "Cancellation could not be started. Check state and restart recovery."
+msgstr "Не вдалося запустити скасування. Перевірте стан і перезапустіть recovery."
+
+msgid "Cancellation was not verified. Check recovery state."
+msgstr "Скасування не підтверджено. Перевірте стан recovery."
+
+msgid "Cancelled. Restart recovery before unlocking again."
+msgstr "Скасовано. Перезапустіть recovery для нової спроби."
+
+msgid "Cancelled. The recovery session remains available."
+msgstr "Скасовано. Сесія recovery залишається доступною."
+
+msgid "Cancelling leaves the recovery session available."
+msgstr "Після скасування сесія залишається доступною."
+
 msgid "Cancelling..."
 msgstr "Скасування..."
+
+msgid "Cannot open backup"
+msgstr ""
+
+msgid "Cannot prepare authentication pipe."
+msgstr "Не вдалося підготувати захищене передавання пароля."
+
+msgid "Cannot protect Android password in memory."
+msgstr "Не вдалося захистити пароль Android у пам'яті."
+
+msgid "Cannot start backup"
+msgstr ""
 
 msgid "Card"
 msgstr "Картка"
@@ -1074,11 +1374,26 @@ msgstr "Перевірка й виправлення: не для цієї ФС"
 msgid "Check backup integrity"
 msgstr "Перевірка цілісності копії"
 
+msgid "Check data preservation"
+msgstr "Перевірити збереження даних"
+
+msgid "Check for updates"
+msgstr "Перевірити оновлення"
+
 msgid "Check it before you rely on it."
 msgstr "Перевірте її, перш ніж на неї покладатися."
 
 msgid "Check it, or write it back to the phone."
 msgstr "Перевірте її або запишіть назад у телефон."
+
+msgid "Check that the device shows the same code"
+msgstr "Перевірте, що пристрій показує такий самий код"
+
+msgid "Check the current data state"
+msgstr "Перевірте поточний стан даних"
+
+msgid "Check TWRP / OrangeFox backup"
+msgstr ""
 
 msgid "Check: errors repaired"
 msgstr "Перевірка: помилки виправлено"
@@ -1089,20 +1404,38 @@ msgstr "Перевірка: помилок не знайдено"
 msgid "checked against the catalog"
 msgstr "перевірено за каталогом"
 
+msgid "Checking a backup"
+msgstr "Перевірка копії"
+
 msgid "Checking BOOT"
 msgstr "Перевірка BOOT"
 
 msgid "Checking restored data"
 msgstr "Перевірка відновлених даних"
 
+msgid "Checking root in BOOT"
+msgstr "Перевірка root у BOOT"
+
 msgid "Checking status..."
 msgstr "Перевірка стану..."
+
+msgid "Checking the archive"
+msgstr ""
+
+msgid "Checking the archive and its password"
+msgstr "Перевірка архіву та його пароля"
+
+msgid "Checking the archive's SHA-256 again"
+msgstr "Повторна перевірка SHA-256 архіву"
 
 msgid "Checking the backup"
 msgstr "Перевірка копії"
 
 msgid "Checking the card"
 msgstr "Перевірка картки"
+
+msgid "Checking the Data backup"
+msgstr ""
 
 msgid "Checking the filesystem"
 msgstr "Перевірка файлової системи"
@@ -1116,6 +1449,9 @@ msgstr "Перевірка MD5 прошивки"
 msgid "Checking the image"
 msgstr "Перевірка образу"
 
+msgid "Checking the image file"
+msgstr "Перевірка файлу образу"
+
 msgid "Checking the new system"
 msgstr "Перевірка нової системи"
 
@@ -1128,6 +1464,12 @@ msgstr "Перевірка серверів на новіші образи..."
 msgid "Checking the source"
 msgstr "Перевірка джерела"
 
+msgid "Checking the system image"
+msgstr "Перевірка образу системи"
+
+msgid "Checking the way back"
+msgstr "Перевірка шляху назад"
+
 msgid "Checking..."
 msgstr "Перевіряю…"
 
@@ -1139,6 +1481,9 @@ msgstr "Чип"
 
 msgid "Chip made"
 msgstr "Дата випуску чипа"
+
+msgid "Choose a filesystem. Android may ask you to verify its password."
+msgstr "Виберіть файлову систему. Може знадобитися підтвердити пароль Android."
 
 msgid "Choose a folder inside %s"
 msgstr "Виберіть теку всередині %s"
@@ -1169,6 +1514,9 @@ msgstr "Виберіть коротший шлях призначення."
 
 msgid "Choose a theme file"
 msgstr "Виберіть файл теми"
+
+msgid "Choose a volume to format."
+msgstr "Виберіть том для форматування."
 
 msgid "Choose an already mounted writable volume."
 msgstr "Виберіть уже змонтований том із записом."
@@ -1211,6 +1559,9 @@ msgstr "Виберіть розділи, що належать до копії �
 
 msgid "Choose partitions that this copy holds"
 msgstr "Виберіть розділи, які є в цій копії"
+
+msgid "Choose read-only or read and write. Support is checked before the Android password is requested."
+msgstr "Виберіть лише читання або читання та запис. Підтримку буде перевірено до запиту пароля Android."
 
 msgid "Choose storage"
 msgstr "Вибрати носій"
@@ -1257,6 +1608,9 @@ msgstr "Виберіть, що встановити на цей телефон."
 msgid "Choose what to set up in the new system."
 msgstr "Виберіть, що налаштувати в новій системі."
 
+msgid "Choose when to unlock Android data."
+msgstr "Коли запитувати пароль для доступу до даних."
+
 msgid "Choose where the image is stored."
 msgstr "Виберіть, де лежить образ."
 
@@ -1272,20 +1626,50 @@ msgstr "Виберіть, де лежить ZIP."
 msgid "Chromium"
 msgstr "Chromium"
 
+msgid "Clean Android installation erases userdata. Check data preservation is a separate report and does not install anything."
+msgstr "Чисте встановлення Android стирає userdata. Перевірка збереження даних лише формує звіт."
+
 msgid "Clean install"
 msgstr "Чисте встановлення"
 
 msgid "Clean install: userdata is erased first"
 msgstr "Чисте встановлення: спершу стирається userdata"
 
+msgid "Clear"
+msgstr "Очистити"
+
+msgid "Clear browsing data"
+msgstr "Очистити дані браузера"
+
+msgid "Clear filters"
+msgstr "Очистити фільтри"
+
+msgid "Clears the Dalvik and ART runtime cache directories in Android Data."
+msgstr "Очищає каталоги кешу Dalvik і ART у розділі даних Android."
+
 msgid "Clock"
 msgstr "Годинник"
+
+msgid "Close"
+msgstr "Закрити"
+
+msgid "Close a tab first: 12 is the most."
+msgstr "Спершу закрийте вкладку: найбільше 12."
+
+msgid "Close all tabs"
+msgstr "Закрити всі вкладки"
+
+msgid "Close the terminal"
+msgstr "Закрити термінал"
 
 msgid "Close whatever is using the stick and try again."
 msgstr "Закрийте те, що використовує флешку, і спробуйте ще раз."
 
 msgid "Code name"
 msgstr "Кодова назва"
+
+msgid "Collapse"
+msgstr "Згорнути"
 
 msgid "Colors removed"
 msgstr "Кольори вилучено"
@@ -1304,6 +1688,9 @@ msgstr "Звірте цей відбиток, перш ніж приймати �
 
 msgid "Complete or roll back the pending system switch before booting Linux."
 msgstr "Завершіть або відкотіть перемикання системи, перш ніж запускати Linux."
+
+msgid "Complete system-image rollback before the first Android boot has not been verified."
+msgstr "Повне відновлення образів до першого запуску Android не перевірено."
 
 msgid "Complete: %s  /  verified: %s  /  same device: %s"
 msgstr "Завершено: %s  /  перевірено: %s  /  той самий пристрій: %s"
@@ -1326,14 +1713,38 @@ msgstr "Доступ із ПК: відкритий"
 msgid "Confirm"
 msgstr "Підтвердити"
 
+msgid "Confirm write access"
+msgstr "Підтвердити доступ на запис"
+
+msgid "Confirmation expired"
+msgstr "Час підтвердження минув"
+
+msgid "Confirmation lasts two minutes. Cancelling does not erase data."
+msgstr "Підтвердження діє дві хвилини. Скасування не видаляє дані."
+
+msgid "Confirmation no longer valid"
+msgstr "Підтвердження більше не діє"
+
 msgid "Connect"
 msgstr "Підключитися"
+
+msgid "Connect a keyboard?"
+msgstr ""
+
+msgid "Connect at least 4 dots."
+msgstr "Потрібно не менше 4 точок."
 
 msgid "Connect from the computer attached by USB."
 msgstr "Підключіться з комп'ютера через USB."
 
+msgid "Connect the keyboard?"
+msgstr "Підключити клавіатуру?"
+
 msgid "Connect to Wi-Fi first: the desktop and apps are downloaded during the installation."
 msgstr "Спершу підключіться до Wi-Fi: робочий стіл і програми завантажуються під час встановлення."
+
+msgid "CONNECTED"
+msgstr "ПІДКЛЮЧЕНО"
 
 msgid "Connected"
 msgstr "Підключено"
@@ -1349,6 +1760,9 @@ msgstr "Контакти"
 
 msgid "Continue"
 msgstr "Продовжити"
+
+msgid "Cookies, logins and the page cache live in RAM and are gone when the recovery restarts. Clearing removes them now."
+msgstr "Cookies, входи на сайти й кеш сторінок живуть у RAM і зникають після перезапуску recovery. Очищення видаляє їх одразу."
 
 msgid "copied file"
 msgstr "скопійований файл"
@@ -1371,14 +1785,26 @@ msgstr "Копіювати теку"
 msgid "Copy of Android"
 msgstr "Копія Android"
 
+msgid "Copying"
+msgstr "Копіювання"
+
+msgid "Copying Android data"
+msgstr ""
+
 msgid "Copying the system files"
 msgstr "Копіювання файлів системи"
 
 msgid "Cores"
 msgstr "Ядра"
 
+msgid "Cores now"
+msgstr "Ядра зараз"
+
 msgid "Could not launch the terminal client. No input will be retried automatically."
 msgstr "Не вдалося запустити клієнт термінала. Введення автоматично не повторюється."
+
+msgid "Could not open the Android password prompt."
+msgstr "Не вдалося відкрити введення пароля Android."
 
 msgid "Could not prepare the complete edited text in RAM."
 msgstr "Не вдалося підготувати весь змінений текст у RAM."
@@ -1386,8 +1812,14 @@ msgstr "Не вдалося підготувати весь змінений т�
 msgid "Could not prepare the selection in RAM."
 msgstr "Не вдалося підготувати вибране в RAM."
 
+msgid "Could not save the theme. Try again."
+msgstr ""
+
 msgid "Could not start display control."
 msgstr "Не вдалося запустити керування дисплеєм."
+
+msgid "Could not start the password check. Refresh the volume state."
+msgstr "Не вдалося почати перевірку пароля. Оновіть стан розділу."
 
 msgid "Create empty ext4 filesystem"
 msgstr "Створити порожню ФС ext4"
@@ -1395,8 +1827,17 @@ msgstr "Створити порожню ФС ext4"
 msgid "Create this text file. An existing file will not be overwritten."
 msgstr "Створити цей текстовий файл. Наявний файл не буде перезаписано."
 
+msgid "Creating a portable copy"
+msgstr ""
+
 msgid "Current"
 msgstr "Струм"
+
+msgid "Current Android password required"
+msgstr "Потрібен поточний пароль Android"
+
+msgid "Current build"
+msgstr "Поточна збірка"
 
 msgid "CURRENT DISPLAY MODE"
 msgstr "ПОТОЧНИЙ РЕЖИМ ДИСПЛЕЯ"
@@ -1422,11 +1863,29 @@ msgstr "Зараз змонтовано"
 msgid "Custom ROM"
 msgstr "Кастомний ROM"
 
+msgid "Dalvik / ART cache"
+msgstr "Кеш Dalvik / ART"
+
+msgid "Dalvik / ART cache cleared"
+msgstr "Кеш Dalvik / ART очищено"
+
 msgid "Dark and calm, the classic look"
 msgstr "Темна класика"
 
 msgid "Dark glass with northern lights"
 msgstr "Темне скло з полярним сяйвом"
+
+msgid "Dark sites"
+msgstr "Темні сайти"
+
+msgid "Data could not be mounted. Refresh its current state."
+msgstr "Не вдалося змонтувати дані. Оновіть їхній стан."
+
+msgid "Data could not be unmounted safely. Formatting was not started. Close file operations and USB sharing, then inspect the current mount state."
+msgstr "Не вдалося безпечно відмонтувати дані. Форматування не почалося. Завершіть файлові операції та доступ через USB, потім перевірте стан монтування."
+
+msgid "Data erased; cache needs cleanup"
+msgstr "Дані видалено, кеш не очищено"
 
 msgid "Data for Android"
 msgstr "Дані для Android"
@@ -1434,14 +1893,89 @@ msgstr "Дані для Android"
 msgid "Data formatted for Android"
 msgstr "Дані відформатовано для Android"
 
+msgid "Data has not been changed."
+msgstr "Дані ще не змінено."
+
+msgid "Data is already mounted. Its current access mode is shown below."
+msgstr "Дані вже змонтовано. Нижче показано поточний режим доступу."
+
+msgid "Data is already unlocked. Restart recovery, then verify the current Android password before formatting."
+msgstr "Дані вже розблоковано. Перезапустіть recovery, потім перевірте поточний пароль Android перед форматуванням."
+
+msgid "Data is mounted. Unmount it in Files before formatting."
+msgstr "Дані змонтовано. Перед форматуванням відмонтуйте їх у Файлах."
+
+msgid "Data is still mounted. Open Files to unmount it."
+msgstr "Дані досі змонтовано. Розмонтуйте їх у розділі «Файли»."
+
+msgid "Data is unavailable. Refresh the volume list."
+msgstr "Дані не знайдено. Оновіть список розділів."
+
+msgid "Data is unmounted. Enter the Android password to mount it again."
+msgstr "Дані розмонтовано. Для повторного монтування введіть пароль Android."
+
+msgid "Data is unmounted. The next mount will ask for its password."
+msgstr "Дані розмонтовано. При наступному монтуванні буде запит пароля."
+
+msgid "Data is unmounted. This session is unlocked, so it can be mounted again without a password."
+msgstr "Дані розмонтовано. Сесію розблоковано — можна змонтувати знову без пароля."
+
+msgid "Data on userdata"
+msgstr "Дані на userdata"
+
+msgid "Data preservation report"
+msgstr "Звіт про збереження даних"
+
+msgid "Data that is kept keeps its encryption"
+msgstr ""
+
+msgid "Data-Sicherung wird geprüft"
+msgstr ""
+
 msgid "Date and time"
 msgstr "Дата й час"
+
+msgid "Date modified, newest first"
+msgstr "Дата зміни, спершу нові"
+
+msgid "Date modified, oldest first"
+msgstr "Дата зміни, спершу старі"
+
+msgid "Dateien: alle"
+msgstr ""
+
+msgid "Dateien: APK"
+msgstr ""
+
+msgid "Dateien: Archive"
+msgstr ""
+
+msgid "Dateien: Audio"
+msgstr ""
+
+msgid "Dateien: Dokumente"
+msgstr ""
+
+msgid "Dateien: Fotos und Videos"
+msgstr ""
 
 msgid "Daylight"
 msgstr "День"
 
+msgid "Daylight · devices"
+msgstr ""
+
+msgid "Daylight · expanded"
+msgstr ""
+
 msgid "Debian"
 msgstr "Debian"
+
+msgid "Debian GNU/Linux 13 (trixie)"
+msgstr ""
+
+msgid "Debian, Ubuntu and more"
+msgstr "Debian, Ubuntu та інші"
 
 msgid "December"
 msgstr "грудня"
@@ -1491,6 +2025,9 @@ msgstr "РОБОЧИЙ СТІЛ"
 msgid "Desktop"
 msgstr "Робочий стіл"
 
+msgid "Desktop site"
+msgstr "Версія для ПК"
+
 msgid "Desktop: %s  /  apps: %u"
 msgstr "Робочий стіл: %s  /  програм: %u"
 
@@ -1499,6 +2036,12 @@ msgstr "ПРИЗНАЧЕННЯ"
 
 msgid "DESTINATION VOLUME"
 msgstr "ТОМ ПРИЗНАЧЕННЯ"
+
+msgid "Details"
+msgstr "Деталі"
+
+msgid "DEV="
+msgstr ""
 
 msgid "Device"
 msgstr "Пристрій"
@@ -1509,8 +2052,14 @@ msgstr "Дані про пристрій отримано"
 msgid "Device tree overlays"
 msgstr "Накладання дерева пристроїв"
 
+msgid "DEVNAME=input/event"
+msgstr ""
+
 msgid "Diagnostic logs may include filenames, hardware identifiers and network details. Inspect the archive before sharing it."
 msgstr "Діагностичні журнали можуть містити назви файлів, ідентифікатори обладнання та дані мережі. Перегляньте архів, перш ніж ділитися ним."
+
+msgid "Diagnostics"
+msgstr "Діагностика"
 
 msgid "Diagnostics cannot be exported now."
 msgstr "Зараз не вдається експортувати діагностику."
@@ -1523,6 +2072,15 @@ msgstr "НЕ ЗАПУСТИВСЯ НА ЦЬОМУ ТЕЛЕФОНІ"
 
 msgid "Did not start on this phone"
 msgstr "Не запустився на цьому телефоні"
+
+msgid "Disable all modules"
+msgstr "Вимкнути всі модулі"
+
+msgid "Disable module"
+msgstr "Вимкнути модуль"
+
+msgid "Disabling a module does not undo changes it already made. Removal is completed by its framework on the next Android boot."
+msgstr "Вимкнення модуля не скасовує вже зроблених змін. Видалення завершить framework під час наступного запуску Android."
 
 msgid "Discard (hold)"
 msgstr "Відхилити (утримати)"
@@ -1551,6 +2109,9 @@ msgstr "Стан дисплея недоступний. Натисніть кн�
 msgid "Display status is unavailable. Refresh to check again."
 msgstr "Стан дисплея недоступний. Оновіть, щоб перевірити знову."
 
+msgid "Distributions from the internet or a file; switch systems"
+msgstr "Дистрибутиви з інтернету чи файла; перемикання систем"
+
 msgid "Do not unplug the phone or remove storage."
 msgstr "Не від'єднуйте телефон і не виймайте носії."
 
@@ -1563,8 +2124,14 @@ msgstr "ВИКОНАНО"
 msgid "Done"
 msgstr "Готово"
 
+msgid "done / total"
+msgstr ""
+
 msgid "Done: %u packages"
 msgstr "Готово: пакетів %u"
+
+msgid "Double tap to wake"
+msgstr "Будити подвійним дотиком"
 
 msgid "Download"
 msgstr "Завантаження"
@@ -1584,8 +2151,14 @@ msgstr "Завантажити на телефон"
 msgid "Download to the phone (%s)"
 msgstr "Завантажити на телефон (%s)"
 
+msgid "Downloaded"
+msgstr "Завантажено"
+
 msgid "Downloaded and checked first; each has a page for its installation."
 msgstr "Спершу завантажуються й перевіряються; кожен має сторінку для встановлення."
+
+msgid "Downloaded from its GitHub release and installed by Android at its next start."
+msgstr "Завантажується з випуску на GitHub і встановлюється Android під час наступного запуску."
 
 msgid "Downloading %s..."
 msgstr "Завантаження %s..."
@@ -1596,8 +2169,20 @@ msgstr "Завантаження Linux BOOT"
 msgid "Downloading the system image"
 msgstr "Завантаження образу системи"
 
+msgid "Downloads"
+msgstr "Завантаження"
+
+msgid "Draw your pattern through at least 4 dots."
+msgstr "Проведіть пальцем щонайменше через 4 точки."
+
 msgid "DURABLE JOURNAL"
 msgstr "СТІЙКИЙ ЖУРНАЛ"
+
+msgid "duration="
+msgstr ""
+
+msgid "Each file up to 4 GiB"
+msgstr "Кожен файл до 4 ГіБ"
 
 msgid "Each shell is installed with its packages. Sxmo and Lomiri come from Debian and Ubuntu."
 msgstr "Кожна оболонка встановлюється з її пакетами. Sxmo і Lomiri є лише в Debian та Ubuntu."
@@ -1611,6 +2196,9 @@ msgstr "Кожна система має власні /etc і /var. Для сп�
 msgid "Each ZIP's own script decides what is written. They can reach only these partitions:"
 msgstr "Що записати, вирішує власний скрипт кожного ZIP. Вони дістають лише до цих розділів:"
 
+msgid "Edit current theme"
+msgstr ""
+
 msgid "Edit text"
 msgstr "Редагування тексту"
 
@@ -1619,6 +2207,9 @@ msgstr "Редагування вимкнено: файл більший за м
 
 msgid "Efficiency cores"
 msgstr "Енергоощадні ядра"
+
+msgid "Efficiency cores now"
+msgstr "Енергоефективні ядра зараз"
 
 msgid "EFS and IMEI, or BOOT, super and others"
 msgstr "EFS та IMEI або BOOT, super та інші"
@@ -1637,6 +2228,9 @@ msgstr "Пошта"
 
 msgid "Empty userdata: ready for a clean install"
 msgstr "Порожня userdata: чисте встановлення"
+
+msgid "Enable module"
+msgstr "Увімкнути модуль"
 
 msgid "Enable write access"
 msgstr "Увімкнути запис"
@@ -1671,6 +2265,9 @@ msgstr "Enter"
 msgid "Enter a file or folder path without '.' or '..' components."
 msgstr "Введіть шлях до файла чи теки без компонентів «.» та «..»."
 
+msgid "Enter a name up to 47 UTF-8 bytes."
+msgstr ""
+
 msgid "Enter a path relative to the volume root."
 msgstr "Введіть шлях відносно кореня тому."
 
@@ -1692,6 +2289,12 @@ msgstr "Введіть числові UID:GID, наприклад 1000:1000. К�
 msgid "Enter password"
 msgstr "Введіть пароль"
 
+msgid "Enter the Android password before each new mount."
+msgstr "Введіть пароль Android перед кожним новим монтуванням."
+
+msgid "Enter the current Android password."
+msgstr "Введіть поточний пароль Android."
+
 msgid "Enter the recovery password."
 msgstr "Введіть пароль recovery."
 
@@ -1700,6 +2303,12 @@ msgstr "Ввести SuperKey"
 
 msgid "Enter the Unix mode as four octal digits."
 msgstr "Введіть режим Unix чотирма вісімковими цифрами."
+
+msgid "Erase a volume"
+msgstr "Стерти том"
+
+msgid "Erase apps and data, keep the installed firmware"
+msgstr "Стерти дані й програми. Прошивка залишиться."
 
 msgid "Erase userdata, then install from the internet or a file"
 msgstr "Очистити userdata і встановити з інтернету чи з файлу"
@@ -1710,6 +2319,9 @@ msgstr "Стирайте те, що більше не потрібне. Нічо
 msgid "ERASED"
 msgstr "СТИРАЄТЬСЯ"
 
+msgid "Erasing"
+msgstr "Стирання"
+
 msgid "Erasing the damaged settings also erases userdata, as a reset of Android does: whoever holds the phone does not get its data. Copies on a card stay."
 msgstr "Стирання пошкоджених налаштувань стирає й userdata, як скидання Android: той, хто тримає телефон, не отримає його даних. Копії на картці лишаються."
 
@@ -1719,14 +2331,23 @@ msgstr "Очищення userdata"
 msgid "Erasing userdata removes every Linux system and every saved image."
 msgstr "Стирання userdata видаляє всі системи Linux і всі збережені образи."
 
+msgid "error "
+msgstr ""
+
 msgid "Estimating the size"
 msgstr "Оцінка розміру"
 
 msgid "Europe"
 msgstr "Європа"
 
+msgid "Every file and installed system on this volume."
+msgstr "Усі файли та встановлені системи на цьому розділі."
+
 msgid "Every partition already holds what the copy holds: nothing was written."
 msgstr "Усі розділи вже містять те саме, що й копія: нічого не записано."
+
+msgid "Every time data is mounted"
+msgstr "При кожному монтуванні"
 
 msgid "Everything else on cache is deleted: update packages, logs and temporary files."
 msgstr "Усе інше в кеші видаляється: пакети оновлень, журнали й тимчасові файли."
@@ -1755,11 +2376,20 @@ msgstr "ТОЧНІ ЦІЛІ ЗАПИСУ"
 msgid "Exact write targets"
 msgstr "Точні цілі запису"
 
+msgid "Example module %u (synthetic)"
+msgstr ""
+
+msgid "example_module_%u"
+msgstr ""
+
 msgid "Executable"
 msgstr "Виконуваний"
 
 msgid "Execution was not confirmed. Refresh installation status and inspect its journal. The old execute request will not be repeated."
 msgstr "Виконання не підтверджено. Оновіть стан встановлення й перегляньте журнал. Старий запит не повторюватиметься."
+
+msgid "exFAT"
+msgstr ""
 
 msgid "Existing Linux / not yet adopted"
 msgstr "Наявний Linux / ще не прийнятий"
@@ -1770,6 +2400,9 @@ msgstr "Наявні назви ця дія ніколи не перезапис
 msgid "Exit terminal"
 msgstr "Вийти з термінала"
 
+msgid "expandable details"
+msgstr ""
+
 msgid "Explicitly select a Linux v2 snapshot for this installation."
 msgstr "Явно виберіть знімок Linux v2 для цього встановлення."
 
@@ -1778,6 +2411,9 @@ msgstr "Експорт діагностики"
 
 msgid "ext4 filesystem image"
 msgstr "Образ ФС ext4"
+
+msgid "External storage"
+msgstr "Зовнішні накопичувачі"
 
 msgid "Extract here"
 msgstr "Розпакувати сюди"
@@ -1788,6 +2424,9 @@ msgstr "Розпаковано в %s"
 msgid "Extracts into a new folder beside the archive, named after it. Nothing outside that folder is written."
 msgstr "Розпаковує в нову теку поруч з архівом, названу як він. Поза цією текою нічого не записується."
 
+msgid "F2FS"
+msgstr ""
+
 msgid "F2FS filesystem image"
 msgstr "Образ ФС F2FS"
 
@@ -1796,6 +2435,9 @@ msgstr "Згасання"
 
 msgid "failed"
 msgstr "помилка"
+
+msgid "FAT32"
+msgstr ""
 
 msgid "February"
 msgstr "лютого"
@@ -1824,20 +2466,26 @@ msgstr "Файлова операція"
 msgid "FILE TRANSFER / MTP"
 msgstr "ПЕРЕДАВАННЯ ФАЙЛІВ / MTP"
 
+msgid "File type"
+msgstr "Тип файлу"
+
+msgid "FILES"
+msgstr "ФАЙЛИ"
+
 msgid "Files"
 msgstr "Файли"
-
-msgid "FILES (FAT32)"
-msgstr "ФАЙЛИ (FAT32)"
-
-msgid "Files (FAT32)"
-msgstr "Файли (FAT32)"
 
 msgid "Files / mounts"
 msgstr "Файли / монтування"
 
+msgid "Files could not be read. Refresh to try again."
+msgstr "Не вдалося прочитати файли. Оновіть, щоб спробувати ще раз."
+
 msgid "Files of the same name are replaced; nothing else in the system is removed. Accounts that are missing are made with their passwords. Packages are installed over Wi-Fi under the names this system gives them."
 msgstr "Файли з тією самою назвою замінюються; більше нічого в системі не видаляється. Відсутні облікові записи створюються з їхніми паролями. Пакети встановлюються через Wi-Fi під назвами, які їм дає ця система."
+
+msgid "Files only"
+msgstr "Лише файли"
 
 msgid "FILES, IN THIS ORDER"
 msgstr "ФАЙЛИ, У ЦЬОМУ ПОРЯДКУ"
@@ -1847,6 +2495,24 @@ msgstr "Файли, Linux і підкачка на SD-картці"
 
 msgid "Files: %s  /  %s to write"
 msgstr "Файли: %s  /  до запису %s"
+
+msgid "Files: all"
+msgstr ""
+
+msgid "Files: APK"
+msgstr ""
+
+msgid "Files: archives"
+msgstr ""
+
+msgid "Files: audio"
+msgstr ""
+
+msgid "Files: documents"
+msgstr ""
+
+msgid "Files: photos and videos"
+msgstr ""
 
 msgid "FILESYSTEM"
 msgstr "ФАЙЛОВА СИСТЕМА"
@@ -1887,11 +2553,20 @@ msgstr "Прошивки ланцюга завантажувача лишают�
 msgid "Firmware or service partition; file access is not admitted"
 msgstr "Розділ прошивки чи служби; доступ до файлів заборонено"
 
+msgid "First verify the current Android password. Erasing then needs a separate confirmation."
+msgstr "Введіть пароль Android, потім підтвердьте стирання."
+
 msgid "FITS THIS PHONE"
 msgstr "ПІДХОДИТЬ ЦЬОМУ ТЕЛЕФОНУ"
 
+msgid "fix the shade during a video"
+msgstr ""
+
 msgid "Fixed offset (%s)"
 msgstr "Фіксований зсув (%s)"
+
+msgid "Fixture targets stay beneath their owned directory"
+msgstr ""
 
 msgid "Fixtures run script installers only"
 msgstr "Тестові стенди запускають лише інсталятори-скрипти"
@@ -1917,11 +2592,20 @@ msgstr "Спершу прошийте прошивку Samsung: GSI запуск
 msgid "Flash the selected BOOT image"
 msgstr "Прошити вибраний образ BOOT"
 
+msgid "Flash to a partition"
+msgstr "Прошити в розділ"
+
+msgid "Flashing a partition"
+msgstr "Прошивання розділу"
+
 msgid "Flashlight"
 msgstr "Ліхтарик"
 
 msgid "Flatpak"
 msgstr "Flatpak"
+
+msgid "Floating window"
+msgstr "Плаваюче вікно"
 
 msgid "Folder"
 msgstr "Тека"
@@ -1935,8 +2619,14 @@ msgstr "Теку створено"
 msgid "Folder tree copied"
 msgstr "Дерево тек скопійовано"
 
+msgid "Folders only"
+msgstr "Лише папки"
+
 msgid "For each, the package of the new system is installed."
 msgstr "Для кожної встановлюється пакет нової системи."
+
+msgid "For Linux; Android does not read it"
+msgstr "Для Linux; Android її не читає"
 
 msgid "For the new system."
 msgstr "Для нової системи."
@@ -1950,11 +2640,26 @@ msgstr "Забути"
 msgid "Forget the request"
 msgstr "Забути запит"
 
+msgid "Forget this device"
+msgstr "Забути цей пристрій"
+
+msgid "Format a volume"
+msgstr "Форматування тому"
+
+msgid "Format data"
+msgstr "Форматування даних"
+
 msgid "Format data for Android"
 msgstr "Форматувати дані для Android"
 
-msgid "Format userdata and metadata for Android, as TWRP's Format Data"
-msgstr "Форматувати userdata і metadata для Android, як Format Data у TWRP"
+msgid "Format ext4"
+msgstr "Форматувати ext4"
+
+msgid "Format F2FS"
+msgstr "Форматувати F2FS"
+
+msgid "Format userdata, cache, an SD card or a USB drive"
+msgstr "Форматування userdata, cache, SD-карти або USB-накопичувача"
 
 msgid "Formatted"
 msgstr "Відформатовано"
@@ -1966,25 +2671,46 @@ msgid "Formatted for Android: every Linux system and saved image is erased"
 msgstr "Форматується для Android: усі системи Linux і збережені образи стираються"
 
 msgid "Formatted for Android: every Linux system, saved image and Android's own data"
-msgstr "Форматується для Android: усі системи Linux, збережені образи й власні дані Android"
+msgstr "Дані Android, системи Linux та образи"
 
 msgid "Formatting"
 msgstr "Форматування"
 
+msgid "Formatting always requires the current Android password and a separate confirmation."
+msgstr "Форматування завжди потребує правильного пароля Android та окремого підтвердження."
+
 msgid "Formatting data must be confirmed"
 msgstr "Форматування даних треба підтвердити"
 
-msgid "Formatting erases every system and /home here. Android needs F2FS, Linux ext4."
-msgstr "Форматування стирає всі системи й /home. Android потребує F2FS, Linux — ext4."
+msgid "Formatting data requires the current Android password. Open Data formatting, verify the password, then review the erase confirmation."
+msgstr "Для форматування потрібен поточний пароль Android. Відкрийте форматування даних, перевірте пароль і перегляньте підтвердження видалення."
+
+msgid "Formatting erases every file on this volume."
+msgstr "Форматування видаляє всі файли на цьому томі."
 
 msgid "Formatting erases everything on this volume, including backups."
 msgstr "Форматування стирає все на цьому томі, зокрема резервні копії."
+
+msgid "Formatting needs a fresh password check. Unmount data, restart recovery, and open formatting again."
+msgstr "Для форматування потрібна нова перевірка пароля. Відмонтуйте дані, перезапустіть recovery та знову відкрийте форматування."
+
+msgid "Formatting needs the current Android password or PIN. Preparation was cancelled."
+msgstr "Для форматування потрібен поточний пароль або PIN Android. Підготовку скасовано."
+
+msgid "Formatting requires a supported current Android password or PIN."
+msgstr "Форматування потребує підтримуваного поточного пароля або PIN Android."
+
+msgid "Formatting requires a supported current Android password or PIN. This data was not authorized for erasing."
+msgstr "Для форматування потрібен підтримуваний поточний пароль або PIN Android. Видалення цих даних не дозволено."
 
 msgid "Formatting userdata"
 msgstr "Форматування userdata"
 
 msgid "Formatting userdata for Android"
 msgstr "Форматування userdata для Android"
+
+msgid "frame "
+msgstr ""
 
 msgid "Free in super: %s"
 msgstr "Вільно в super: %s"
@@ -2022,14 +2748,29 @@ msgstr "Заряджено"
 msgid "GB"
 msgstr "ГБ"
 
+msgid "Gemeinsame Dateien"
+msgstr ""
+
+msgid "Gemeinsame Dateien werden wiederhergestellt"
+msgstr ""
+
+msgid "Geringer Kontrast. Text kann schwer lesbar sein."
+msgstr ""
+
 msgid "Gestures"
 msgstr "Жести"
 
 msgid "GHz"
 msgstr "ГГц"
 
+msgid "Gib einen Namen bis 47 UTF-8-Bytes ein."
+msgstr ""
+
 msgid "Git"
 msgstr "Git"
+
+msgid "GitHub"
+msgstr ""
 
 msgid "Global"
 msgstr "Глобальний"
@@ -2039,6 +2780,12 @@ msgstr "GNOME блокує екран лише тоді, коли вхід ви�
 
 msgid "GNOME's login screen with its on-screen keyboard."
 msgstr "Екран входу GNOME з його екранною клавіатурою."
+
+msgid "Google"
+msgstr "Google"
+
+msgid "GOOGLE APPS"
+msgstr "ЗАСТОСУНКИ GOOGLE"
 
 msgid "Google apps"
 msgstr "Сервіси Google"
@@ -2055,6 +2802,9 @@ msgstr "Графіт"
 msgid "Green"
 msgstr "Зелений"
 
+msgid "grid-%u.rgb"
+msgstr ""
+
 msgid "Grow to fill"
 msgstr "Розширення на весь розділ"
 
@@ -2067,41 +2817,119 @@ msgstr "GSI"
 msgid "GSIs from the internet: choose the Android version and type"
 msgstr "GSI з інтернету: виберіть версію та тип Android"
 
+msgid "Headphones, keyboards and other devices"
+msgstr "Навушники, клавіатури та інші пристрої"
+
+msgid "height="
+msgstr ""
+
 msgid "Hide"
 msgstr "Сховати"
+
+msgid "Hide details"
+msgstr "Сховати деталі"
 
 msgid "history"
 msgstr "історія"
 
+msgid "Hold 1 second to apply"
+msgstr "Утримуйте 1 с для застосування"
+
+msgid "Hold 1 second to back up"
+msgstr "Утримуйте 1 с, щоб створити копію"
+
+msgid "Hold 1 second to confirm"
+msgstr "Утримуйте 1 с, щоб підтвердити"
+
+msgid "Hold 1 second to delete"
+msgstr "Утримуйте 1 с, щоб видалити"
+
 msgid "Hold 1 second to discard"
 msgstr "Утримуйте 1 с, щоб відкинути"
 
-msgid "Hold 2 seconds to back up"
-msgstr "Утримуйте 2 с, щоб створити копію"
+msgid "Hold 1 second to discard the plan"
+msgstr "Утримуйте 1 с, щоб відхилити план"
 
-msgid "Hold 2 seconds to confirm"
-msgstr "Утримуйте 2 с, щоб підтвердити"
+msgid "Hold 1 second to export"
+msgstr "Утримуйте 1 с, щоб експортувати"
 
-msgid "Hold 2 seconds to delete"
-msgstr "Утримуйте 2 с, щоб видалити"
+msgid "Hold 1 second to flash"
+msgstr "Утримуйте 1 с, щоб прошити"
 
-msgid "Hold 2 seconds to discard the plan"
-msgstr "Утримуйте 2 с, щоб відхилити план"
+msgid "Hold 1 second to flash BOOT"
+msgstr "Утримуйте 1 с, щоб прошити BOOT"
 
-msgid "Hold 2 seconds to export"
-msgstr "Утримуйте 2 с, щоб експортувати"
+msgid "Hold 1 second to install"
+msgstr "Утримуйте 1 с, щоб встановити"
+
+msgid "Hold 1 second to remove"
+msgstr "Утримуйте 1 с, щоб видалити"
+
+msgid "Hold 1 second to restore"
+msgstr "Утримуйте 1 с, щоб відновити"
+
+msgid "Hold 1 second to resume"
+msgstr "Утримуйте 1 с, щоб продовжити"
+
+msgid "Hold 1 second to roll back"
+msgstr "Утримуйте 1 с, щоб відкотити"
+
+msgid "Hold 1 second to share read / write"
+msgstr "Утримуйте 1 с: доступ читання й запису"
+
+msgid "Hold 1 second to share read-only"
+msgstr "Утримуйте 1 с: доступ лише для читання"
+
+msgid "Hold 1 second to switch"
+msgstr "Утримуйте 1 с, щоб перемкнути"
+
+msgid "Hold 1 second to wipe"
+msgstr "Утримуйте 1 с, щоб стерти"
+
+msgid "Hold 1 second: back up"
+msgstr "Утримати 1 секунду: зберегти"
+
+msgid "Hold 1 second: delete this copy"
+msgstr "Утримуйте 1 с: видалити цю копію"
+
+msgid "Hold 1 second: download and install"
+msgstr "Утримуйте 1 с: завантажити й встановити"
+
+msgid "Hold 1 second: install"
+msgstr "Утримуйте 1 с: встановити"
+
+msgid "Hold 1 second: reset the settings"
+msgstr "Утримуйте 1 с: скинути налаштування"
+
+msgid "Hold 1 second: restore"
+msgstr "Утримати 1 секунду: відновити"
+
+msgid "Hold 1 second: restore Android"
+msgstr "Утримуйте 1 с: відновити Android"
+
+msgid "Hold 2 seconds to format"
+msgstr "Утримуйте 2 с для форматування"
 
 msgid "Hold 2 seconds to install"
-msgstr "Утримуйте 2 с, щоб встановити"
+msgstr "Утримуйте 2 секунди, щоб встановити"
 
-msgid "Hold 2 seconds to share read / write"
-msgstr "Утримуйте 2 с: доступ читання й запису"
+msgid "Hold 2 seconds to install stock"
+msgstr "Утримуйте 2 с, щоб встановити сток"
 
-msgid "Hold 2 seconds to share read-only"
-msgstr "Утримуйте 2 с: доступ лише для читання"
+msgid "Hold 2 seconds to update"
+msgstr "Утримуйте 2 с, щоб оновити"
 
-msgid "Hold 2 seconds: back up"
-msgstr "Утримати 2 секунди: зберегти"
+msgid "Hold 2 seconds: erase and partition"
+msgstr "Утримуйте 2 с: стерти й розбити"
+
+msgid "Hold 2 seconds: erase data, install root"
+msgstr "Утримуйте 2 с: стерти дані, встановити root"
+
+msgid "Hold 2 seconds: run the installer"
+msgstr "Утримуйте 2 с: запустити інсталятор"
+
+msgid "Hold 2 seconds: run the installers"
+msgstr "Утримуйте 2 с: запустити інсталятори"
 
 msgid "Hold 3 s: delete"
 msgstr "Утримуйте 3 с: видалити"
@@ -2109,71 +2937,11 @@ msgstr "Утримуйте 3 с: видалити"
 msgid "Hold 3 s: erase settings and userdata"
 msgstr "Утримайте 3 с: стерти налаштування й userdata"
 
-msgid "Hold 3 seconds to delete"
-msgstr "Утримуйте 3 с, щоб видалити"
+msgid "Hold a filesystem to erase this volume as it."
+msgstr "Утримуйте файлову систему, щоб стерти розділ у ній."
 
-msgid "Hold 3 seconds to flash"
-msgstr "Утримуйте 3 с, щоб прошити"
-
-msgid "Hold 3 seconds to flash BOOT"
-msgstr "Утримуйте 3 с, щоб прошити BOOT"
-
-msgid "Hold 3 seconds to remove"
-msgstr "Утримуйте 3 с, щоб видалити"
-
-msgid "Hold 3 seconds to restore"
-msgstr "Утримуйте 3 с, щоб відновити"
-
-msgid "Hold 3 seconds to resume"
-msgstr "Утримуйте 3 с, щоб продовжити"
-
-msgid "Hold 3 seconds to roll back"
-msgstr "Утримуйте 3 с, щоб відкотити"
-
-msgid "Hold 3 seconds to switch"
-msgstr "Утримуйте 3 с, щоб перемкнути"
-
-msgid "Hold 3 seconds to wipe"
-msgstr "Утримуйте 3 с, щоб стерти"
-
-msgid "Hold 3 seconds: delete this copy"
-msgstr "Утримуйте 3 с: видалити цю копію"
-
-msgid "Hold 3 seconds: download and install"
-msgstr "Утримуйте 3 с: завантажити й встановити"
-
-msgid "Hold 3 seconds: install"
-msgstr "Утримуйте 3 с: встановити"
-
-msgid "Hold 3 seconds: reset the settings"
-msgstr "Утримуйте 3 с: скинути налаштування"
-
-msgid "Hold 3 seconds: restore"
-msgstr "Утримати 3 секунди: відновити"
-
-msgid "Hold 3 seconds: restore Android"
-msgstr "Утримуйте 3 с: відновити Android"
-
-msgid "Hold 5 seconds to format"
-msgstr "Утримуйте 5 секунд, щоб відформатувати"
-
-msgid "Hold 5 seconds to install"
-msgstr "Утримуйте 5 секунд, щоб встановити"
-
-msgid "Hold 5 seconds to install stock"
-msgstr "Утримуйте 5 с, щоб встановити сток"
-
-msgid "Hold 5 seconds: erase and partition"
-msgstr "Утримуйте 5 с: стерти й розбити"
-
-msgid "Hold 5 seconds: erase data, install root"
-msgstr "Утримуйте 5 с: стерти дані, встановити root"
-
-msgid "Hold 5 seconds: run the installer"
-msgstr "Утримуйте 5 с: запустити інсталятор"
-
-msgid "Hold 5 seconds: run the installers"
-msgstr "Утримуйте 5 с: запустити інсталятори"
+msgid "Hold a filesystem to erase this volume as it. Everything on it is lost, backups too."
+msgstr "Утримуйте файлову систему, щоб стерти розділ у ній. Усе на ньому зникне, резервні копії теж."
 
 msgid "Hold the button to save this exact snapshot. Moving outside cancels confirmation."
 msgstr "Утримуйте кнопку, щоб зберегти саме цей знімок. Рух за межі кнопки скасовує підтвердження."
@@ -2190,13 +2958,13 @@ msgstr "Утримуйте: стерти, ext4"
 msgid "Hold: erase, F2FS"
 msgstr "Утримуйте: стерти, F2FS"
 
-msgid "Hold: erase, FAT32"
-msgstr "Утримуйте: стерти, FAT32"
-
 msgid "Hold: grow to fill the partition"
 msgstr "Утримуйте: розширити на весь розділ"
 
-msgid "Hold: write"
+msgid "Hold: mount the card for writing"
+msgstr "Утримуйте: змонтувати картку для запису"
+
+msgid "Hold: read-write"
 msgstr "Утримуйте: запис"
 
 msgid "Home folders"
@@ -2207,6 +2975,27 @@ msgstr "Домашні теки, облікові записи, налаштув
 
 msgid "How one page gives way to the next."
 msgstr "Як одна сторінка змінює іншу."
+
+msgid "http://"
+msgstr ""
+
+msgid "https://"
+msgstr ""
+
+msgid "https://github.com"
+msgstr ""
+
+msgid "https://m.youtube.com"
+msgstr ""
+
+msgid "https://www.google.com"
+msgstr ""
+
+msgid "https://www.wikipedia.org"
+msgstr ""
+
+msgid "Hz"
+msgstr "Гц"
 
 msgid "Identity"
 msgstr "Ідентичність"
@@ -2226,6 +3015,9 @@ msgstr "Якщо в копії є і образ BOOT, відновіть йог�
 msgid "If the installer of this ZIP stops without changing anything, the recovery writes the images of this ROM itself"
 msgstr "Якщо інсталятор цього ZIP зупиниться, нічого не змінивши, recovery запише образи цього ROM сам"
 
+msgid "If the screen wakes by itself, turn this off."
+msgstr "Якщо екран вмикається сам, вимкніть це."
+
 msgid "IMAGE"
 msgstr "ОБРАЗ"
 
@@ -2238,11 +3030,38 @@ msgstr "Образи в пам'яті телефона, без SD-картки"
 msgid "Import a system"
 msgstr "Імпортувати систему"
 
+msgid "In BOOT; mount userdata to see its systems"
+msgstr "У BOOT; змонтуйте userdata, щоб побачити його системи"
+
+msgid "In der Themenliste gespeichert"
+msgstr ""
+
+msgid "In RAM, waiting for the card"
+msgstr "У RAM, чекає на карту"
+
 msgid "In the phone's memory: they install without an SD card."
 msgstr "У пам'яті телефона: встановлюються без SD-картки."
 
 msgid "In the repositories of %s"
 msgstr "У репозиторіях %s"
+
+msgid "in the same look"
+msgstr ""
+
+msgid "Incompatible"
+msgstr "Несумісно"
+
+msgid "Incomplete editor backdrop"
+msgstr ""
+
+msgid "Incomplete editor draft"
+msgstr ""
+
+msgid "Incorrect Android password"
+msgstr "Неправильний пароль Android"
+
+msgid "Incorrect Android password or PIN. Restart recovery before another attempt. No format was started."
+msgstr "Неправильний пароль або PIN Android. Перед новою спробою перезапустіть recovery. Форматування не почалося."
 
 msgid "Indian Ocean"
 msgstr "Індійський океан"
@@ -2253,8 +3072,8 @@ msgstr "Доставку введення не підтверджено. Очі�
 msgid "Input queue is full. Wait for the shell before typing more."
 msgstr "Черга введення заповнена. Зачекайте на оболонку."
 
-msgid "Insert a USB stick and it appears here by itself."
-msgstr "Вставте флешку, і вона з'явиться тут сама."
+msgid "Insert a USB stick or an SD card."
+msgstr "Під’єднайте USB-накопичувач або вставте SD-картку."
 
 msgid "Insert an ext4 microSD, then tap Mount microSD."
 msgstr "Вставте ext4 microSD і натисніть «Змонтувати microSD»."
@@ -2286,6 +3105,9 @@ msgstr "Перед продовженням перегляньте підтри�
 msgid "Inspect before restoring."
 msgstr "Перегляньте перед відновленням."
 
+msgid "Inspect root modules or recover from a module boot problem"
+msgstr "Перегляд root-модулів і відновлення після збою запуску"
+
 msgid "Inspect the pending image installation in Settings before booting."
 msgstr "Перегляньте незавершене встановлення образу в Налаштуваннях перед запуском."
 
@@ -2302,10 +3124,22 @@ msgid "Install a system"
 msgstr "Встановити систему"
 
 msgid "Install Android"
-msgstr "Встановлення Android"
+msgstr "Встановити Android"
+
+msgid "Install Android or Linux"
+msgstr "Встановіть Android або Linux"
+
+msgid "Install images, inspect compatibility, or recover modules."
+msgstr "Встановлення образів, перевірка сумісності та відновлення модулів."
+
+msgid "Install Linux"
+msgstr "Встановити Linux"
 
 msgid "Install options"
 msgstr "Параметри встановлення"
+
+msgid "INSTALL OR CHANGE"
+msgstr "ВСТАНОВИТИ АБО ЗМІНИТИ"
 
 msgid "Install status"
 msgstr "Стан встановлення"
@@ -2316,8 +3150,20 @@ msgstr "Встановити систему"
 msgid "Install the fixed stock Android profile"
 msgstr "Встановити фіксований стоковий профіль Android"
 
+msgid "Install the KernelSU Next app at the next start"
+msgstr "Встановити застосунок KernelSU Next під час наступного запуску"
+
+msgid "Install the Magisk app at the next start"
+msgstr "Встановити застосунок Magisk під час наступного запуску"
+
 msgid "Install the prepared stock Android. Userdata is formatted first and this recovery stays."
 msgstr "Встановити підготовлений стоковий Android. Userdata спершу форматується, а це recovery лишається."
+
+msgid "Install..."
+msgstr "Встановити…"
+
+msgid "Installation"
+msgstr "Встановлення"
 
 msgid "Installation complete"
 msgstr "Встановлення завершено"
@@ -2334,8 +3180,14 @@ msgstr "ЗВІТ ПРО ВСТАНОВЛЕННЯ"
 msgid "Installation result"
 msgstr "Результат встановлення"
 
+msgid "INSTALLED"
+msgstr "ВСТАНОВЛЕНО"
+
 msgid "Installed over Wi-Fi: during the installation when recovery is connected, otherwise at the first start."
 msgstr "Встановлюється через Wi-Fi: під час встановлення, якщо recovery підключений, інакше під час першого запуску."
+
+msgid "INSTALLED SYSTEMS"
+msgstr "ВСТАНОВЛЕНІ СИСТЕМИ"
 
 msgid "Installed: %s"
 msgstr "Встановлено: %s"
@@ -2343,8 +3195,8 @@ msgstr "Встановлено: %s"
 msgid "Installing a GSI must be confirmed"
 msgstr "Встановлення GSI треба підтвердити"
 
-msgid "Installing Android needs userdata for Android: every Linux system and saved image there is erased. This recovery stays, and so does the SD card."
-msgstr "Встановлення Android потребує userdata для Android: усі системи Linux і збережені там образи буде стерто. Recovery лишається, як і SD-картка."
+msgid "Installing a system"
+msgstr "Встановлення системи"
 
 msgid "Installing apps"
 msgstr "Встановлення програм"
@@ -2370,6 +3222,15 @@ msgstr "ПЕРЕРВАНЕ ПЕРЕМИКАННЯ"
 msgid "INTO"
 msgstr "КУДИ"
 
+msgid "Invalid backdrop dimensions"
+msgstr ""
+
+msgid "Invalid custom theme identifier"
+msgstr ""
+
+msgid "Invalid editor draft"
+msgstr ""
+
 msgid "It can read and change everything here."
 msgstr "Він зможе читати й змінювати все на телефоні."
 
@@ -2381,6 +3242,9 @@ msgstr "Система готова: recovery встановив робочий 
 
 msgid "It is removed from the phone's memory. Installed systems are not affected."
 msgstr "Його буде стерто з пам'яті телефона. Встановлених систем це не торкнеться."
+
+msgid "It moves to Download/ on a card mounted for writing as soon as storage is free."
+msgstr "Файл перейде в Download/ на карту, змонтовану для запису, щойно сховище звільниться."
 
 msgid "It starts ready: recovery has installed the desktop, apps and account."
 msgstr "Система запуститься готовою: recovery встановив робочий стіл, програми й обліковий запис."
@@ -2421,11 +3285,20 @@ msgstr "Підключено, але цю мережу не вдалося зб�
 msgid "Journal step %u of %u"
 msgstr "Крок журналу %u з %u"
 
+msgid "Jpause"
+msgstr ""
+
+msgid "Jseek %u"
+msgstr ""
+
 msgid "July"
 msgstr "липня"
 
 msgid "June"
 msgstr "червня"
+
+msgid "KBackspace"
+msgstr ""
 
 msgid "KDE's login screen with Qt's virtual keyboard."
 msgstr "Екран входу KDE з віртуальною клавіатурою Qt."
@@ -2451,11 +3324,17 @@ msgstr "Лишити попередню систему для відкату."
 msgid "Keep the verified Linux backup on the microSD card: Restore brings Linux back."
 msgstr "Зберігайте перевірену копію Linux на microSD: Відновлення поверне Linux."
 
+msgid "KEnter"
+msgstr ""
+
 msgid "KEPT"
 msgstr "ЛИШАЄТЬСЯ"
 
 msgid "Kept as it is"
 msgstr "Лишається як є"
+
+msgid "Kept first, to return to this system"
+msgstr "Зберігається першим, щоб повернути цю систему"
 
 msgid "Kernel"
 msgstr "Ядро"
@@ -2466,11 +3345,20 @@ msgstr "Ядро й блоковий пристрій повідомляють �
 msgid "Kernel and ramdisk"
 msgstr "Ядро та ramdisk"
 
+msgid "KernelSU"
+msgstr ""
+
+msgid "KernelSU Next"
+msgstr ""
+
 msgid "KEY FINGERPRINT"
 msgstr "ВІДБИТОК КЛЮЧА"
 
 msgid "Keyboard"
 msgstr "Клавіатура"
+
+msgid "KSU Next"
+msgstr "KSU Next"
 
 msgid "Language"
 msgstr "Мова"
@@ -2478,11 +3366,20 @@ msgstr "Мова"
 msgid "LANGUAGE AND TIME"
 msgstr "МОВА Й ЧАС"
 
-msgid "Language, vibration, time and tools."
-msgstr "Мова, вібрація, час та інструменти."
-
 msgid "Language: %s  /  time zone: %s"
 msgstr "Мова: %s  /  пояс: %s"
+
+msgid "Large files, read by Android and computers"
+msgstr "Великі файли, читають Android і комп'ютери"
+
+msgid "Largest first"
+msgstr "Спочатку більші"
+
+msgid "Last 30 days"
+msgstr "За 30 днів"
+
+msgid "Last 7 days"
+msgstr "За 7 днів"
 
 msgid "Leave the password empty for an open network."
 msgstr "Для відкритої мережі залиште пароль порожнім."
@@ -2513,6 +3410,9 @@ msgstr "Світле скло на м'якому градієнті"
 
 msgid "LINK TEXT"
 msgstr "ТЕКСТ ПОСИЛАННЯ"
+
+msgid "Links only"
+msgstr "Лише посилання"
 
 msgid "Linux"
 msgstr "Linux"
@@ -2559,6 +3459,9 @@ msgstr "Дані Linux збережено й захищено паролем"
 msgid "Linux from SD or USB stick, switch systems"
 msgstr "Linux із SD чи флешки, перемикання систем"
 
+msgid "Linux on userdata"
+msgstr "Linux на userdata"
+
 msgid "Linux restore awaits qualification"
 msgstr "Відновлення Linux очікує кваліфікації"
 
@@ -2586,6 +3489,9 @@ msgstr "Живий вивід"
 msgid "Loading..."
 msgstr "Завантаження..."
 
+msgid "Local file"
+msgstr "Локальний файл"
+
 msgid "LOCAL SHELL"
 msgstr "ЛОКАЛЬНА ОБОЛОНКА"
 
@@ -2606,6 +3512,12 @@ msgstr "Шукаю картки..."
 
 msgid "Looking for copies on the cards..."
 msgstr "Шукаю копії на картках..."
+
+msgid "Looking for devices. Put a device into pairing mode."
+msgstr "Пошук пристроїв. Переведіть пристрій у режим створення пари."
+
+msgid "Low contrast. Some text may be hard to read."
+msgstr ""
 
 msgid "Made for newer vendors, level 6 and up: it may not start here. You can try it: this recovery stays, and stock Android can be flashed again."
 msgstr "Зроблено для новіших vendor, рівня 6 і вище: тут може не запуститися. Спробувати можна: Recovery лишається, а стоковий Android можна прошити знову."
@@ -2637,9 +3549,6 @@ msgstr "Magisk або APatch — у BOOT Android."
 msgid "Magisk, a kernel or another flashable ZIP runs its own script"
 msgstr "Magisk, ядро чи інший ZIP для прошивки запускає власний скрипт"
 
-msgid "Magisk.apk"
-msgstr "Magisk.apk"
-
 msgid "mAh"
 msgstr "мА·год"
 
@@ -2648,6 +3557,12 @@ msgstr "Головне меню"
 
 msgid "Main shell: %s"
 msgstr "Основна оболонка: %s"
+
+msgid "Mains"
+msgstr ""
+
+msgid "MAINTENANCE"
+msgstr "ОБСЛУГОВУВАННЯ"
 
 msgid "Make a backup first if you have not already."
 msgstr "Спершу зробіть резервну копію, якщо ще не робили."
@@ -2688,6 +3603,9 @@ msgstr "Може не запуститися на цьому телефоні"
 msgid "Measured archive"
 msgstr "Виміряний архів"
 
+msgid "Measuring selected files..."
+msgstr "Обчислення розміру вибраних файлів…"
+
 msgid "Measuring the backup size"
 msgstr "Вимірювання розміру копії"
 
@@ -2715,6 +3633,12 @@ msgstr "Повідомлення"
 msgid "microG"
 msgstr "microG"
 
+msgid "microSD, partition %s"
+msgstr "microSD, розділ %s"
+
+msgid "Mindestens 8 Zeichen"
+msgstr ""
+
 msgid "minimal"
 msgstr "мінімальний"
 
@@ -2724,11 +3648,32 @@ msgstr "Мінімальні образи з каталогу, завантаж�
 msgid "Mobian"
 msgstr "Mobian"
 
+msgid "Mode after restart"
+msgstr "Режим після рестарту"
+
 msgid "Mode for flashing from a computer"
 msgstr "Режим для прошивки з комп'ютера"
 
 msgid "Model"
 msgstr "Модель"
+
+msgid "Modified"
+msgstr "Дата зміни"
+
+msgid "Module action unavailable"
+msgstr "Дія модуля недоступна"
+
+msgid "Module changes are unavailable for this current state or framework version."
+msgstr "Зміни модулів недоступні для цього стану або версії framework."
+
+msgid "Module state saved. Refreshing the list."
+msgstr "Стан модуля збережено. Оновлюється список."
+
+msgid "Module ZIP"
+msgstr ""
+
+msgid "Module ZIP installation is not available in recovery yet. "
+msgstr ""
 
 msgid "Monday"
 msgstr "Понеділок"
@@ -2739,14 +3684,23 @@ msgstr "Змонтувати"
 msgid "Mount a destination volume with write access before copying."
 msgstr "Змонтуйте том призначення із записом перед копіюванням."
 
-msgid "Mount a volume above."
-msgstr "Змонтуйте том вище."
+msgid "Mount a volume in External storage."
+msgstr "Змонтуйте том у розділі «Зовнішні накопичувачі»."
 
 msgid "Mount an SD card or USB drive with write access in Files, then come back."
 msgstr "Змонтуйте SD-картку чи флешку із записом у «Файлах» і поверніться."
 
+msgid "Mount mode unconfirmed"
+msgstr "Режим не підтверджено"
+
+msgid "Mount mode was not confirmed. Refresh the volume before making changes."
+msgstr "Режим монтування не підтверджено. Оновіть розділ перед змінами."
+
 msgid "Mount read-only"
 msgstr "Змонтувати для читання"
+
+msgid "Mount SD cards and USB drives, or choose where backups go."
+msgstr "Монтуйте SD-картки й USB-накопичувачі або виберіть місце для копій."
 
 msgid "Mount the card in Files to use it."
 msgstr "Щоб користуватися карткою, змонтуйте її у «Файлах»."
@@ -2796,11 +3750,26 @@ msgstr "Потрібна змонтована ext4 microSD із записом"
 msgid "Mounted: tap to open"
 msgstr "Змонтовано: дотик відкриє"
 
+msgid "Mounting at start"
+msgstr "Монтування під час запуску"
+
+msgid "Mounting the new system's data"
+msgstr "Підключення даних нової системи"
+
+msgid "Mouse"
+msgstr "Миша"
+
 msgid "Music"
 msgstr "Музика"
 
+msgid "Music you add from Files shows here. Open a file and choose Play."
+msgstr "Тут з’являється музика, додана з «Файлів». Відкрийте файл і виберіть «Відтворити»."
+
 msgid "Name"
 msgstr "Назва"
+
+msgid "NAME CONTAINS"
+msgstr "НАЗВА МІСТИТЬ"
 
 msgid "Name or part of it"
 msgstr "Назва або її частина"
@@ -2820,6 +3789,9 @@ msgstr "Потрібен для зміни захисту."
 msgid "Needs HTTPS"
 msgstr "Потрібен HTTPS"
 
+msgid "Needs verification"
+msgstr "Потрібна перевірка"
+
 msgid "Neither an AVB hash nor the kernel and ramdisk streams show that the image is complete"
 msgstr "Ні хеш AVB, ні потоки ядра й ramdisk не доводять, що образ повний"
 
@@ -2828,6 +3800,9 @@ msgstr "Мережа та програми"
 
 msgid "NETWORK NAME"
 msgstr "НАЗВА МЕРЕЖІ"
+
+msgid "Neues System: Root, adb, Apps"
+msgstr ""
 
 msgid "Never"
 msgstr "Ніколи"
@@ -2838,8 +3813,11 @@ msgstr "Новий обліковий запис"
 msgid "New copies are encrypted with it."
 msgstr "Нові копії шифруються ним."
 
-msgid "New files belong to root:root (0644; folders 0755). MTP has limited Linux metadata support. Stop sharing before mounting, editing in recovery, or making an offline snapshot."
-msgstr "Нові файли належать root:root (0644; теки 0755). MTP обмежено підтримує метадані Linux. Зупиніть спільний доступ перед монтуванням, редагуванням у recovery або офлайн-знімком."
+msgid "New downloads: %s"
+msgstr "Нові завантаження: %s"
+
+msgid "New files belong to root:root (0644; folders 0755). MTP has limited Linux metadata support. The terminal and Files work while it shares; stop sharing before mounting, formatting or an offline snapshot."
+msgstr "Нові файли належать root:root (0644; теки 0755). MTP обмежено підтримує метадані Linux. Термінал і Файли працюють під час спільного доступу; зупиніть його перед монтуванням, форматуванням або офлайн-знімком."
 
 msgid "New folder"
 msgstr "Нова тека"
@@ -2868,6 +3846,12 @@ msgstr "НОВА СИСТЕМА"
 msgid "New system"
 msgstr "Нова система"
 
+msgid "New system: root, adb, apps"
+msgstr ""
+
+msgid "New tab"
+msgstr "Нова вкладка"
+
 msgid "New text file"
 msgstr "Новий текстовий файл"
 
@@ -2877,6 +3861,9 @@ msgstr "Новий користувач"
 msgid "New user: %s"
 msgstr "Новий користувач: %s"
 
+msgid "Newest first"
+msgstr "Спочатку новіші"
+
 msgid "Next"
 msgstr "Далі"
 
@@ -2885,6 +3872,9 @@ msgstr "Наступний носій"
 
 msgid "no"
 msgstr "ні"
+
+msgid "No Android encryption. Confirm erasing this data."
+msgstr "Розділ без шифрування Android. Підтвердьте видалення."
 
 msgid "No answer from GitHub: connect Wi-Fi"
 msgstr "GitHub не відповідає: під'єднайте Wi-Fi"
@@ -2907,6 +3897,9 @@ msgstr "Поруч з образом немає контрольної суми.
 msgid "No completed backups"
 msgstr "Завершених копій немає"
 
+msgid "no completed copies"
+msgstr ""
+
 msgid "No copy of Android found"
 msgstr "Копій Android не знайдено"
 
@@ -2921,6 +3914,18 @@ msgstr "Поруч з AP немає файлу CSC: prism і optics лишают
 
 msgid "No current executable plan is available for this operation."
 msgstr "Для цієї операції немає чинного плану."
+
+msgid "no data on userdata"
+msgstr "даних на userdata немає"
+
+msgid "No downloads yet. Finished downloads are moved to Download/ on the card or drive."
+msgstr "Завантажень ще немає. Готові файли переносяться в Download/ на карті або накопичувачі."
+
+msgid "No encryption"
+msgstr "Без шифрування"
+
+msgid "No formattable volumes were found."
+msgstr "Томів для форматування не знайдено."
 
 msgid "No Google apps"
 msgstr "Без сервісів Google"
@@ -2951,6 +3956,15 @@ msgstr "Linux немає: на userdata лежить Android"
 
 msgid "No longer on its server"
 msgstr "Більше немає на сервері"
+
+msgid "No matching entries"
+msgstr "Збігів немає"
+
+msgid "No microSD card was found."
+msgstr "MicroSD-карту не знайдено."
+
+msgid "No modules were reported."
+msgstr "Модулів не знайдено."
 
 msgid "No mounted volume available"
 msgstr "Немає змонтованого тому"
@@ -2991,6 +4005,9 @@ msgstr "без пароля"
 msgid "No power action selected."
 msgstr "Дію живлення не вибрано."
 
+msgid "No release has a file this recovery can use"
+msgstr ""
+
 msgid "No retry is started automatically. Inspect the backend result before another operation."
 msgstr "Автоматичний повтор не запускається. Перегляньте результат бекенда перед наступною операцією."
 
@@ -3012,8 +4029,17 @@ msgstr "SD-картка не потрібна; після встановленн
 msgid "No SD card or USB drive"
 msgstr "Немає SD-картки чи USB-накопичувача"
 
+msgid "No system installed"
+msgstr "Систем не встановлено"
+
 msgid "No valid export reported"
 msgstr "Дійсний експорт не повідомлено"
+
+msgid "No vendor fstab could be reviewed for a no-FBE install"
+msgstr ""
+
+msgid "No verified report is available. Refresh or choose another package."
+msgstr "Перевіреного звіту немає. Оновіть або виберіть інший пакет."
 
 msgid "No volume inventory received. Tap Refresh to try again."
 msgstr "Дані про томи не отримано. Натисніть «Оновити», щоб спробувати ще раз."
@@ -3078,8 +4104,8 @@ msgstr "Не для arm64"
 msgid "Not for this phone"
 msgstr "Не для цього телефона"
 
-msgid "Not mountable"
-msgstr "Монтування неможливе"
+msgid "Not identified"
+msgstr "Не визначено"
 
 msgid "Not mounted"
 msgstr "Не змонтовано"
@@ -3147,6 +4173,9 @@ msgstr "Нічого не замінюється: нова система ста
 msgid "Nothing is selected"
 msgstr "Нічого не вибрано"
 
+msgid "Nothing plays"
+msgstr "Нічого не відтворюється"
+
 msgid "November"
 msgstr "листопада"
 
@@ -3180,6 +4209,9 @@ msgstr "Офлайн-знімок"
 msgid "Offline used-block snapshot"
 msgstr "Офлайн-знімок зайнятих блоків"
 
+msgid "Oldest first"
+msgstr "Спочатку старіші"
+
 msgid "On"
 msgstr "Увімк."
 
@@ -3198,8 +4230,14 @@ msgstr "ЗАРАЗ НА КАРТЦІ"
 msgid "On this Samsung, root needs verification off in vbmeta and Android data erased once"
 msgstr "На цьому Samsung root потребує вимкненої перевірки у vbmeta та одноразового стирання даних Android"
 
+msgid "On, not connected"
+msgstr "Увімкнено, не підключено"
+
 msgid "On: a charger shows the battery"
 msgstr "Увімк.: зарядка показує батарею"
+
+msgid "Once on first access"
+msgstr "Один раз при першому доступі"
 
 msgid "One compressed archive"
 msgstr "Один стиснутий архів"
@@ -3219,6 +4257,9 @@ msgstr "Зберігається лише BOOT"
 msgid "Only cache is wiped this way. Erase other volumes in Files"
 msgstr "Так очищується лише кеш. Інші томи стирайте у «Файлах»"
 
+msgid "Only files of these kinds: "
+msgstr ""
+
 msgid "Only media with 512-byte sectors are partitioned here"
 msgstr "Тут розбиваються лише носії із секторами по 512 байтів"
 
@@ -3227,6 +4268,9 @@ msgstr "Поточний адаптер пристрою підтримує ли
 
 msgid "Only the name changes: its files stay as they are."
 msgstr "Змінюється лише назва: файли копії лишаються як є."
+
+msgid "Only this choice is saved. The unlocked session ends when recovery restarts."
+msgstr "Зберігається лише цей вибір. Розблокована сесія діє до перезапуску recovery."
 
 msgid "Only this reviewed plan can be started."
 msgstr "Запустити можна лише цей переглянутий план."
@@ -3237,17 +4281,35 @@ msgstr "Відкрита"
 msgid "Open %s for writing"
 msgstr "Відкрити %s для запису"
 
+msgid "Open Android data"
+msgstr "Відкрити дані Android"
+
+msgid "Open Android data and authenticate with its password. Use read and write access to change modules."
+msgstr "Відкрийте дані Android із паролем. Для зміни модулів потрібен доступ для читання й запису."
+
 msgid "Open as text"
 msgstr "Відкрити як текст"
 
 msgid "Open files"
 msgstr "Відкрити файли"
 
+msgid "Open Files to reconnect a volume that did not remount."
+msgstr "Відкрийте «Файли», щоб знову змонтувати том."
+
+msgid "Open Files to unlock Android data."
+msgstr "Щоб розблокувати дані Android, відкрийте «Файли»."
+
 msgid "Open Files, select a supported volume and enable write access, then return here."
 msgstr "Відкрийте Файли, виберіть підтримуваний том, увімкніть запис і поверніться сюди."
 
 msgid "Open folder"
 msgstr "Відкрити теку"
+
+msgid "Open in Files"
+msgstr "Відкрити у Файлах"
+
+msgid "Open it"
+msgstr "Відкрити"
 
 msgid "Open read-only to inspect files. Enable writes only when you want to make changes."
 msgstr "Відкрийте для читання, щоб переглянути файли. Вмикайте запис лише для змін."
@@ -3261,6 +4323,18 @@ msgstr "Відкрити Системи"
 msgid "Open the phone in your computer's file manager."
 msgstr "Відкрийте телефон у файловому менеджері комп'ютера."
 
+msgid "Open the result"
+msgstr "Відкрити результат"
+
+msgid "Open Wipe > Data for Android, verify the current Android password, then confirm formatting. Return to the installation afterwards."
+msgstr "Відкрийте Очищення > Дані для Android, перевірте поточний пароль Android і підтвердьте форматування. Потім поверніться до встановлення."
+
+msgid "openfd-paused\n"
+msgstr ""
+
+msgid "openfd\n"
+msgstr ""
+
 msgid "Opening Samsung Download"
 msgstr "Перехід у Samsung Download"
 
@@ -3273,8 +4347,17 @@ msgstr "Операційна система"
 msgid "Operating system, Android or a partition"
 msgstr "ОС, Android або розділ"
 
+msgid "Operation"
+msgstr "Операція"
+
 msgid "Operation cancelled"
 msgstr "Операцію скасовано"
+
+msgid "Operation failed"
+msgstr "Операція не вдалася"
+
+msgid "Operation finished"
+msgstr "Операцію завершено"
 
 msgid "Operation in progress"
 msgstr "Триває операція"
@@ -3285,11 +4368,23 @@ msgstr "Операція недоступна"
 msgid "Orange"
 msgstr "Помаранчевий"
 
+msgid "Other entries"
+msgstr "Інші записи"
+
 msgid "Other network"
 msgstr "Інша мережа"
 
+msgid "Out of memory"
+msgstr ""
+
+msgid "output %s\n"
+msgstr ""
+
 msgid "Output sequence or encoding changed. Refresh the shell state; input has been paused."
 msgstr "Послідовність або кодування виводу змінилися. Оновіть стан оболонки; введення призупинено."
+
+msgid "Overview"
+msgstr "Огляд"
 
 msgid "Owner / group"
 msgstr "Власник / група"
@@ -3336,6 +4431,12 @@ msgstr "Пакети, обліковий запис і оболонка нала
 msgid "Packages: %s"
 msgstr "Пакети: %s"
 
+msgid "Packing an archive"
+msgstr "Пакування архіву"
+
+msgid "Pages as on a computer"
+msgstr "Сторінки як на комп'ютері"
+
 msgid "Pages change at once"
 msgstr "Сторінки змінюються миттєво"
 
@@ -3344,6 +4445,18 @@ msgstr "Сторінки плавно переходять одна в одну,
 
 msgid "Pages slide sideways, without blur"
 msgstr "Сторінки ковзають убік, без блюру"
+
+msgid "Pair"
+msgstr "Створити пару"
+
+msgid "Pair this device?"
+msgstr "Створити пару з цим пристроєм?"
+
+msgid "Pairing..."
+msgstr "Створення пари..."
+
+msgid "Part"
+msgstr "Частина"
 
 msgid "PARTITION"
 msgstr "РОЗДІЛ"
@@ -3387,6 +4500,9 @@ msgstr "ПАРОЛЬ"
 msgid "Password"
 msgstr "Пароль"
 
+msgid "Password before formatting"
+msgstr "Пароль для форматування"
+
 msgid "Password for copies"
 msgstr "Пароль для копій"
 
@@ -3395,6 +4511,12 @@ msgstr "Пароль вилучено"
 
 msgid "Password saved"
 msgstr "Пароль збережено"
+
+msgid "Password verification unavailable"
+msgstr "Перевірка пароля недоступна"
+
+msgid "Password verification was not confirmed. No data was formatted."
+msgstr "Перевірку пароля не підтверджено. Дані не форматувалися."
 
 msgid "Passwords"
 msgstr "Паролі"
@@ -3405,14 +4527,32 @@ msgstr "ШЛЯХ"
 msgid "Path %u / %u"
 msgstr "Шлях %u / %u"
 
+msgid "Pattern entered."
+msgstr "Ключ введено."
+
+msgid "Pattern transfer is not yet verified."
+msgstr "Передачу ключа ще не перевірено."
+
+msgid "pause\n"
+msgstr ""
+
+msgid "payload.bin/"
+msgstr ""
+
 msgid "Performance cores"
 msgstr "Продуктивні ядра"
+
+msgid "Performance cores now"
+msgstr "Продуктивні ядра зараз"
 
 msgid "Permissions"
 msgstr "Дозволи"
 
 msgid "Permissions updated"
 msgstr "Дозволи оновлено"
+
+msgid "Phone"
+msgstr "Телефон"
 
 msgid "Phone identity"
 msgstr "Ідентичність телефона"
@@ -3429,11 +4569,20 @@ msgstr "Розділи телефона"
 msgid "Phone shell"
 msgstr "Оболонка для телефона"
 
+msgid "Phone speaker"
+msgstr "Динамік телефона"
+
 msgid "Photos"
 msgstr "Фото"
 
+msgid "photos,videos"
+msgstr ""
+
 msgid "Pick a partition, then an image from SD, USB stick or phone storage."
 msgstr "Виберіть розділ, а потім образ із SD, флешки чи пам'яті телефона."
+
+msgid "PIN"
+msgstr "PIN"
 
 msgid "Plan %.20s"
 msgstr "План %.20s"
@@ -3456,11 +4605,26 @@ msgstr "КОНТРОЛЬНА ТОЧКА ПЛАТФОРМИ"
 msgid "Platform file permissions or owner differ"
 msgstr "Права або власник файлу платформи відрізняються"
 
+msgid "Play"
+msgstr "Відтворити"
+
+msgid "Player"
+msgstr "Плеєр"
+
+msgid "playing="
+msgstr ""
+
 msgid "Please wait"
 msgstr "Зачекайте"
 
 msgid "Podcasts"
 msgstr "Подкасти"
+
+msgid "Portable Kopie wird erstellt"
+msgstr ""
+
+msgid "position="
+msgstr ""
 
 msgid "Power"
 msgstr "Живлення"
@@ -3480,6 +4644,9 @@ msgstr "Вимкнути телефон?"
 msgid "Power options"
 msgstr "Параметри живлення"
 
+msgid "Preparation was not verified. Refreshing state; input is disabled."
+msgstr "Підготовку не підтверджено. Оновлюємо стан; введення заблоковане."
+
 msgid "Prepare it again in the app, or discard it here."
 msgstr "Підготуйте його знову в застосунку або відхиліть тут."
 
@@ -3494,6 +4661,9 @@ msgstr "Підготовлений стоковий пакет"
 
 msgid "Preparing"
 msgstr "Підготовка"
+
+msgid "Preparing the installation"
+msgstr "Підготовка встановлення"
 
 msgid "Preparing the new system"
 msgstr "Підготовка нової системи"
@@ -3522,8 +4692,29 @@ msgstr "захищено: торкніться, щоб відкрити"
 msgid "Published: %s"
 msgstr "Опубліковано: %s"
 
+msgid "Pure black: dark pixels stay off"
+msgstr "Чисто чорна: темні пікселі не світяться"
+
 msgid "Putting the old content back"
 msgstr "Повертаю попередній вміст"
+
+msgid "Queue (%d)"
+msgstr "Черга (%d)"
+
+msgid "Quick settings"
+msgstr "Швидкі налаштування"
+
+msgid "Quit browser"
+msgstr "Вийти з браузера"
+
+msgid "qwertyuiop[]"
+msgstr ""
+
+msgid "QWERTYUIOP{}"
+msgstr ""
+
+msgid "RAM only (lost at restart)"
+msgstr "Лише RAM (зникає після перезапуску)"
 
 msgid "raw"
 msgstr "raw"
@@ -3537,8 +4728,8 @@ msgstr "Сирий образ; це не файлова система"
 msgid "Raw partition"
 msgstr "Сирий розділ"
 
-msgid "Read"
-msgstr "Читання"
+msgid "Read a package and show compatibility checks before any installation"
+msgstr "Прочитати пакет і перевірити сумісність до встановлення"
 
 msgid "Read again"
 msgstr "Прочитати ще раз"
@@ -3552,9 +4743,6 @@ msgstr "Доступ читання й запису"
 msgid "Read from this phone each time."
 msgstr "Дані читаються з цього телефона."
 
-msgid "Read only"
-msgstr "Лише читання"
-
 msgid "Read the cards again"
 msgstr "Прочитати картки ще раз"
 
@@ -3567,11 +4755,17 @@ msgstr "лише читання"
 msgid "Read-only access"
 msgstr "Доступ лише для читання"
 
+msgid "Read-only access available"
+msgstr "Доступне лише читання"
+
 msgid "Read-only filesystem"
 msgstr "ФС лише для читання"
 
 msgid "Read-only image"
 msgstr "Образ лише для читання"
+
+msgid "Read-only package analysis"
+msgstr "Аналіз пакета без запису"
 
 msgid "Read-only shows the installed systems. Write access also lets you install and switch. Nothing is formatted."
 msgstr "Лише читання показує встановлені системи. Із записом можна ще встановлювати й перемикати. Нічого не форматується."
@@ -3582,14 +4776,23 @@ msgstr "Том лише для читання. Увімкніть запис у 
 msgid "Read-only: tap to enable writes"
 msgstr "Лише читання: торкніться, щоб увімкнути запис"
 
+msgid "Read-write"
+msgstr "Запис і читання"
+
 msgid "Readback: screen %s, brightness %u%%. No command was repeated."
 msgstr "Зчитано: екран %s, яскравість %u%%. Команду не повторено."
 
 msgid "Reading"
 msgstr "Читання"
 
+msgid "Reading Android modules..."
+msgstr "Читаються модулі Android..."
+
 msgid "Reading BOOT and asking GitHub for the newest versions..."
 msgstr "Читання BOOT і запит найновіших версій у GitHub..."
+
+msgid "Reading compatibility checks..."
+msgstr "Читаються перевірки сумісності..."
 
 msgid "Reading copies..."
 msgstr "Читання копій..."
@@ -3611,6 +4814,9 @@ msgstr "Читання встановлених систем..."
 
 msgid "Reading partitions..."
 msgstr "Читання розділів..."
+
+msgid "Reading root and adb settings"
+msgstr "Читання налаштувань root і adb"
 
 msgid "Reading storage volumes..."
 msgstr "Читання томів..."
@@ -3636,8 +4842,14 @@ msgstr "Читання даних телефона..."
 msgid "Reading the saved images..."
 msgstr "Читаю збережені образи..."
 
+msgid "Reading the system on the phone"
+msgstr "Читання системи на телефоні"
+
 msgid "Reading the system on userdata..."
 msgstr "Читання системи на userdata..."
+
+msgid "Reading the vendor on the phone"
+msgstr ""
 
 msgid "Reading USB status..."
 msgstr "Читання стану USB..."
@@ -3647,6 +4859,9 @@ msgstr "Читання стану Wi-Fi..."
 
 msgid "Reading..."
 msgstr "Читання..."
+
+msgid "Ready"
+msgstr ""
 
 msgid "Ready from the Android app: %s"
 msgstr "Готово із застосунку Android: %s"
@@ -3666,6 +4881,9 @@ msgstr "Перезапустити систему"
 msgid "Reboot to recovery?"
 msgstr "Перезапустити в recovery?"
 
+msgid "Recover module state before starting Android"
+msgstr "Відновлення стану модулів перед запуском Android"
+
 msgid "Recovery"
 msgstr "Рекавері"
 
@@ -3677,6 +4895,9 @@ msgstr "Recovery і cache не змінювалися."
 
 msgid "Recovery copies the script into the new system and does not run it. Read it first: it gets full control of the new system."
 msgstr "Рекавері копіює скрипт у нову систему і не запускає його. Спершу прочитайте його: він отримає повний контроль над новою системою."
+
+msgid "Recovery could not prepare Android storage. The password was not submitted."
+msgstr "Recovery не вдалося підготувати сховище Android. Пароль не було надіслано."
 
 msgid "Recovery could not set it up: %s"
 msgstr "Recovery не зміг її налаштувати: %s"
@@ -3711,6 +4932,9 @@ msgstr "Recovery RAM / оболонка root\nLinux: /mnt/volumes/userdata"
 msgid "Recovery runs from RAM. Mounted Linux volumes can be maintained independently of the installed system. Encrypted volumes require their own unlock support."
 msgstr "Recovery працює з RAM. Змонтовані томи Linux можна обслуговувати незалежно від встановленої системи. Зашифровані томи потребують власної підтримки розблокування."
 
+msgid "Recovery settings and saved Wi-Fi networks are stored in /misc. The a22x-recovery folder on cache is kept."
+msgstr "Налаштування recovery та збережені мережі Wi-Fi містяться в /misc. Папка a22x-recovery на cache зберігається."
+
 msgid "Recovery stays on the phone, so you can come back here and flash again."
 msgstr "Recovery лишається на телефоні, тож можна повернутися сюди й прошити знову."
 
@@ -3726,9 +4950,6 @@ msgstr "Червоний"
 msgid "Refresh"
 msgstr "Оновити"
 
-msgid "Refresh before choosing a system. The full status was not confirmed."
-msgstr "Оновіть перед вибором системи. Повний стан не підтверджено."
-
 msgid "Refresh display status"
 msgstr "Оновити стан дисплея"
 
@@ -3741,8 +4962,14 @@ msgstr "Оновити стан встановлення"
 msgid "Refresh inventory"
 msgstr "Оновити дані"
 
+msgid "Refresh modules"
+msgstr "Оновити модулі"
+
 msgid "Refresh mount state"
 msgstr "Оновити стан монтування"
+
+msgid "Refresh rate"
+msgstr "Частота оновлення"
 
 msgid "Refresh rate, screen timeout and brightness."
 msgstr "Частота, час вимкнення екрана та яскравість."
@@ -3750,11 +4977,23 @@ msgstr "Частота, час вимкнення екрана та яскрав
 msgid "Refresh rate, timeout and brightness"
 msgstr "Частота, вимкнення екрана, яскравість"
 
+msgid "Refresh report"
+msgstr "Оновити звіт"
+
 msgid "Refresh status"
 msgstr "Оновити стан"
 
 msgid "Refresh systems"
 msgstr "Оновити системи"
+
+msgid "Refresh systems to read the current status. Use Files / mounts to inspect storage."
+msgstr "Оновіть системи, щоб прочитати поточний стан. Сховище можна перевірити у Файлах."
+
+msgid "Refresh systems to retry, or inspect storage in Files / mounts. The full status was not confirmed."
+msgstr "Оновіть системи або перевірте сховище у Файлах. Повний стан не підтверджено."
+
+msgid "Refresh systems: the operation or environment did not match the request."
+msgstr "Оновіть системи: операція або середовище не відповідали запиту."
 
 msgid "Refresh terminal status"
 msgstr "Оновити стан термінала"
@@ -3768,11 +5007,17 @@ msgstr "Оновіть стан термінала перед продовжен
 msgid "Refresh the volume list before continuing."
 msgstr "Оновіть список томів перед продовженням."
 
+msgid "Refresh the volume, then open Data formatting to prepare password verification."
+msgstr "Оновіть розділ і відкрийте форматування даних, щоб підготувати перевірку пароля."
+
 msgid "Refresh to inspect the export"
 msgstr "Оновіть, щоб перевірити експорт"
 
 msgid "Refresh to read installer status."
 msgstr "Оновіть, щоб прочитати стан інсталятора."
+
+msgid "Refresh to read the current module state."
+msgstr "Оновіть, щоб прочитати поточний стан модулів."
 
 msgid "Refresh to read the current service status."
 msgstr "Оновіть, щоб прочитати стан служби."
@@ -3795,6 +5040,15 @@ msgstr "Відпустіть, коли смуга заповниться. Рух
 msgid "Remove"
 msgstr "Вилучити"
 
+msgid "Remove a custom theme first"
+msgstr ""
+
+msgid "Remove compiled Android runtime files"
+msgstr "Видалення скомпільованих файлів середовища Android"
+
+msgid "Remove on next Android boot"
+msgstr "Видалити при запуску Android"
+
 msgid "Remove password"
 msgstr "Вилучити пароль"
 
@@ -3813,8 +5067,11 @@ msgstr "Видалити систему"
 msgid "Remove this system"
 msgstr "Видалити цю систему"
 
-msgid "Removed %u items and freed %s. The recovery's own folder stays: its settings, Wi-Fi networks, plans and scripts."
-msgstr "Видалено елементів: %u, звільнено %s. Власна тека recovery лишається: її налаштування, мережі Wi-Fi, плани й скрипти."
+msgid "Removed %u cache entries."
+msgstr "Видалено записів кешу: %u."
+
+msgid "Removed %u items and freed %s. Recovery settings are stored in /misc."
+msgstr "Видалено %u елементів і звільнено %s. Налаштування recovery зберігаються в /misc."
 
 msgid "Removed themes are back"
 msgstr "Вилучені теми повернено"
@@ -3855,8 +5112,17 @@ msgstr "ВИЗНАЧЕНО В МЕЖАХ ЦЬОГО ТОМУ"
 msgid "Restart into Android"
 msgstr "Перезапустити в Android"
 
+msgid "Restart into Android."
+msgstr ""
+
 msgid "Restart into Android. The first start takes several minutes."
 msgstr "Перезапустіть в Android. Перший запуск триває кілька хвилин."
+
+msgid "Restart into Android. To return to the earlier system: its image in Files, Flash to a partition, "
+msgstr ""
+
+msgid "Restart into Android. To return to the earlier system: Restore, this copy of the partitions"
+msgstr ""
 
 msgid "Restart into Samsung Download mode?"
 msgstr "Перезапустити в Samsung Download?"
@@ -3866,6 +5132,15 @@ msgstr "Перезапустити у встановлену систему?"
 
 msgid "Restart into the new system"
 msgstr "Перезапустити в нову систему"
+
+msgid "Restart recovery required"
+msgstr "Потрібен перезапуск recovery"
+
+msgid "Restart recovery, then open Data formatting before unlocking Android. Enter the current Android password there."
+msgstr "Перезапустіть recovery і відкрийте форматування даних до розблокування Android. Введіть там поточний пароль Android."
+
+msgid "Restart recovery, then verify the current Android password before formatting data."
+msgstr "Перезапустіть recovery, потім перевірте поточний пароль Android перед форматуванням даних."
 
 msgid "Restarting recovery"
 msgstr "Перезапуск recovery"
@@ -3912,8 +5187,14 @@ msgstr "Відновити дані Linux"
 msgid "Restore the previous root filesystem using the saved transaction. Shared /home remains in place."
 msgstr "Відновити попередню кореневу ФС за збереженою транзакцією. Спільний /home лишається на місці."
 
+msgid "Restore to Android"
+msgstr ""
+
 msgid "Restored into %s."
 msgstr "Відновлено в %s."
+
+msgid "Restoring Android data"
+msgstr ""
 
 msgid "Restoring BOOT"
 msgstr "Відновлення BOOT"
@@ -3921,11 +5202,23 @@ msgstr "Відновлення BOOT"
 msgid "Restoring identity partitions must be confirmed"
 msgstr "Відновлення розділів треба підтвердити"
 
+msgid "Restoring shared files"
+msgstr ""
+
 msgid "Restoring userdata"
 msgstr "Відновлення userdata"
 
+msgid "Results in the current folder."
+msgstr "Результати в поточній папці."
+
 msgid "Resume switch"
 msgstr "Продовжити перемикання"
+
+msgid "Resumption is a no go"
+msgstr ""
+
+msgid "Retry available in %u s"
+msgstr "Повторна спроба через %u с"
 
 msgid "Return removed themes"
 msgstr "Повернути вилучені теми"
@@ -3956,6 +5249,9 @@ msgstr "Переглянути встановлення"
 
 msgid "Review its current journal before doing anything else. New installations are blocked."
 msgstr "Спершу перегляньте його поточний журнал. Нові встановлення заблоковано."
+
+msgid "Review module change"
+msgstr "Перевірити зміну модуля"
 
 msgid "Review offline plan"
 msgstr "Переглянути офлайн-план"
@@ -3990,6 +5286,9 @@ msgstr "Перегляньте повний шлях джерела, перш н
 msgid "Review the installation"
 msgstr "Переглянути встановлення"
 
+msgid "Review the selection again because the files changed"
+msgstr "Перевірте вибір ще раз, оскільки файли змінилися"
+
 msgid "Review userdata wipe"
 msgstr "Переглянути стирання userdata"
 
@@ -4004,6 +5303,9 @@ msgstr "ROM із файлу"
 
 msgid "Root"
 msgstr "Root"
+
+msgid "ROOT APP FOR ANDROID"
+msgstr "ЗАСТОСУНОК ROOT ДЛЯ ANDROID"
 
 msgid "Root goes into the BOOT of Android: install Android first"
 msgstr "Root ставиться в BOOT Android: спершу встановіть Android"
@@ -4023,11 +5325,11 @@ msgstr "Root на цьому Samsung потребує вимкненої пер�
 msgid "Run commands directly on this phone."
 msgstr "Виконуйте команди прямо на телефоні."
 
+msgid "Run in the terminal"
+msgstr "Запустити в терміналі"
+
 msgid "Running"
 msgstr "Працює"
-
-msgid "Running for"
-msgstr "Час роботи"
 
 msgid "Running the installer of a ZIP must be confirmed"
 msgstr "Запуск інсталятора ZIP треба підтвердити"
@@ -4056,6 +5358,9 @@ msgstr "Прошивка Samsung"
 msgid "Samsung firmware, or Android images from the internet"
 msgstr "Прошивка Samsung або образи Android з інтернету"
 
+msgid "Samsung firmware, ROMs and GSIs, root and modules"
+msgstr "Прошивка Samsung, ROM і GSI, root і модулі"
+
 msgid "Samsung region data"
 msgstr "Регіональні дані Samsung"
 
@@ -4068,6 +5373,9 @@ msgstr "BOOT Samsung %s (ядро Android %s) збережено в кеші:"
 msgid "Samsung's update data, not an image"
 msgstr "Дані оновлення Samsung, не образ"
 
+msgid "Samsung, GSI or a ROM"
+msgstr "Samsung, GSI або ROM"
+
 msgid "Saturday"
 msgstr "Субота"
 
@@ -4076,6 +5384,15 @@ msgstr "Зберегти знімок системи"
 
 msgid "Save Android partitions to an SD card or a USB stick: a factory reset of Android erases userdata"
 msgstr "Зберігайте розділи Android на SD-картку або флешку: скидання Android до заводських налаштувань очищає userdata"
+
+msgid "Save downloads to"
+msgstr "Куди зберігати завантаження"
+
+msgid "Save it, install another, bring the data back"
+msgstr ""
+
+msgid "Save or discard edits before changing storage mounts."
+msgstr "Збережіть або скасуйте зміни перед зміною монтування."
 
 msgid "Save or discard the editor buffer before preparing an offline operation."
 msgstr "Збережіть або відкиньте текст редактора перед офлайн-операцією."
@@ -4109,6 +5426,9 @@ msgstr "Зберегти текст"
 
 msgid "SAVE TO"
 msgstr "ЗБЕРЕГТИ НА"
+
+msgid "SAVED"
+msgstr "ЗБЕРЕЖЕНІ"
 
 msgid "Saved"
 msgstr "Збережена"
@@ -4146,6 +5466,9 @@ msgstr "Збережений знімок"
 msgid "saved system"
 msgstr "збережена система"
 
+msgid "Saved to the theme list"
+msgstr ""
+
 msgid "Saved until reboot: no writable storage"
 msgstr "Збережено до перезавантаження: немає носія із записом"
 
@@ -4157,9 +5480,6 @@ msgstr "Збереження поточного розділу"
 
 msgid "Screen blanking is unavailable on this boot."
 msgstr "Вимкнення екрана недоступне в цьому запуску."
-
-msgid "Screen blanking is unavailable; brightness controls remain separate."
-msgstr "Вимкнення екрана недоступне; яскравість керується окремо."
 
 msgid "Screen is off. Short press Power to wake."
 msgstr "Екран вимкнено. Коротко натисніть кнопку живлення, щоб увімкнути."
@@ -4200,14 +5520,20 @@ msgstr "Прокручування"
 msgid "SD card"
 msgstr "SD-картка"
 
-msgid "SD cards and USB sticks. Choose where backups go."
-msgstr "SD-карти й флешки. Виберіть, куди зберігати копії."
+msgid "SD card, then a USB drive"
+msgstr "SD-карта, потім USB-накопичувач"
 
 msgid "SD free: %s   /   reserve: %s"
 msgstr "Вільно на SD: %s   /   резерв: %s"
 
 msgid "Search"
 msgstr "Шукати"
+
+msgid "Search and filters"
+msgstr "Пошук і фільтри"
+
+msgid "Search or type an address"
+msgstr "Пошук або адреса сайту"
 
 msgid "Search packages"
 msgstr "Пошук пакетів"
@@ -4218,8 +5544,17 @@ msgstr "Пошук мереж..."
 msgid "Searching the repositories..."
 msgstr "Пошук у репозиторіях..."
 
+msgid "Searching..."
+msgstr "Пошук..."
+
 msgid "Security patch"
 msgstr "Патч безпеки"
+
+msgid "seek %u\n"
+msgstr ""
+
+msgid "seek 0\n"
+msgstr ""
 
 msgid "Select a completed snapshot."
 msgstr "Виберіть завершений знімок."
@@ -4269,6 +5604,9 @@ msgstr "Задано, але екран не блокується"
 msgid "Setting up the new system"
 msgstr "Налаштування нової системи"
 
+msgid "SETTINGS"
+msgstr "НАЛАШТУВАННЯ"
+
 msgid "Settings"
 msgstr "Налаштування"
 
@@ -4298,6 +5636,9 @@ msgstr "Скрипт налаштування має бути на зовніш�
 
 msgid "Share one mounted volume with this computer."
 msgstr "Поділіться одним змонтованим томом із цим комп'ютером."
+
+msgid "Shared files"
+msgstr ""
 
 msgid "Shared files require the same group names and GIDs"
 msgstr "Спільні файли вимагають тих самих назв і номерів груп"
@@ -4329,6 +5670,12 @@ msgstr "Коротко натисніть кнопку живлення, щоб 
 msgid "Show"
 msgstr "Показати"
 
+msgid "Show in Files"
+msgstr "Показати у Файлах"
+
+msgid "Sichern, ein anderes installieren, Daten zurückholen"
+msgstr ""
+
 msgid "Sign-in"
 msgstr "Вхід"
 
@@ -4350,11 +5697,26 @@ msgstr "розмір у маніфесті"
 msgid "size unknown"
 msgstr "розмір невідомий"
 
+msgid "Size, largest first"
+msgstr "Розмір, спершу більші"
+
 msgid "Slide"
 msgstr "Ковзання"
 
 msgid "Software"
 msgstr "Програмне забезпечення"
+
+msgid "Sort by"
+msgstr "Сортувати за"
+
+msgid "Sound"
+msgstr "Звук"
+
+msgid "Sound output"
+msgstr "Виведення звуку"
+
+msgid "Sound volume"
+msgstr "Гучність звуку"
 
 msgid "SOURCE FILE"
 msgstr "ФАЙЛ-ДЖЕРЕЛО"
@@ -4367,6 +5729,9 @@ msgstr "ТОМ-ДЖЕРЕЛО"
 
 msgid "Space"
 msgstr "Пробіл"
+
+msgid "Sparse or raw images. Each partition takes its image's size, as with fastboot: a larger one grows into the free space of super, a smaller one leaves the rest free."
+msgstr "Образи sparse або raw. Кожен розділ набуває розміру свого образу, як у fastboot: більший росте у вільне місце super, менший лишає решту вільною."
 
 msgid "Special file / blocked"
 msgstr "Спецфайл / заблоковано"
@@ -4389,6 +5754,12 @@ msgstr "SSH-сервер"
 msgid "SSH unavailable"
 msgstr "SSH недоступний"
 
+msgid "Stage"
+msgstr "Етап"
+
+msgid "Staging apps, Wi-Fi and contacts"
+msgstr "Розкладання програм, Wi-Fi і контактів"
+
 msgid "Start local shell"
 msgstr "Запустити локальну оболонку"
 
@@ -4398,14 +5769,35 @@ msgstr "Запустити встановлену систему: Linux або A
 msgid "Start this recovery again"
 msgstr "Запустити це recovery знову"
 
+msgid "Started %u min ago, helper %s"
+msgstr "Почато %u хв тому, помічник %s"
+
 msgid "STARTED ON THIS PHONE"
 msgstr "ЗАПУСТИВСЯ НА ЦЬОМУ ТЕЛЕФОНІ"
 
 msgid "Started on this phone"
 msgstr "Запустився на цьому телефоні"
 
+msgid "Starting Bluetooth and the player..."
+msgstr "Запуск Bluetooth і плеєра..."
+
+msgid "Starting Bluetooth..."
+msgstr "Запуск Bluetooth..."
+
+msgid "Starting browser"
+msgstr "Запуск браузера"
+
+msgid "Starting sharing..."
+msgstr "Запуск спільного доступу..."
+
+msgid "Starts"
+msgstr "Запускається"
+
 msgid "State"
 msgstr "Стан"
+
+msgid "state "
+msgstr ""
 
 msgid "Status unavailable"
 msgstr "Стан недоступний"
@@ -4419,6 +5811,9 @@ msgstr "ЛИШАЄТЬСЯ"
 msgid "Step %u of %u"
 msgstr "Крок %u з %u"
 
+msgid "Step %u of %u · %u:%02u"
+msgstr "Етап %u з %u · %u:%02u"
+
 msgid "Stock Android"
 msgstr "Стоковий Android"
 
@@ -4427,9 +5822,6 @@ msgstr "Стоковий Android з файлів AP і CSC, як прошива�
 
 msgid "Stock Android installed"
 msgstr "Стоковий Android встановлено"
-
-msgid "Stock Android, a custom ROM, or an Android image from the internet."
-msgstr "Стоковий Android, кастомний ROM або образ Android з інтернету."
 
 msgid "Stock BOOT"
 msgstr "Стоковий BOOT"
@@ -4470,8 +5862,14 @@ msgstr "Зупинити цю операцію?"
 msgid "Stop USB file sharing before preparing an offline backup, wipe or restore."
 msgstr "Зупиніть USB-доступ перед офлайн-копією, стиранням чи відновленням."
 
-msgid "Stop USB file sharing before starting the local shell."
-msgstr "Зупиніть USB-доступ перед запуском локальної оболонки."
+msgid "Stop USB sharing"
+msgstr "Зупинити спільний доступ USB"
+
+msgid "stop\n"
+msgstr ""
+
+msgid "Stopping sharing..."
+msgstr "Зупинення спільного доступу..."
 
 msgid "Storage"
 msgstr "Носії даних"
@@ -4481,6 +5879,15 @@ msgstr "Чип пам'яті"
 
 msgid "Storage is busy: stop USB files, or wait for the running operation to finish"
 msgstr "Сховище зайняте: зупиніть USB-файли або дочекайтеся кінця операції"
+
+msgid "Storage is busy: the operation holds it alone"
+msgstr "Сховище зайняте: операція тримає його лише для себе"
+
+msgid "Storage is busy: the terminal or another operation is running. Close the terminal in the recent screens, then open the catalog again."
+msgstr "Сховище зайняте: працює термінал або інша операція. Закрийте термінал у нещодавніх екранах і відкрийте каталог знову."
+
+msgid "Storage is in use"
+msgstr "Сховище використовується"
 
 msgid "Storage size"
 msgstr "Сховище"
@@ -4524,11 +5931,11 @@ msgstr "Прогорніть увесь список джерела, копії 
 msgid "Swipe to browse volumes. Open read-only by default."
 msgstr "Гортайте томи. За замовчуванням відкриваються лише для читання."
 
-msgid "Swipe to scroll"
-msgstr "Гортайте для прокручування"
-
 msgid "Swipe up to unlock"
 msgstr "Проведіть вгору, щоб розблокувати"
+
+msgid "Switch Android"
+msgstr ""
 
 msgid "Switch system"
 msgstr "Перемкнути систему"
@@ -4539,11 +5946,17 @@ msgstr "ПЕРЕМКНУТИ НА"
 msgid "Switch to it in Systems to start it."
 msgstr "Щоб запустити її, перемкніться на неї в «Системах»."
 
+msgid "Switching systems"
+msgstr "Перемикання систем"
+
 msgid "Sxmo and Lomiri come from Debian and Ubuntu; other systems get Phosh."
 msgstr "Sxmo і Lomiri є лише в Debian та Ubuntu; інші системи отримають Phosh."
 
 msgid "Symbolic link"
 msgstr "Символьне посилання"
+
+msgid "Synthetic preview: this is not a phone capture."
+msgstr ""
 
 msgid "SYSTEM"
 msgstr "СИСТЕМА"
@@ -4560,11 +5973,17 @@ msgstr "Мова системи"
 msgid "System monitor"
 msgstr "Системний монітор"
 
+msgid "System-image rollback coverage before the first Android boot is complete."
+msgstr "Повний набір образів для відновлення до першого запуску Android перевірено."
+
+msgid "Systems"
+msgstr "Системи"
+
 msgid "Systems could not be read."
 msgstr "Не вдалося прочитати системи."
 
-msgid "Systems from the internet"
-msgstr "Системи з інтернету"
+msgid "Tabs: %d"
+msgstr "Вкладки: %d"
 
 msgid "Take Samsung's BOOT out of the firmware: the way back from a custom kernel"
 msgstr "Витягти BOOT Samsung з прошивки: шлях назад від кастомного ядра"
@@ -4577,6 +5996,9 @@ msgstr "Торкніться розділу, щоб його пропустит�
 
 msgid "Tap again to remove"
 msgstr "Натисніть ще раз, щоб вилучити"
+
+msgid "Tap and hold to open"
+msgstr "Утримуйте, щоб відкрити"
 
 msgid "Tap destination to cycle mounted writable volumes."
 msgstr "Торкніться призначення, щоб перебрати змонтовані томи із записом."
@@ -4595,6 +6017,9 @@ msgstr "Торкніться «Оновити», щоб прочитати си�
 
 msgid "Tap Search to turn Wi-Fi on."
 msgstr "Натисніть «Шукати», щоб увімкнути Wi-Fi."
+
+msgid "Tap Search, and put a device into pairing mode."
+msgstr "Торкніться «Шукати» й переведіть пристрій у режим створення пари."
 
 msgid "Tap the card above to mount userdata. Systems are never mounted automatically."
 msgstr "Торкніться картки вище, щоб змонтувати userdata. Системи ніколи не монтуються автоматично."
@@ -4617,6 +6042,9 @@ msgstr "Торкніться, щоб ввести"
 msgid "Tap to use for backups"
 msgstr "торкніться, щоб зберігати сюди"
 
+msgid "Target build"
+msgstr "Цільова збірка"
+
 msgid "Target paths were not provided by the backend."
 msgstr "Бекенд не надав шляхів цілей."
 
@@ -4637,6 +6065,9 @@ msgstr "Кольори термінала"
 
 msgid "Terminal colors added"
 msgstr "Кольори термінала додано"
+
+msgid "Terminal text is hard to read"
+msgstr ""
 
 msgid "Text editor"
 msgstr "Редактор"
@@ -4683,6 +6114,12 @@ msgstr "Дія повернула неповний звіт. Оновіть і �
 msgid "The active mode is read again after each change."
 msgstr "Активний режим зчитується знову після кожної зміни."
 
+msgid "The Android password was not accepted. Data was not formatted. Check the refreshed data state, then try again without restarting recovery."
+msgstr "Android не прийняв пароль. Дані не форматувалися. Перевірте оновлений стан даних, потім спробуйте ще раз без перезапуску recovery."
+
+msgid "The Android session changed. Formatting was not started. Refresh the volume state before continuing."
+msgstr "Сеанс Android змінився. Форматування не почалося. Оновіть стан розділу перед продовженням."
+
 msgid "The AP file has no super or no BOOT image."
 msgstr "У файлі AP немає образу super або BOOT."
 
@@ -4721,6 +6158,9 @@ msgstr "Архів пошкоджено"
 
 msgid "The archive is not a plain file"
 msgstr "Архів не є звичайним файлом"
+
+msgid "The archive is read twice: once to check it, once to take what the new system needs. Keep the phone powered and the card in."
+msgstr "Архів читається двічі: щоб перевірити його і щоб узяти те, що потрібно новій системі. Тримайте телефон увімкненим, а картку вставленою."
 
 msgid "The archive lacks a file its manifest lists"
 msgstr "В архіві бракує файла, який є в його маніфесті"
@@ -4803,8 +6243,8 @@ msgstr "BOOT у прошивці пошкоджено: його AVB-хеш не 
 msgid "The BOOT that was there is kept on cache:"
 msgstr "BOOT, що був там, збережено в кеші:"
 
-msgid "The BOOT there is kept on cache before it is replaced. Magisk lives in the ramdisk and APatch in the kernel; their modules are installed in their apps in Android."
-msgstr "Наявний BOOT зберігається в cache, перш ніж його замінити. Magisk живе в ramdisk, а APatch — у ядрі; їхні модулі встановлюються в їхніх застосунках в Android."
+msgid "The BOOT there is kept on cache before it is replaced. Magisk lives in the ramdisk and APatch in the kernel. A module's ZIP for Magisk or KernelSU Next is installed from its page in Files; APatch modules in its app."
+msgstr "Наявний BOOT зберігається в cache, перш ніж його замінити. Magisk живе в ramdisk, а APatch — у ядрі. ZIP модуля для Magisk або KernelSU Next встановлюється з його сторінки у Файлах; модулі APatch — у його застосунку."
 
 msgid "The bootloader chain is never written by this recovery"
 msgstr "Recovery ніколи не записує ланцюг завантажувача"
@@ -4814,9 +6254,6 @@ msgstr "Завантажувач блокує цей розділ, поки те
 
 msgid "The bootloader, modem and calibration data are not listed and cannot be flashed here."
 msgstr "Завантажувач, модем і калібрування тут не показані й не прошиваються."
-
-msgid "The bootloader, the modem and the partition table are never written here."
-msgstr "Завантажувач, модем і таблиця розділів тут ніколи не записуються."
 
 msgid "The bootloader, the modem, this recovery, Android's data and the recovery's settings on cache are out of its reach. The BOOT there is kept on cache first."
 msgstr "Завантажувач, модем, це рекавері, дані Android і налаштування рекавері в cache йому недоступні. Наявний BOOT спершу зберігається в cache."
@@ -4845,6 +6282,9 @@ msgstr "Картку змонтовано лише для читання як с
 msgid "The card is not open for writing yet: the button above opens it."
 msgstr "Картку ще не відкрито для запису: це робить кнопка вище."
 
+msgid "The card is still being released from the computer. This page updates by itself."
+msgstr "Комп'ютер ще відпускає картку. Ця сторінка оновиться сама."
+
 msgid "The card is too small for these partitions"
 msgstr "Картка замала для таких розділів"
 
@@ -4853,6 +6293,12 @@ msgstr "Картка замала для розбиття"
 
 msgid "The card is write-protected"
 msgstr "Картка захищена від запису"
+
+msgid "The card of this file is not mounted"
+msgstr "Картку з цим файлом не змонтовано"
+
+msgid "The card's first partition holds no filesystem the recovery writes, and was left unchanged. Backups go to ext4, exFAT, F2FS, Btrfs, UDF or FAT32: format it in Files, or use another partition below."
+msgstr "Перший розділ карти не має файлової системи, у яку рекавері пише, і його не змінено. Резервні копії йдуть на ext4, exFAT, F2FS, Btrfs, UDF або FAT32: відформатуйте його у Файлах або виберіть інший розділ нижче."
 
 msgid "The cards cannot be read now."
 msgstr "Картки зараз не вдається прочитати."
@@ -4869,6 +6315,9 @@ msgstr "Перевірка знайшла помилки, які не вдало
 msgid "The command running in the terminal will be stopped."
 msgstr "Команду, що виконується в терміналі, буде зупинено."
 
+msgid "The compatibility report could not be read."
+msgstr "Не вдалося прочитати звіт сумісності."
+
 msgid "The complete file must be loaded before saving."
 msgstr "Перед збереженням потрібно завантажити файл повністю."
 
@@ -4884,11 +6333,23 @@ msgstr "Стиснений файл розпаковується надто до
 msgid "The compressed file unpacks larger than a BOOT can be"
 msgstr "Стиснений файл розпаковується більшим, ніж може бути BOOT"
 
+msgid "The confirmation expired. Data is unchanged. Verify the current Android password again."
+msgstr "Підтвердження прострочено. Дані не змінено. Введіть правильний пароль Android знову."
+
 msgid "The copy changed after it was listed"
 msgstr "Копія змінилася після показу списку"
 
 msgid "The copy helper did not return a result."
 msgstr "Помічник копій не повернув результату."
+
+msgid "The copy of this system could not be verified: nothing was written"
+msgstr ""
+
+msgid "The current access mode is unchanged. Unmount data and restart recovery to choose another mode."
+msgstr "Поточний режим доступу збережено. Відмонтуйте дані та перезапустіть recovery, щоб вибрати інший режим."
+
+msgid "The current Android password was verified."
+msgstr "Поточний пароль Android перевірено."
 
 msgid "The current content will be saved to %s first."
 msgstr "Поточний вміст спершу буде збережено на %s."
@@ -4907,6 +6368,15 @@ msgstr "Не вдалося прочитати поточний розділ"
 
 msgid "The current partition will not be saved first"
 msgstr "Поточний розділ не буде збережено заздалегідь"
+
+msgid "The Dalvik / ART cache could not be cleared."
+msgstr "Не вдалося очистити кеш Dalvik / ART."
+
+msgid "The data state changed"
+msgstr "Стан даних змінився"
+
+msgid "The data volume changed. Formatting was not started. Refresh the volume state before continuing."
+msgstr "Розділ даних змінився. Форматування не почалося. Оновіть стан розділу перед продовженням."
 
 msgid "The desktop and apps are downloaded over this network at the first start."
 msgstr "Робочий стіл і програми завантажаться через цю мережу під час першого запуску."
@@ -4928,6 +6398,12 @@ msgstr "Завантажене відрізняється від випуску.
 
 msgid "The download is larger than its release says"
 msgstr "Завантаження більше, ніж вказано у випуску"
+
+msgid "The download is no AnyKernel3 ZIP with a kernel"
+msgstr ""
+
+msgid "The download is no ZIP"
+msgstr ""
 
 msgid "The downloaded image differs from the catalog. Try again."
 msgstr "Завантажений образ відрізняється від каталогу. Спробуйте ще раз."
@@ -4958,6 +6434,9 @@ msgstr "Наявна оболонка ще не готова. Оновіть а�
 
 msgid "The existing shell session is still starting..."
 msgstr "Наявний сеанс оболонки ще запускається..."
+
+msgid "The facts beside this copy are missing"
+msgstr ""
 
 msgid "The file changed after it was checked"
 msgstr "Файл змінився після перевірки"
@@ -5034,6 +6513,15 @@ msgstr "Ліхтарик не відповів"
 msgid "The folder result was incomplete. Refresh before continuing."
 msgstr "Результат для теки неповний. Оновіть перед продовженням."
 
+msgid "The format confirmation does not match this data and filesystem. Formatting was not started."
+msgstr "Підтвердження форматування не відповідає цим даним і файловій системі. Форматування не почалося."
+
+msgid "The format confirmation expired. Verify the current Android password again."
+msgstr "Підтвердження форматування прострочено. Введіть правильний пароль Android знову."
+
+msgid "The format request was cancelled. Its authorization expires automatically."
+msgstr "Запит форматування скасовано. Дозвіл на видалення втратить чинність автоматично."
+
 msgid "The full installer status was not confirmed. Refresh before choosing an operation."
 msgstr "Повний стан інсталятора не підтверджено. Оновіть перед вибором операції."
 
@@ -5045,6 +6533,12 @@ msgstr "Помічник не описав образ."
 
 msgid "The helper did not return a result."
 msgstr "Помічник не повернув результат."
+
+msgid "The helper did not say where the image was put."
+msgstr ""
+
+msgid "The helper returned an incomplete result. Refresh before continuing."
+msgstr "Помічник повернув неповний результат. Оновіть стан."
 
 msgid "The helper verified bytes. This does not prove that the selected system boots."
 msgstr "Помічник перевірив байти. Це не доводить, що вибрана система запуститься."
@@ -5136,6 +6630,9 @@ msgstr "Підтвердження введення не збіглося. Оч�
 msgid "The installation could not be planned."
 msgstr "Не вдалося спланувати встановлення."
 
+msgid "The installed Android firmware and the SD card are kept. Android sets up encryption on its next start."
+msgstr "Прошивка та файли на SD залишаться."
+
 msgid "The installed root filesystem changes. /home stays shared; each system retains its own /etc and /var. BOOT is retained."
 msgstr "Встановлена коренева ФС змінюється. /home лишається спільним; кожна система має власні /etc і /var. BOOT зберігається."
 
@@ -5211,6 +6708,9 @@ msgstr "Ядро не є arm64 Image"
 msgid "The kernel keeps this partition read-only"
 msgstr "Ядро тримає цей розділ лише для читання"
 
+msgid "The kernel ZIP is larger than this recovery takes"
+msgstr ""
+
 msgid "THE KERNEL'S LAST LINES"
 msgstr "ОСТАННІ РЯДКИ ЯДРА"
 
@@ -5219,6 +6719,9 @@ msgstr "Останнє встановлення завершено з незал
 
 msgid "The last screenshot is still being saved"
 msgstr "Попередній знімок екрана ще зберігається"
+
+msgid "The last two modes reuse access only in the mode used for the last password check."
+msgstr "У двох останніх режимах доступ без пароля діє лише в режимі перевірки пароля."
 
 msgid "The link target was not returned. No target was opened."
 msgstr "Ціль посилання не отримано. Нічого не відкрито."
@@ -5265,11 +6768,20 @@ msgstr "У маніфесті вказано неприпустимий розд
 msgid "The mark that keeps this recovery did not stay in BOOT"
 msgstr "Мітка, що зберігає цей Recovery, не залишилася в BOOT"
 
+msgid "The media service did not start"
+msgstr "Медіаслужба не запустилася"
+
 msgid "The member before this one is not complete"
 msgstr "Попередній файл архіву не завершено"
 
 msgid "The modem stays as it is"
 msgstr "Модем лишається як є"
+
+msgid "The module change could not be reviewed."
+msgstr "Не вдалося перевірити зміну модуля."
+
+msgid "The modules already have the requested state."
+msgstr "Модулі вже мають потрібний стан."
 
 msgid "The name uses lowercase letters, digits, - and _. The password signs in and confirms sudo."
 msgstr "Ім'я — малі латинські літери, цифри, - і _. Пароль потрібен для входу й sudo."
@@ -5325,8 +6837,17 @@ msgstr "Відкритий розділ не відповідає super"
 msgid "The opened partition no longer matches super; unmount it, then open it again"
 msgstr "Відкритий розділ уже не відповідає super; розмонтуйте його й відкрийте знову"
 
+msgid "The operation holds storage alone: Files can read it again when the operation ends."
+msgstr "Операція тримає сховище лише для себе: Файли зможуть його прочитати, коли операція завершиться."
+
+msgid "The operation holds storage alone: play this file when it ends."
+msgstr "Операція тримає сховище лише для себе: відтворіть цей файл, коли вона завершиться."
+
 msgid "The operation or environment did not match the requested system action."
 msgstr "Операція чи середовище не збіглися із запитаною дією над системою."
+
+msgid "The operation result could not be confirmed. Refreshing the actual mount state. Do not submit the password again."
+msgstr "Результат операції не підтверджено. Оновлюємо фактичний стан монтування. Не надсилайте пароль повторно."
 
 msgid "The operation was stopped."
 msgstr "Операцію зупинено."
@@ -5397,6 +6918,9 @@ msgstr "Розділ super ще використовується"
 msgid "The partition of super is still mounted elsewhere"
 msgstr "Розділ super ще змонтовано деінде"
 
+msgid "The partition shrinks from %s to %s; super keeps the rest free."
+msgstr "Розділ зменшиться з %s до %s; решта super лишиться вільною."
+
 msgid "The partitions that differ are saved to a new copy first, then written and read back."
 msgstr "Розділи, що відрізняються, спершу зберігаються в нову копію, потім записуються й зчитуються для перевірки."
 
@@ -5444,6 +6968,12 @@ msgstr "Пропатчений BOOT не для цього телефона"
 
 msgid "The patched BOOT was not written"
 msgstr "Пропатчений BOOT не було створено"
+
+msgid "The path is hidden. After drawing, tap Unlock."
+msgstr "Лінію приховано. Після жесту натисніть «Розблокувати»."
+
+msgid "The payload has no such partition"
+msgstr ""
 
 msgid "The phone details are not available yet."
 msgstr "Дані про телефон поки недоступні."
@@ -5493,11 +7023,20 @@ msgstr "План заблоковано. Прочитайте повідомле
 msgid "The plan was discarded"
 msgstr "План відхилено"
 
+msgid "The prepared unlock expired. Restart recovery before entering the Android password again."
+msgstr "Час підготовленого розблокування минув. Перезапустіть recovery перед новим введенням пароля Android."
+
 msgid "The previous BOOT is kept on cache:"
 msgstr "Попередній BOOT збережено в cache:"
 
+msgid "The previous session has ended. Restart recovery to unlock Android again."
+msgstr "Дані відмонтовано або попередню спробу завершено. Перезапустіть recovery, щоб знову розблокувати Android."
+
 msgid "The private RAM work directory is unavailable."
 msgstr "Приватна робоча тека в RAM недоступна."
+
+msgid "The protection of this data could not be verified. Formatting is blocked."
+msgstr "Не вдалося підтвердити спосіб захисту даних. Форматування заблоковано."
 
 msgid "The ramdisk does not unpack to its end: the image is damaged or incomplete"
 msgstr "Ramdisk не розпаковується до кінця: образ пошкоджений або неповний"
@@ -5512,7 +7051,7 @@ msgid "The recovery settings could not be read. The password cannot be checked, 
 msgstr "Не вдалося прочитати налаштування recovery. Пароль не можна перевірити, тому recovery лишається заблокованим."
 
 msgid "The recovery's own folder stays"
-msgstr "Власна тека Recovery лишається"
+msgstr "Тека recovery залишиться"
 
 msgid "The regional file is of another version than the AP"
 msgstr "Регіональний файл іншої версії, ніж AP"
@@ -5541,14 +7080,14 @@ msgstr "Запитані розміри термінала не застосов
 msgid "The requested USB export or stop was not confirmed. Inspect and refresh the current state before continuing."
 msgstr "Запитаний USB-експорт чи зупинку не підтверджено. Перевірте й оновіть поточний стан перед продовженням."
 
-msgid "the rest of the card"
-msgstr "решта картки"
-
 msgid "The restore inside the system did not finish"
 msgstr "Відновлення всередині системи не завершилося"
 
 msgid "The result of the write could not be confirmed."
 msgstr "Результат запису не вдалося підтвердити."
+
+msgid "The reviewed module markers will be changed. Android applies module state on its next boot."
+msgstr "Буде змінено перевірені маркери модулів. Android застосує стан при наступному запуску."
 
 msgid "The reviewed restore completed and was verified. Userdata remains offline."
 msgstr "Відновлення завершено й перевірено. Userdata лишається розмонтованим."
@@ -5583,11 +7122,23 @@ msgstr "Екран вимикається, коли телефона не тор
 msgid "The script gets A22X_OS_ID and A22X_PACKAGE_MANAGER (apt, dnf, pacman or zypper) and can install packages with a22x-install."
 msgstr "Скрипт отримує A22X_OS_ID і A22X_PACKAGE_MANAGER (apt, dnf, pacman або zypper) і може встановлювати пакети командою a22x-install."
 
+msgid "The SD card is in use. Close the operation using it and try again."
+msgstr "SD-карта зайнята. Завершіть операцію, яка її використовує, і спробуйте ще раз."
+
+msgid "The SD card is open elsewhere. Close it in Files or USB sharing, then try again."
+msgstr "SD-карта відкрита деінде. Закрийте її у «Файлах» або спільному доступі USB і спробуйте ще раз."
+
 msgid "The selected entry was not returned. Inspect it again before continuing."
 msgstr "Вибраний запис не отримано. Перегляньте його ще раз перед продовженням."
 
 msgid "The selected journal changed. Inspect the refreshed installation status."
 msgstr "Вибраний журнал змінився. Перегляньте оновлений стан встановлення."
+
+msgid "The selected script could not be verified in recovery."
+msgstr "Не вдалося перевірити вибраний скрипт у recovery."
+
+msgid "The selected volume is in use. Close the operation using it and try again."
+msgstr "Вибраний том зайнятий. Завершіть операцію, яка його використовує, і спробуйте ще раз."
 
 msgid "The server no longer offers this image. Choose another one."
 msgstr "Сервер більше не пропонує цей образ. Виберіть інший."
@@ -5640,6 +7191,9 @@ msgstr "SuperKey має містити від 8 до 63 символів без 
 msgid "The switch is journaled, not fully atomic. If interrupted, return to Systems and choose Resume or Rollback. Linux boot remains blocked until the journal completes."
 msgstr "Перемикання журнальоване, але не повністю атомарне. Якщо його перервано, поверніться до Систем і виберіть продовження чи відкат. Запуск Linux заблоковано до завершення журналу."
 
+msgid "The system image exceeds the automatic 64 MiB rollback limit. A complete previous image set is required."
+msgstr ""
+
 msgid "The system manager did not return a valid result."
 msgstr "Менеджер систем не повернув дійсного результату."
 
@@ -5649,11 +7203,20 @@ msgstr "Помічник менеджера систем не налаштова
 msgid "The system on userdata could not be read"
 msgstr "Систему на userdata не вдалося прочитати"
 
+msgid "The system or the image changed since the review. Review it again"
+msgstr ""
+
 msgid "The system transaction completed. Read the refreshed active system before restarting Linux."
 msgstr "Транзакцію системи завершено. Перегляньте оновлену активну систему перед перезапуском Linux."
 
 msgid "The system was removed. /home and the active system stay."
 msgstr "Систему видалено. /home і активна система лишаються."
+
+msgid "The system was written and checked; apps, their data and root stay. The first start takes a few minutes."
+msgstr "Систему записано й перевірено; застосунки, їхні дані й root лишаються. Перший запуск триває кілька хвилин."
+
+msgid "The target build has no qualified recovery decrypt profile."
+msgstr ""
 
 msgid "The terminal helper did not return a valid response."
 msgstr "Помічник термінала не повернув дійсної відповіді."
@@ -5664,14 +7227,26 @@ msgstr "Палітра термінала повинна мати 16 кольо�
 msgid "The terminal session, boot, operation or storage lease was not confirmed. Refresh before continuing."
 msgstr "Сеанс термінала, запуск, операцію чи блокування носія не підтверджено. Оновіть перед продовженням."
 
-msgid "The terminal text would be too hard to read"
-msgstr "Текст у терміналі було б важко читати"
-
 msgid "The theme file is too large"
 msgstr "Файл теми завеликий"
 
 msgid "The theme helper did not return a valid result."
 msgstr "Помічник тем не повернув правильного результату."
+
+msgid "The theme was removed"
+msgstr ""
+
+msgid "The unlocked session was not confirmed. Refresh the volume state."
+msgstr "Розблокування сесії не підтверджено. Оновіть стан розділу."
+
+msgid "The unmount result was not confirmed. Refresh the volume state."
+msgstr "Результат розмонтування не підтверджено. Оновіть стан розділу."
+
+msgid "The unmounted session was not confirmed. Refresh the volume state."
+msgstr "Стан розмонтованої сесії не підтверджено. Оновіть стан розділу."
+
+msgid "The USB drive is in use. Close the operation using it and try again."
+msgstr "USB-накопичувач зайнятий. Завершіть операцію, яка його використовує, і спробуйте ще раз."
 
 msgid "The USB file helper returned an incomplete state. Refresh before changing sharing."
 msgstr "Помічник USB-файлів повернув неповний стан. Оновіть перед зміною доступу."
@@ -5691,11 +7266,23 @@ msgstr "Хеш vbmeta не відповідає вмісту"
 msgid "The vbmeta partition cannot be read as an AVB image, so whether verification is off is not known"
 msgstr "Розділ vbmeta не читається як образ AVB, тож невідомо, чи вимкнено перевірку"
 
+msgid "The vendor's fstab is changed to ask for no encryption: anyone holding the phone can read Android's data, and this recovery copies it without a password."
+msgstr "fstab у vendor змінюється, щоб не просити шифрування: будь-хто з телефоном у руках зможе прочитати дані Android, а це recovery копіює їх без пароля."
+
+msgid "The volume changed while this page was open. Refreshing its current state. Review it before trying again."
+msgstr "Розділ змінився, поки ця сторінка була відкрита. Оновлюємо його стан. Перевірте його перед новою спробою."
+
 msgid "The volume has too little free space for the backup"
 msgstr "На томі замало вільного місця для копії"
 
 msgid "The volume ran out of space while the archive was written"
 msgstr "Під час запису архіву на томі скінчилося місце"
+
+msgid "THE WAY BACK"
+msgstr "ШЛЯХ НАЗАД"
+
+msgid "The way back: this system's own image, checked first"
+msgstr "Шлях назад: власний образ цієї системи, перевіряється першим"
 
 msgid "The whole image of all of them"
 msgstr "Цілий образ з усіма ними"
@@ -5739,8 +7326,14 @@ msgstr "ZIP пошкоджено"
 msgid "The ZIP's own script decides what is written. It can reach only these partitions:"
 msgstr "Що буде записано, вирішує власний скрипт ZIP. Йому доступні лише ці розділи:"
 
+msgid "Their dark version; others darkened"
+msgstr "Їхня темна версія; інші затемнюються"
+
 msgid "THEIR INSTALLERS RUN AS ROOT"
 msgstr "ІНСТАЛЯТОРИ ПРАЦЮЮТЬ З ПРАВАМИ ROOT"
+
+msgid "Thema konnte nicht gespeichert werden."
+msgstr ""
 
 msgid "Theme"
 msgstr "Тема"
@@ -5751,8 +7344,14 @@ msgstr "Тему додано"
 msgid "Theme file"
 msgstr "Файл теми"
 
+msgid "Theme name"
+msgstr ""
+
 msgid "Theme removed"
 msgstr "Тему вилучено"
+
+msgid "Themenname"
+msgstr ""
 
 msgid "There is no Android boot image header"
 msgstr "Немає заголовка образу boot Android"
@@ -5772,8 +7371,14 @@ msgstr "У розділі vbmeta немає AVB vbmeta"
 msgid "There is no Linux system on userdata"
 msgstr "На userdata немає системи Linux"
 
+msgid "There is no room on this volume for the image of this partition"
+msgstr ""
+
 msgid "There is no room to keep the old content first: free space on cache or insert a card"
 msgstr "Немає місця, щоб спершу зберегти старий вміст: звільніть місце на cache або вставте картку"
+
+msgid "There is no way back yet: insert an SD card or a USB drive with room for a copy of the system."
+msgstr "Шляху назад ще немає: вставте SD-картку чи USB-накопичувач із місцем для копії системи."
 
 msgid "There is not enough space beside the retained system"
 msgstr "Поруч зі збереженою системою недостатньо місця"
@@ -5816,6 +7421,9 @@ msgstr "Цьому Android потрібне новіше ядро, ніж ядр
 
 msgid "This Android needs kernel %s or newer. The Android kernel of this phone is older, so Android restarts the phone on every start."
 msgstr "Цьому Android потрібне ядро %s або новіше. Ядро Android цього телефона старіше, тож Android перезапускає телефон під час кожного запуску."
+
+msgid "This Android profile is unsupported."
+msgstr "Цей профіль Android не підтримується."
 
 msgid "This backup belongs to another phone. Restoring it would give this phone a foreign identity"
 msgstr "Ця копія належить іншому телефону. Її відновлення дало б цьому телефону чужу ідентичність"
@@ -5862,8 +7470,23 @@ msgstr "Дані Android у цій копії належать іншому те
 msgid "This creates an empty filesystem, not secure erasure. The saved snapshot remains on SD. Recovery does not reboot automatically."
 msgstr "Це створює порожню ФС, а не надійне стирання. Збережений знімок лишається на SD. Recovery не перезапускається автоматично."
 
+msgid "This credential supports read-only access."
+msgstr "Для цього блокування доступне лише читання."
+
+msgid "This credential supports read-only access. Choose Mount read-only."
+msgstr "Для цього способу блокування доступне лише читання. Виберіть «Монтувати лише для читання»."
+
+msgid "This data has no supported Android password. Formatting was not authorized."
+msgstr "Ці дані не мають підтримуваного пароля Android. Форматування не дозволено."
+
 msgid "This deletes the selected file or empty folder. There is no undo."
 msgstr "Це видаляє вибраний файл або порожню теку. Скасування немає."
+
+msgid "This device: Mainline Recovery"
+msgstr "Цей пристрій: Mainline Recovery"
+
+msgid "This file cannot be opened"
+msgstr "Цей файл не вдається відкрити"
 
 msgid "This file has no terminal colors"
 msgstr "У цьому файлі немає кольорів термінала"
@@ -5907,6 +7530,9 @@ msgstr "Цей файл не є образом recovery для A22x"
 msgid "This file is not an Android boot image"
 msgstr "Це не завантажувальний образ Android"
 
+msgid "This filesystem is not offered for files"
+msgstr ""
+
 msgid "This firmware cannot be installed"
 msgstr "Цю прошивку неможливо встановити"
 
@@ -5921,6 +7547,9 @@ msgstr "dtbo або vbmeta цієї прошивки відрізняються 
 
 msgid "This folder is empty."
 msgstr "Ця тека порожня."
+
+msgid "This format confirmation was already used or cancelled. Data will not be erased again by this request."
+msgstr "Це підтвердження форматування вже використано або скасовано. Цей запит не видалятиме дані повторно."
 
 msgid "This image brings no vbmeta: install a GSI ZIP with vbmeta.img first."
 msgstr "Цей образ не містить vbmeta: спершу встановіть GSI ZIP із vbmeta.img."
@@ -5946,8 +7575,8 @@ msgstr "Цей інсталятор — програма: вона може са
 msgid "This is a recovery image, not a boot image"
 msgstr "Це образ recovery, а не boot"
 
-msgid "This is an update for phones with two system slots (payload.bin). This phone has one: choose a ROM made for it, or a system image."
-msgstr "Це оновлення для телефонів із двома системними слотами (payload.bin). У цього телефона слот один: виберіть ROM, зроблений для нього, або образ системи."
+msgid "This is an update_engine package (payload.bin). Its partitions are flashed one by one: open Flash a partition and choose this file; an incremental update is built from the partitions installed here."
+msgstr "Це пакет update_engine (payload.bin). Його розділи прошиваються по одному: відкрийте «Прошити розділ» і виберіть цей файл; інкрементне оновлення збирається з розділів, встановлених на телефоні."
 
 msgid "This is Android 15 or newer. Google's own builds need kernel 4.19 and restart for ever on this phone's Android kernel 4.14; ROMs made for older phones (Treble GSIs) start."
 msgstr "Це Android 15 або новіший. Власні збірки Google потребують ядра 4.19 і на ядрі Android цього телефона (4.14) перезапускаються без кінця; ROM, зроблені для старіших телефонів (Treble GSI), запускаються."
@@ -5994,6 +7623,12 @@ msgstr "Ця назва належить вбудованій темі"
 msgid "This network is not saved."
 msgstr "Цю мережу не збережено."
 
+msgid "This pair of Android builds has not passed hardware qualification."
+msgstr ""
+
+msgid "This pair was checked with another BOOT, vendor or encryption than this phone has now: install it with the data erased."
+msgstr "Цю пару перевірено з іншим BOOT, vendor або шифруванням, ніж зараз на телефоні: встановіть її зі стиранням даних."
+
 msgid "This partition is already used by another block mapping"
 msgstr "Цей розділ уже зайнятий іншим блоковим відображенням"
 
@@ -6002,6 +7637,9 @@ msgstr "Цей розділ не оцінюється за вмістом"
 
 msgid "This partition is too large to save first"
 msgstr "Цей розділ завеликий для попереднього збереження"
+
+msgid "This partition of the payload is not written by this recovery"
+msgstr ""
 
 msgid "This phone"
 msgstr "Цей телефон"
@@ -6045,6 +7683,9 @@ msgstr "Це recovery лишається встановленим, тож мож
 msgid "This recovery, from a new image"
 msgstr "Цей recovery, з нового образу"
 
+msgid "This report does not install Android. A qualified pair of builds is required before an update can preserve data."
+msgstr "Цей звіт не встановлює Android. Оновлення зі збереженням даних потребує перевіреної пари збірок."
+
 msgid "This ROM writes logical partitions super does not have: "
 msgstr "Цей ROM пише логічні розділи, яких немає в super: "
 
@@ -6057,6 +7698,9 @@ msgstr "Ця невелика контрольна точка окрема ві�
 msgid "This step cannot be stopped safely."
 msgstr "Цей крок не можна безпечно зупинити."
 
+msgid "This system and this image are not a pair checked on this phone: install it with the data erased."
+msgstr "Ця система й цей образ не є парою, перевіреною на цьому телефоні: встановіть його зі стиранням даних."
+
 msgid "This system cannot read the saved password of this account. Choose New user with the same name and enter the password again."
 msgstr "Ця система не може прочитати збережений пароль цього облікового запису. Оберіть «Новий користувач» з тим самим ім'ям і введіть пароль ще раз."
 
@@ -6065,6 +7709,9 @@ msgstr "Цю систему встановлено для іншого ядра 
 
 msgid "This system's package manager is not known here: the packages were not installed."
 msgstr "Менеджер пакетів цієї системи тут невідомий: пакети не встановлено."
+
+msgid "This update cannot keep the data"
+msgstr ""
 
 msgid "This uses a normal unmount. Busy filesystems are refused. The backup destination stays mounted and userdata remains offline until you choose to mount it again in Files."
 msgstr "Використовується звичайне розмонтування. Зайняті ФС відхиляються. Місце для копій лишається змонтованим, а userdata — розмонтованим, поки ви знову не змонтуєте його у Файлах."
@@ -6108,8 +7755,14 @@ msgstr "Четвер"
 msgid "Time zone"
 msgstr "Часовий пояс"
 
+msgid "title "
+msgstr ""
+
 msgid "TO"
 msgstr "КУДИ"
+
+msgid "To change access mode, unmount data and restart recovery. Then choose the mode before entering the password."
+msgstr "Щоб змінити режим доступу, відмонтуйте дані та перезапустіть recovery. Потім виберіть потрібний режим перед введенням пароля."
 
 msgid "To: %.100s  /  %s free"
 msgstr "Куди: %.100s  /  вільно %s"
@@ -6120,6 +7773,9 @@ msgstr "Куди: %.170s"
 msgid "Too many attempts. Try again in %u s"
 msgstr "Забагато спроб. Спробуйте за %u с"
 
+msgid "Too many attempts. Wait for the timer before trying again."
+msgstr "Забагато спроб. Зачекайте завершення таймера перед новою спробою."
+
 msgid "Too many files are selected at once"
 msgstr "Вибрано забагато файлів одразу"
 
@@ -6128,6 +7784,15 @@ msgstr "забагато файлів, щоб полічити"
 
 msgid "Too many files together: choose fewer parts"
 msgstr "Разом забагато файлів: виберіть менше частин"
+
+msgid "TOOLS"
+msgstr "ІНСТРУМЕНТИ"
+
+msgid "Tools"
+msgstr "Інструменти"
+
+msgid "Total file size: %s"
+msgstr "Загальний розмір файлів: %s"
 
 msgid "Touch panel"
 msgstr "Сенсорна панель"
@@ -6150,6 +7815,9 @@ msgstr "Спробувати ще раз"
 msgid "Tuesday"
 msgstr "Вівторок"
 
+msgid "Turn Bluetooth on to use headphones, keyboards and mice."
+msgstr "Увімкніть Bluetooth, щоб користуватися навушниками, клавіатурами й мишами."
+
 msgid "Turn the phone off"
 msgstr "Вимкнути телефон"
 
@@ -6162,11 +7830,17 @@ msgstr "Увімкнення Wi-Fi..."
 msgid "Two files bring the same partition. Keep one firmware in the folder."
 msgstr "Два файли містять той самий розділ. Залиште в теці одну прошивку."
 
+msgid "TWRP- / OrangeFox-Sicherung prüfen"
+msgstr ""
+
 msgid "Type"
 msgstr "Тип"
 
 msgid "Type it once more."
 msgstr "Введіть ще раз."
+
+msgid "Type this code on the keyboard and press Enter"
+msgstr "Введіть цей код на клавіатурі й натисніть Enter"
 
 msgid "UART console"
 msgstr "Консоль UART"
@@ -6195,11 +7869,17 @@ msgstr "Невідомий елемент дерева пристроїв"
 msgid "Unknown kind of backup"
 msgstr "Невідомий вид копії"
 
+msgid "Unknown kind of files"
+msgstr ""
+
 msgid "Unknown phone"
 msgstr "Невідомий телефон"
 
 msgid "Unlock"
 msgstr "Розблокувати"
+
+msgid "Unlock Android Data with write access in Files, then return here."
+msgstr "У розділі «Файли» розблокуйте дані Android і відкрийте доступ на запис. Потім поверніться сюди."
 
 msgid "Unlocked"
 msgstr "Розблоковано"
@@ -6207,17 +7887,41 @@ msgstr "Розблоковано"
 msgid "Unmount"
 msgstr "Від'єднати"
 
+msgid "Unmount and restart recovery to change access mode."
+msgstr "Відмонтуйте дані та перезапустіть recovery для зміни режиму."
+
+msgid "Unmount Android data and review"
+msgstr "Відмонтувати дані Android і переглянути план"
+
+msgid "Unmount data first"
+msgstr "Спочатку відмонтуйте дані"
+
+msgid "Unmount data, then choose read-only or read and write. Recovery can stay running."
+msgstr "Розмонтуйте дані й виберіть читання або читання та запис. Перезапуск recovery не потрібен."
+
+msgid "Unmount data, then choose the access mode."
+msgstr "Розмонтуйте дані, а потім виберіть режим доступу."
+
 msgid "Unmount the card in Files first"
 msgstr "Спершу відмонтуйте картку у «Файлах»"
 
 msgid "Unmount the volume before checking it"
 msgstr "Відмонтуйте том перед перевіркою"
 
+msgid "Unmount the volume before formatting it."
+msgstr "Відмонтуйте том перед форматуванням."
+
+msgid "Unmount to change mode"
+msgstr "Після розмонтування"
+
 msgid "Unmount userdata normally in Files before planning stock. All target partitions must be offline. Keep microSD mounted with write access. The installer verifies the current Linux backup, source and phone identity."
 msgstr "Звичайно розмонтуйте userdata у Файлах перед плануванням стоку. Усі цільові розділи мають бути офлайн. Тримайте microSD змонтованою із записом. Інсталятор перевіряє поточну копію Linux, джерело та ідентичність телефона."
 
 msgid "Unmount userdata, then review a fresh plan?"
 msgstr "Розмонтувати userdata і переглянути новий план?"
+
+msgid "Unmounted. Restart recovery before unlocking again."
+msgstr "Відмонтовано. Для нового розблокування перезапустіть recovery."
 
 msgid "Unpacking"
 msgstr "Розпакування"
@@ -6231,6 +7935,9 @@ msgstr "Розпакування прошивки треба підтверди�
 msgid "Unpacking the system image"
 msgstr "Розпакування образу системи"
 
+msgid "Unpacking the update"
+msgstr "Розпакування оновлення"
+
 msgid "Unsupported"
 msgstr "Не підтримується"
 
@@ -6239,6 +7946,9 @@ msgstr "Вгору"
 
 msgid "Up to 64 Latin letters, digits, dots, hyphens and underscores; the first is a letter or a digit."
 msgstr "До 64 латинських літер, цифр, крапок, дефісів і підкреслень; перший символ — літера або цифра."
+
+msgid "Update and keep the data"
+msgstr "Оновити, зберігши дані"
 
 msgid "Update BOOT"
 msgstr "Оновити BOOT"
@@ -6255,6 +7965,12 @@ msgstr "Оновлено з серверів: %u"
 msgid "Updates"
 msgstr "Оновлення"
 
+msgid "Uptime"
+msgstr "Час роботи"
+
+msgid "USB"
+msgstr ""
+
 msgid "USB address unavailable"
 msgstr "Адреса USB недоступна"
 
@@ -6266,6 +7982,12 @@ msgstr "USB-накопичувач"
 
 msgid "USB files"
 msgstr "USB-файли"
+
+msgid "USB files is sharing a volume with the computer. Stop it, then try again."
+msgstr "USB-файли ділять том із комп'ютером. Зупиніть спільний доступ і спробуйте ще раз."
+
+msgid "USB files shares a volume and a command runs in the terminal. Stop either, then try again."
+msgstr "USB-файли ділять том, а в терміналі виконується команда. Зупиніть одне з них і спробуйте ще раз."
 
 msgid "USB files stopped: cable removed"
 msgstr "USB-файли зупинено: кабель від'єднано"
@@ -6287,6 +8009,9 @@ msgstr "Використайте щонайменше 4 символи"
 
 msgid "Use exactly four octal digits, for example 0644 or 0755."
 msgstr "Використовуйте рівно чотири вісімкові цифри, наприклад 0644 або 0755."
+
+msgid "Use the installed framework's Android app. The recovery module manager "
+msgstr ""
 
 msgid "Use this script"
 msgstr "Використати цей скрипт"
@@ -6396,8 +8121,11 @@ msgstr "Userdata немає у свіжому списку томів. Онов�
 msgid "Userdata wiped"
 msgstr "Userdata очищено"
 
-msgid "userdata, cache or an SD card, in Files"
-msgstr "userdata, кеш або SD-картка — у «Файлах»"
+msgid "UTILITIES"
+msgstr "УТИЛІТИ"
+
+msgid "Utilities and settings."
+msgstr "Утиліти й налаштування."
 
 msgid "V"
 msgstr "В"
@@ -6410,6 +8138,12 @@ msgstr "У vbmeta увімкнено перевірку, а завантажув
 
 msgid "vbmeta prepared"
 msgstr "vbmeta підготовлено"
+
+msgid "vbmeta still verifies the vendor: Android's data without encryption needs verification off (Root prepares it)."
+msgstr "vbmeta досі перевіряє vendor: дані Android без шифрування потребують вимкненої перевірки (її готує сторінка Root)."
+
+msgid "Verification before formatting"
+msgstr "Перевірка перед форматуванням"
 
 msgid "Verification is already disabled"
 msgstr "Перевірку вже вимкнено"
@@ -6441,17 +8175,32 @@ msgstr "Дані перевіреного завантаження для system
 msgid "Verified boot data for vendor"
 msgstr "Дані перевіреного завантаження для vendor"
 
+msgid "Verified check"
+msgstr "Перевірку пройдено"
+
 msgid "VERIFIED IDENTICAL / SKIPPED"
 msgstr "ПЕРЕВІРЕНО ОДНАКОВІ / ПРОПУЩЕНО"
 
 msgid "Verified write receipt. No automatic reboot."
 msgstr "Звіт про запис перевірено. Автоматичного перезапуску немає."
 
+msgid "Verified: this volume has no Android encryption."
+msgstr "Підтверджено: розділ без шифрування Android."
+
 msgid "Verify"
 msgstr "Перевірка"
 
 msgid "Verify backup"
 msgstr "Перевірити копію"
+
+msgid "Verify before formatting"
+msgstr "Перевірити перед форматуванням"
+
+msgid "Verify password"
+msgstr "Перевірити пароль"
+
+msgid "Verify the current Android password before formatting data."
+msgstr "Перед форматуванням даних перевірте поточний пароль Android."
 
 msgid "Verify this backup"
 msgstr "Перевірити цю копію"
@@ -6465,8 +8214,20 @@ msgstr "Перевірка"
 msgid "Vibration"
 msgstr "Вібрація"
 
+msgid "Video"
+msgstr "Відео"
+
+msgid "video %d %d\n"
+msgstr ""
+
 msgid "Video player"
 msgstr "Відеоплеєр"
+
+msgid "video="
+msgstr ""
+
+msgid "Videos you add from Files show here."
+msgstr "Тут з’являються відео, додані з «Файлів»."
 
 msgid "VISIBLE NETWORKS"
 msgstr "ВИДИМІ МЕРЕЖІ"
@@ -6483,6 +8244,9 @@ msgstr "ТОМ"
 msgid "Volume"
 msgstr "Том"
 
+msgid "volume %d\n"
+msgstr ""
+
 msgid "Volume settings"
 msgstr "Параметри тому"
 
@@ -6492,8 +8256,11 @@ msgstr "Том недоступний"
 msgid "Volume unmounted"
 msgstr "Том розмонтовано"
 
-msgid "VOLUMES"
-msgstr "ТОМИ"
+msgid "wait a moment"
+msgstr ""
+
+msgid "Wait before trying again"
+msgstr "Зачекайте перед новою спробою"
 
 msgid "Wait for the current operation to finish."
 msgstr "Зачекайте, доки завершиться поточна операція."
@@ -6504,11 +8271,20 @@ msgstr "Очікування бекенда"
 msgid "Waiting for the terminal supervisor to exit..."
 msgstr "Очікування завершення супервізора термінала..."
 
+msgid "Waiting..."
+msgstr "Очікування..."
+
 msgid "Warm wood and a quiet river"
 msgstr "Тепле дерево і тиха річка"
 
 msgid "Weather"
 msgstr "Погода"
+
+msgid "Web and catalog"
+msgstr "Сайти й каталог"
+
+msgid "Web engine unavailable"
+msgstr "Вебрушій недоступний"
 
 msgid "Wednesday"
 msgstr "Середа"
@@ -6516,11 +8292,17 @@ msgstr "Середа"
 msgid "WHAT HAPPENS NEXT"
 msgstr "ЩО БУДЕ ДАЛІ"
 
+msgid "What is installed, and what to install or change."
+msgstr "Що встановлено і що можна встановити чи змінити."
+
 msgid "What its kernel wrote before the phone restarted."
 msgstr "Що записало його ядро перед перезапуском телефона."
 
-msgid "What this system lacks for the phone is built on it (Arch: Phosh's compositor fix and Phrog), up to 45 minutes. Keep the phone powered."
-msgstr "Те, чого цій системі бракує для телефона, збирається в ній самій (Arch: виправлення композитора Phosh і Phrog), до 45 хвилин. Не вимикайте телефон."
+msgid "What this system lacks for the phone is added on it (Arch: Phosh's compositor fix, built in 5-10 minutes; Phrog from its package, or built when none matches). Keep the phone powered."
+msgstr "Те, чого цій системі бракує для телефона, додається в ній самій (Arch: виправлення композитора Phosh збирається 5–10 хвилин; Phrog — з готового пакета або збирається, якщо пакета немає). Не вимикайте телефон."
+
+msgid "When recovery starts"
+msgstr "На початку recovery"
 
 msgid "When the installation starts, every Linux system and /home on userdata are erased. Make a backup first if you need them."
 msgstr "Коли почнеться встановлення, усі системи Linux і /home на userdata буде стерто. Якщо вони потрібні, спершу зробіть резервну копію."
@@ -6530,6 +8312,9 @@ msgstr "Якщо так щоразу, встановлений Android не па
 
 msgid "Where is the file?"
 msgstr "Де файл?"
+
+msgid "Where should %s go? Tap the partition; system, vendor, product and odm are inside super."
+msgstr "Куди записати %s? Торкніться розділу; system, vendor, product і odm — всередині super."
 
 msgid "While the shell is open, other storage operations wait for this terminal to close."
 msgstr "Поки оболонка відкрита, інші операції з носіями чекають на закриття термінала."
@@ -6554,6 +8339,15 @@ msgstr "Мережа Wi-Fi"
 
 msgid "Wi-Fi: %s  /  script: %s"
 msgstr "Wi-Fi: %s  /  скрипт: %s"
+
+msgid "width="
+msgstr ""
+
+msgid "Wikipedia"
+msgstr ""
+
+msgid "WILL BE ERASED"
+msgstr "БУДЕ ВИДАЛЕНО"
 
 msgid "Wipe"
 msgstr "Очищення"
@@ -6615,6 +8409,9 @@ msgstr "Запис"
 msgid "Writing a partition must be confirmed"
 msgstr "Запис розділу треба підтвердити"
 
+msgid "Writing root, adb keys and settings"
+msgstr "Запис root, ключів adb і налаштувань"
+
 msgid "Writing the Linux BOOT"
 msgstr "Запис Linux BOOT"
 
@@ -6648,6 +8445,9 @@ msgstr "Ваші облікові записи та налаштування /ho
 msgid "Your own files and settings, without the system."
 msgstr "Ваші файли й налаштування, без системи."
 
+msgid "YouTube"
+msgstr ""
+
 msgid "ZIP with an installer"
 msgstr "ZIP з інсталятором"
 
@@ -6656,4 +8456,28 @@ msgstr "Зум"
 
 msgid "Zoom with blur"
 msgstr "Зум із блюром"
+
+msgid "|ZXCVBNM<>?"
+msgstr ""
+
+msgid "Введіть назву до 47 байтів UTF-8."
+msgstr ""
+
+msgid "На Android"
+msgstr ""
+
+msgid "Нова система: root, adb, програми"
+msgstr ""
+
+msgid "Перевірити копію TWRP / OrangeFox"
+msgstr ""
+
+msgid "Перевірка копії Data"
+msgstr ""
+
+msgid "Перемкнути Android"
+msgstr ""
+
+msgid "Файли: APK"
+msgstr ""
 

@@ -1,5 +1,4 @@
-/* SPDX-License-Identifier: MIT — the real job pipeline: the catalog list, then the server check its
-   completion starts. A stand-in "python" prints the replies of distro.py (2026-11-08 phone bug). */
+/* SPDX-License-Identifier: MIT — listing the catalog and asking for a server check. */
 #define main recovery_ui_program_main
 #include "recovery_ui.c"
 #undef main
@@ -13,7 +12,10 @@ int main(int argc,char**argv){
     App*a=calloc(1,sizeof(*a));if(!a)return 2;initialize(a);a->device=true;copy(a->python,sizeof(a->python),script);copy(a->distro_helper,sizeof(a->distro_helper),"/opt/a22x-recovery/distro.py");
     screen(a,SYSTEMS_CATALOG);if(!start_catalog_job(a))return 3;
     uint64_t deadline=milliseconds()+10000;
-    while((a->job.pid||!a->catalog_check_done)&&milliseconds()<deadline){a->now=milliseconds();poll_job(a);struct timespec p={0,1000000};nanosleep(&p,NULL);}
+    while(a->job.pid&&milliseconds()<deadline){a->now=milliseconds();poll_job(a);struct timespec p={0,1000000};nanosleep(&p,NULL);}
+    if(a->job.pid||a->catalog_check_done||a->catalog_checked||a->catalog_count!=1)return 4;
+    if(!installer_action(a,A_CATALOG_REFRESH)||a->job.kind!=J_CATALOG_CHECK)return 5;
+    while(a->job.pid&&milliseconds()<deadline){a->now=milliseconds();poll_job(a);struct timespec p={0,1000000};nanosleep(&p,NULL);}
     bool good=a->catalog_check_done&&a->catalog_servers==10&&a->catalog_failed==0&&a->catalog_count==1;
     printf("{\"ok\":%s,\"check_done\":%d,\"servers\":%u,\"failed\":%u}\n",good?"true":"false",a->catalog_check_done,a->catalog_servers,a->catalog_failed);
     free(a->pixels);free(a);return good?0:1;

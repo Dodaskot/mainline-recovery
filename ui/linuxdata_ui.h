@@ -164,7 +164,7 @@ static void render_linux_data(App*a){
     else copy(label,sizeof(label),tr("Insert an SD card or attach a USB drive"));
     raw_text(true);button(a,(Rect){28,722,664,72},label,A_LD_DEST,ui_free(a)&&a->ld_dest_count>1,false,0);raw_text(false);
     bool fits=ld_fits(a);
-    button(a,(Rect){28,806,664,92},fits?"Hold 2 seconds: back up":"Too many files together: choose fewer parts",A_LD_BACKUP,ui_free(a)&&a->ld_linux&&ld_selection(a)&&fits&&a->ld_dest_count>0,true,2000);
+    button(a,(Rect){28,806,664,92},fits?"Hold 1 second: back up":"Too many files together: choose fewer parts",A_LD_BACKUP,ui_free(a)&&a->ld_linux&&ld_selection(a)&&fits&&a->ld_dest_count>0,true,2000);
     text(a,34,918,0,ORANGE,"BACKUPS ON CARDS AND STICKS");
     if(!a->ld_archive_count)text(a,34,962,0,MUTED,"None found");
     /* 2026-11-13 review: only the first three were drawn; the rest are on further pages. */
@@ -191,7 +191,8 @@ static void render_linux_data_restore(App*a){
     human_bytes(x->bytes,size,sizeof(size));snprintf(line,sizeof(line),"%s  /  %s  /  %.60s",when,size,x->label);
     raw_text(true);ellipsis(a,52,290,616,1,TEXT,x->os[0]?x->os:x->name);ellipsis(a,52,338,616,0,MUTED,line);ellipsis(a,52,378,616,0,MUTED,x->accounts);raw_text(false);
     rounded(a,(Rect){28,448,664,104},24,PANEL);text(a,52,464,0,ORANGE,"INTO");
-    raw_text(true);ellipsis(a,52,500,616,1,a->ld_linux?TEXT:RED,a->ld_linux?(a->ld_os[0]?a->ld_os:"Linux"):tr("No Linux system on userdata"));raw_text(false);
+    const char*system=a->ld_linux?(a->ld_os[0]?a->ld_os:"Linux"):tr("No Linux system on userdata");  /* tr() keeps raw text as it is */
+    raw_text(true);ellipsis(a,52,500,616,1,a->ld_linux?TEXT:RED,system);raw_text(false);
     int y=568;
     for(unsigned int n=0;n<LD_PARTS;n++){
         if(!(x->parts&(1u<<n)))continue;
@@ -199,7 +200,7 @@ static void render_linux_data_restore(App*a){
         ld_row(a,y,ld_part_titles[n],detail,(a->ld_restore_parts>>n)&1u,a->ld_linux,A_LD_RPART+(int)n);y+=86;
     }
     text_tile(a,y+8,0,MUTED,"Files of the same name are replaced; nothing else in the system is removed. Accounts that are missing are made with their passwords. Packages are installed over Wi-Fi under the names this system gives them.",6);
-    button(a,(Rect){28,1320,664,104},"Hold 3 seconds: restore",A_LD_RESTORE,ui_free(a)&&a->ld_linux&&(a->ld_restore_parts&x->parts),true,3000);
+    button(a,(Rect){28,1320,664,104},"Hold 1 second: restore",A_LD_RESTORE,ui_free(a)&&a->ld_linux&&(a->ld_restore_parts&x->parts),true,3000);
 }
 static bool ld_action(App*a,int id){
     if(id==A_LD){if(ui_free(a)){a->ld_known=false;a->ld_page=0;if(!a->ld_parts)a->ld_parts=15u;screen(a,LINUX_DATA);start_ld_job(a,J_LD_INSPECT);}return true;}

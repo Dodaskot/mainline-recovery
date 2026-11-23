@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -71,7 +72,14 @@ def progress(event):
     print(json.dumps(event, separators=(",", ":"), ensure_ascii=True), file=sys.stderr, flush=True)
 
 
+def _cancelled(signum, frame):
+    """Cancel from the interface (SIGTERM): an exit that runs the operation's own cleanup, which the default
+    action skipped (2026-11-22, live: a cancelled Linux copy left its data and no FAILED.json)."""
+    raise SystemExit(128 + signum)
+
+
 def main(argv=None):
+    signal.signal(signal.SIGTERM, _cancelled)
     operation = "unknown"
     try:
         args = parser().parse_args(argv)

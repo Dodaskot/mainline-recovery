@@ -1,0 +1,38 @@
+{
+  "status": "INSTALLED_EXACT_EVOLUTION16_NONE_RO_LIFECYCLE_PASS",
+  "bundle_sha256": "d707f7823be0d014244115de378d88e0478fefa0e21b40ecaaae3edafa786db7",
+  "root_manifest_sha256": "e53f106bd45104ebc95d8af8b938eee87105b77efc850f4620aac90d2bd9b956",
+  "source_package_sha256": "266a71fa21b14fe50a87c4adefa307d00127541f4160e36a1d8591299bf42a3a",
+  "g4_sha256": "e00e254a7c013b2f199224a67cd5e35964aab8305b41bf48de2ed4ce739ef6d1",
+  "none_sha256": "5060ff7cdb0ad2e7f695ec8c28354fda3b7a95c773a3699cf47b3614317f90fe",
+  "member_count": 157,
+  "runtime_bytes": 25354240,
+  "source_files": 48,
+  "source_package_bytes": 10608640,
+  "metadata_unwrap_helper_unchanged": {
+    "sha256": "b7cf34453664e1d1da7f9d0df5cd15934c0ff9715df953c5795a8c2a457b6a83",
+    "size": 22216,
+    "source": "~/a22x-work/artifacts/lk-recovery-bridge-20261114/stage-c/no-upgrade/releases/v3-hardware-envelope/build/a22x-keyunwrap-hidl4.stripped",
+    "mode": 365
+  },
+  "password_sp_helpers": {
+    "system/bin/a22x-unlock-sp": {
+      "sha256": "b742f3bc00b870e856205019c721fd01259b7ffb17369c82cdf04bb4ac735f4d",
+      "size": 1183232,
+      "source": "~/a22x-work/artifacts/lk-recovery-bridge-20261114/stage-c/password-sp/pattern-integration-20261116/native/android-build02/a22x-unlock-sp.stripped",
+      "mode": 365
+    }
+  },
+  "physical_qualification": {
+    "image_sha256": "f80fe9516ae52c3044f380a1bb02fce004c14237342e234245308966e8c75ece",
+    "boot_id": "e66515ee-d4ef-4521-8074-9c54eceebc04",
+    "run_id": "gui76579cc8040a4c",
+    "scope": "EXACT_EVOLUTION16_NONE_USER0_CE_RO_RETAINED_FILES_UNMOUNT",
+    "authenticated_media_entries": 16,
+    "userdata_writes": 0,
+    "gatekeeper_calls": 0,
+    "samsung_shared_image_physical_regression": "NOT_RUN",
+    "password_pattern_gsi14_gsi15_other_gsi16": "UNQUALIFIED",
+    "build_profile_flags": "BUILD_TIME_PENDING; qualification is recorded here after physical test"
+  }
+}

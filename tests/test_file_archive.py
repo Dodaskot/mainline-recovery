@@ -84,6 +84,38 @@ class FileArchive(unittest.TestCase):
             self.pack(False, ['script.sh'])
         self.assertEqual(caught.exception.code, 'DESTINATION_EXISTS')
 
+    def test_preexisting_partial_is_never_replaced(self):
+        folder = self.sd / 'A22xArchives'
+        folder.mkdir()
+        partial = folder / '.part-home.tar.zst'
+        sentinel = b'unrelated archive in progress'
+        partial.write_bytes(sentinel)
+        with self.assertRaises(fs.FilesystemError) as caught:
+            self.pack(False, ['script.sh'])
+        self.assertEqual(caught.exception.code, 'DESTINATION_EXISTS')
+        self.assertEqual(partial.read_bytes(), sentinel)
+        self.assertFalse((folder / 'home.tar.zst').exists())
+        partial.unlink()
+        self.pack(False, ['script.sh'])
+        fa.unpack(self.ctx, 'sdcard-p1', None, '/A22xArchives/home.tar.zst', True, self.progress)
+        self.assertEqual((folder / 'home/script.sh').read_bytes(),
+                         (self.home / 'script.sh').read_bytes())
+
+    def test_only_the_chosen_kinds_of_files(self):
+        (self.home / 'Фото').mkdir()
+        (self.home / 'Фото' / 'IMG_1.JPG').write_bytes(b'jpeg')
+        (self.home / 'Фото' / 'clip.mp4').write_bytes(b'mp4')
+        done = fa.pack(self.ctx, 'userdata', self.token('userdata'), '/home', True, [], 'sdcard-p1', self.token('sdcard-p1'),
+                       '/kinds.tar.zst', True, self.progress, kinds=('documents', 'photos'))
+        about = fa.manifest_of(self.ctx, 'sdcard-p1', None, '/kinds.tar.zst')['manifest']
+        self.assertEqual(about['types'], ['documents', 'photos'])
+        fa.unpack(self.ctx, 'sdcard-p1', None, '/kinds.tar.zst', True, self.progress)
+        out = self.sd / 'kinds'
+        files = sorted(str(p.relative_to(out)) for p in out.rglob('*') if p.is_file() or p.is_symlink())
+        self.assertEqual(files, ['left-out.txt', 'Документи/вкладене/нотатка.txt', 'Фото/IMG_1.JPG'])
+        self.assertTrue((out / 'Документи/вкладене').is_dir())
+        self.assertEqual(done['bytes'], len('no') + len('привіт\n'.encode()) + len(b'jpeg'))
+
     def test_everything_but_the_ones_left_out(self):
         self.pack(True, ['left-out.txt', 'big.bin'], '/all.tar.zst')
         fa.unpack(self.ctx, 'sdcard-p1', None, '/all.tar.zst', True, self.progress)
@@ -119,6 +151,82 @@ class FileArchive(unittest.TestCase):
         with self.assertRaises(fs.FilesystemError) as caught:
             fa.unpack(self.ctx, 'sdcard-p1', None, '/damaged.tar.zst', True, self.progress)
         self.assertEqual(caught.exception.code, 'ARCHIVE_DAMAGED')
+
+    def test_truncated_sd_zstd_cleans_new_folder_without_touching_neighbor(self):
+        # A late zstd checksum failure can occur after all tar members were streamed.
+        # This checks cleanup of a new extraction folder, not atomic rollback of
+        # arbitrary restores or recovery from a power loss.
+        sentinel = self.sd / 'outside-marker.txt'
+        original = b'unrelated SD data must survive'
+        sentinel.write_bytes(original)
+        tar_bytes = io.BytesIO()
+        with tarfile.open(fileobj=tar_bytes, mode='w') as tar:
+            link = tarfile.TarInfo('neighbor-link')
+            link.type, link.linkname = tarfile.SYMTYPE, '../outside-marker.txt'
+            tar.addfile(link)
+            payload = b'entry extracted before decoder checks the truncated tail'
+            member = tarfile.TarInfo('inside.txt')
+            member.size = len(payload)
+            tar.addfile(member, io.BytesIO(payload))
+        compressed = subprocess.run([pa.zstd_path(), '-q', '-c'], input=tar_bytes.getvalue(),
+                                    capture_output=True, check=True).stdout
+        truncated = compressed[:-1]
+        # The complete tar is emitted before the damaged zstd frame is rejected.
+        decoded = subprocess.run([pa.zstd_path(), '-q', '-d', '-c'], input=truncated, capture_output=True)
+        self.assertNotEqual(decoded.returncode, 0)
+        self.assertEqual(decoded.stdout, tar_bytes.getvalue())
+        archive = self.sd / 'truncated.tar.zst'
+        archive.write_bytes(truncated)
+        with self.assertRaises(fs.FilesystemError) as caught:
+            fa.unpack(self.ctx, 'sdcard-p1', self.token('sdcard-p1'), '/truncated.tar.zst',
+                      True, self.progress)
+        self.assertEqual(caught.exception.code, 'ARCHIVE_DAMAGED')
+        self.assertFalse((self.sd / 'truncated').exists())
+        self.assertEqual(sentinel.read_bytes(), original)
+        self.assertEqual(archive.read_bytes(), truncated)
+        self.assertEqual({p.name for p in self.sd.iterdir()},
+                         {'outside-marker.txt', 'truncated.tar.zst'})
+
+    def test_intact_symlink_redirect_cannot_overwrite_neighbor(self):
+        # Unlike a truncated stream, this complete archive must not be able to
+        # follow a directory symlink and overwrite a neighbor on the same SD.
+        outside = self.sd / 'outside-dir'
+        outside.mkdir()
+        marker = outside / 'sentinel.txt'
+        original = b'unrelated SD data must not be modified'
+        marker.write_bytes(original)
+
+        raw = io.BytesIO()
+        with tarfile.open(fileobj=raw, mode='w') as tar:
+            link = tarfile.TarInfo('bridge')
+            link.type, link.linkname = tarfile.SYMTYPE, '../outside-dir'
+            tar.addfile(link)
+            payload = b'unwanted overwrite'
+            member = tarfile.TarInfo('bridge/sentinel.txt')
+            member.size = len(payload)
+            tar.addfile(member, io.BytesIO(payload))
+        compressed = subprocess.run([pa.zstd_path(), '-q', '-c'], input=raw.getvalue(),
+                                    capture_output=True, check=True).stdout
+        archive = self.sd / 'redirect.tar.zst'
+        archive.write_bytes(compressed)
+        # Independent archive check: this is a complete, valid zstd/tar, not
+        # a truncated stream incidentally rejected before its malicious entry.
+        decoded = subprocess.run([pa.zstd_path(), '-q', '-d', '-c'], input=compressed,
+                                 capture_output=True, check=True).stdout
+        self.assertEqual(decoded, raw.getvalue())
+        with tarfile.open(fileobj=io.BytesIO(decoded)) as tar:
+            self.assertEqual(tar.getnames(), ['bridge', 'bridge/sentinel.txt'])
+
+        with self.assertRaises(fs.FilesystemError) as refused:
+            fa.unpack(self.ctx, 'sdcard-p1', None, '/redirect.tar.zst', False, self.progress)
+        self.assertEqual(refused.exception.code, 'CONFIRMATION_REQUIRED')
+        with self.assertRaises(fs.FilesystemError) as caught:
+            fa.unpack(self.ctx, 'sdcard-p1', self.token('sdcard-p1'),
+                      '/redirect.tar.zst', True, self.progress)
+        self.assertEqual(caught.exception.code, 'ARCHIVE_UNSAFE')
+        self.assertEqual(marker.read_bytes(), original)
+        self.assertEqual(archive.read_bytes(), compressed)
+        self.assertFalse((self.sd / 'redirect').exists())
 
     def test_links_and_devices_that_would_reach_outside_are_refused(self):
         # 2026-11-13 review: a hard link to a file outside, then a file of the same name, wrote

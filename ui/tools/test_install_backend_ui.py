@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,12 @@ def main():
             userdata_identity = identity(f.userdata)
             source_files = [f.boot_source, *sorted((f.sd / 'stock').iterdir()), *sorted(f.backup.iterdir())]
             sd_before = {str(path.relative_to(f.sd)): path.read_bytes() for path in source_files if path.is_file()}
+            # Backups are listed from the card's store when its first partition is mounted (recovery_ui.c
+            # store_hidden, 2026-11-21): the fixture's snapshot is there too, byte for byte.
+            store = f.sd / 'A22xBackups'
+            store.mkdir(exist_ok=True)
+            if not (store / f.backup.name).exists():
+                shutil.copytree(f.backup, store / f.backup.name)
             mount_state = (root / 'filesystem-fixture.json').read_bytes()
             source = '/' + (f.manifest if case.startswith('stock') or case == 'resume' else f.boot_source).relative_to(f.sd).as_posix()
             run = subprocess.run([binary, str(root), str(ROOT / 'install.py'),

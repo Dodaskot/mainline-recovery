@@ -28,8 +28,15 @@ def main():
             if operation == "usb-not-applied":
                 config["behavior"] = "not-applied"
             (root / "usb-fixture.json").write_text(json.dumps(config))
+            (root / "sd").mkdir()
+            (root / "filesystem-fixture.json").write_text(json.dumps({
+                "schema": "a22x.filesystem.fixture.v1",
+                "volumes": [dict(id="sdcard-p1", path="sd", fs_type="ext4",
+                                 mounted=False, read_only=False)],
+            }))
             result = subprocess.run([binary, "--fixture-root", str(root), "--workdir", str(work),
                                      "--python", sys.executable, "--usb-files-helper", str(UI / "tools/usb_fixture.py"),
+                                     "--filesystem-helper", str(UI.parent / "filesystem.py"),
                                      "--workflow", operation, "--render-native", str(UI / "previews" / f"v05-{operation}-native.ppm")],
                                     capture_output=True, text=True, timeout=30)
             expected = 1 if operation == "usb-not-applied" else 0

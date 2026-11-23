@@ -125,7 +125,7 @@ static void restrict_process(void)
 int main(int argc, char **argv)
 {
     if (argc == 2 && !strcmp(argv[1], "--version")) {
-        puts("a22x-mtp-sandbox 2"); return 0;
+        puts("a22x-mtp-sandbox 3"); return 0;
     }
     require(argc == 6 && geteuid() == 0, "sandbox arguments/root");
     const char *root = argv[1];
@@ -140,8 +140,11 @@ int main(int argc, char **argv)
             !(root_stat.st_mode & 0022), "private root directory");
     require(!fstat(source, &source_stat) && S_ISDIR(source_stat.st_mode), "pinned source directory");
     require(!fstat(ffs, &ffs_stat) && S_ISDIR(ffs_stat.st_mode), "pinned FunctionFS directory");
+    /* The supervisor holds the lease shared (2026-11-21): the terminal and copies work on the card while
+       it is shared. LOCK_SH on the same open file is a no-op that still fails if anyone holds the lease
+       alone; LOCK_EX here turned the supervisor's lease exclusive and shut them out. */
     require(!fstat(lease, &lock_stat) && S_ISREG(lock_stat.st_mode) && lock_stat.st_nlink == 1 &&
-            lock_stat.st_uid == 0 && !flock(lease, LOCK_EX | LOCK_NB), "inherited operation lease");
+            lock_stat.st_uid == 0 && !flock(lease, LOCK_SH | LOCK_NB), "inherited operation lease");
     struct statfs root_fs;
     require(!statfs(root, &root_fs) && root_fs.f_type == TMPFS_MAGIC, "RAM root filesystem");
     pid_t supervisor = getppid();

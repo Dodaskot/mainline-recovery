@@ -70,8 +70,10 @@ def main():
                 gestures = [tuple(map(int, match)) for match in re.findall(
                     r"offset_px=(\d+) first_index=(\d+) total=(\d+) cached_first=(\d+) cached_count=(\d+) tap_suppressed=1",
                     result.stderr)]
-                assert len(gestures) >= 40 and gestures[0][:3] == (500, 4, 200)
-                assert gestures[1][0] == 0 and max(row[0] for row in gestures) == 22382
+                assert len(gestures) >= 40 and gestures[0][:3] == (500, 4, 200), gestures[:2]
+                # 200 rows of 116 px, less the gap after the last and the list's height: 372 to 1406 while
+                # the note of the last result ("Mounted read-only") takes the line above the actions.
+                assert gestures[1][0] == 0 and max(row[0] for row in gestures) == 200 * 116 - 14 - (1406 - 372), (gestures[1], max(row[0] for row in gestures))
                 assert all(row[4] <= 64 for row in gestures) and max(row[3] for row in gestures) >= 160
                 assert result.stderr.count("[recovery-ui:files-read] exit=") == 2
                 assert "[recovery-ui:files-stat]" not in result.stderr

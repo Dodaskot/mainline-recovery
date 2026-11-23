@@ -49,13 +49,28 @@ ALIGN = 4 << 20            # Starts and sizes fall on 4 MiB, the allocation unit
 MIN_FILES = 256 << 20
 MBR_BYTES = (1 << 32) * SECTOR  # An MBR table addresses 2 TiB.
 HEAD = 1 << 20             # Erased at both ends of the medium and at the head of each partition.
-TYPES = {'files': 0x0c, 'linux': 0x83, 'swap': 0x82}
+# The partition for files is FAT32 unless asked otherwise (2026-11-20, the owner: exFAT, ext4 or F2FS
+# too); its MBR type follows its filesystem, as Windows and Android read them.
+FILES_FS = ('vfat', 'exfat', 'ext4', 'f2fs')
+TYPES = {'vfat': 0x0c, 'exfat': 0x07, 'ext4': 0x83, 'f2fs': 0x83, 'swap': 0x82}
 FILESYSTEMS = {'files': 'vfat', 'linux': 'ext4', 'swap': 'swap'}
 BLKRRPART, BLKGETSIZE64 = 0x125f, 0x80081272
 BUSYBOX = '/bin/busybox'
-MKFS = {'files': [BUSYBOX, 'mkdosfs', '-F', '32', '-n', 'A22X'],
+MKFS = {'vfat': [BUSYBOX, 'mkdosfs', '-F', '32', '-n', 'A22X'],
+        'exfat': ['/bin/mkfs.exfat', '-L', 'A22X'],
+        'f2fs': ['/bin/make_f2fs', '-f', '-l', 'A22X'],
+        'files-ext4': ['/sbin/mkfs.ext4', '-F', '-q', '-L', 'A22X'],
         'linux': ['/sbin/mkfs.ext4', '-F', '-q', '-L', 'linux'],
         'swap': [BUSYBOX, 'mkswap', '-L', 'swap']}
+
+
+def part_fs(part):
+    return part.get('fs', 'vfat') if part['kind'] == 'files' else FILESYSTEMS[part['kind']]
+
+
+def mkfs(part):
+    fs_type = part_fs(part)
+    return MKFS['files-ext4'] if part['kind'] == 'files' and fs_type == 'ext4' else MKFS[fs_type if part['kind'] == 'files' else part['kind']]
 FIXTURE = 'sdcard-fixture.json'
 GADGETS = Path('/sys/kernel/config/usb_gadget')
 
@@ -69,8 +84,9 @@ def align_up(value):
     return (value + ALIGN - 1) // ALIGN * ALIGN
 
 
-def layout(size, linux_mib=0, swap_mib=0):
+def layout(size, linux_mib=0, swap_mib=0, files_fs='vfat'):
     """The partitions for a medium of SIZE bytes, in the order they lie on it."""
+    require(files_fs in FILES_FS, 'UNSUPPORTED_FILESYSTEM', 'This filesystem is not offered for files')
     require(isinstance(linux_mib, int) and isinstance(swap_mib, int) and 0 <= linux_mib <= 1 << 21
             and 0 <= swap_mib <= 1 << 16, 'INVALID_SIZE', 'The sizes for Linux and swap are out of range')
     usable = min(size, MBR_BYTES) // ALIGN * ALIGN
@@ -81,7 +97,7 @@ def layout(size, linux_mib=0, swap_mib=0):
     parts, at = [], ALIGN
     for kind, length in (('files', files), ('linux', linux), ('swap', swap)):
         if length:
-            parts.append({'kind': kind, 'start': at, 'bytes': length})
+            parts.append({'kind': kind, 'start': at, 'bytes': length, **({'fs': files_fs} if kind == 'files' else {})})
             at += length
     return parts
 
@@ -93,10 +109,31 @@ def mbr(parts, signature):
     sector[440:444] = signature
     for index, part in enumerate(parts):
         sector[446 + 16 * index:462 + 16 * index] = struct.pack(
-            '<B3sB3sII', 0, b'\xfe\xff\xff', TYPES[part['kind']], b'\xfe\xff\xff',
+            '<B3sB3sII', 0, b'\xfe\xff\xff', TYPES[part_fs(part)], b'\xfe\xff\xff',
             part['start'] // SECTOR, part['bytes'] // SECTOR)
     sector[510:512] = b'\x55\xaa'
     return bytes(sector)
+
+
+def stand_in_fs(fs_type):
+    """A fixture's head for a files partition in exFAT, ext4 or F2FS, as probe_magic reads them."""
+    head = bytearray(8192)
+    if fs_type == 'exfat':
+        head[3:11] = b'EXFAT   '
+        head[100:104] = os.urandom(4)
+        head[108], head[110] = 9, 1
+        head[510:512] = b'\x55\xaa'
+    elif fs_type == 'ext4':
+        struct.pack_into('<I', head, 1024 + 24, 2)
+        struct.pack_into('<I', head, 1024 + 32, 32768)
+        head[1080:1082] = b'\x53\xef'
+        head[1024 + 104:1024 + 120] = os.urandom(16)
+        head[1024 + 120:1024 + 124] = b'A22X'
+    else:
+        head[1024:1028] = b'\x10\x20\xf5\xf2'
+        struct.pack_into('<I', head, 1024 + 16, 12)
+        head[1024 + 108:1024 + 124] = os.urandom(16)
+    return bytes(head)
 
 
 def read_mbr(sector):
@@ -122,9 +159,11 @@ def probe(fd, start, length):
     return info['fs_type'], info.get('filesystem_label') or ''
 
 
-def stand_in(kind):
+def stand_in(kind, fs_type=None):
     """What a fixture file gets in place of mkfs: the head by which the kind is read back."""
     head = bytearray(8192)
+    if kind == 'files' and fs_type in ('ext4', 'f2fs', 'exfat'):
+        return stand_in_fs(fs_type)
     if kind == 'files':
         struct.pack_into('<HBHB', head, 11, 512, 8, 32, 2)
         head[82:90] = b'FAT32   '
@@ -302,12 +341,12 @@ class Media:
             try:
                 for index, part in enumerate(parts):
                     progress('card-' + part['kind'], index + 1, len(parts) + 2)
-                    os.pwrite(fd, stand_in(part['kind']), part['start'])
+                    os.pwrite(fd, stand_in(part['kind'], part.get('fs')), part['start'])
                 os.fsync(fd)
             finally:
                 os.close(fd)
             return
-        for tool in {MKFS[part['kind']][0] for part in parts}:
+        for tool in {mkfs(part)[0] for part in parts}:
             require(os.access(tool, os.X_OK), 'TOOL_MISSING', 'A tool that makes filesystems is missing', tool=tool)
         # Under /dev, where device nodes work whatever the other mounts allow.
         folder = tempfile.mkdtemp(prefix='.a22x-card-', dir=str(self.dev_root))
@@ -315,7 +354,7 @@ class Media:
             os.chmod(folder, 0o700)
             for index, (part, node) in enumerate(zip(parts, self.nodes(disk, parts, folder))):
                 progress('card-' + part['kind'], index + 1, len(parts) + 2)
-                done = subprocess.run([*MKFS[part['kind']], node], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                done = subprocess.run([*mkfs(part), node], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                       text=True, errors='replace', timeout=1800)
                 require(done.returncode == 0, 'FORMAT_FAILED', 'The filesystem could not be created',
                         kind=part['kind'], output=done.stdout[-400:])
@@ -399,7 +438,7 @@ def apply(context, args, progress):
         before = context.describe(disk)
         require(before['token'] == args.expected_token, 'DISK_CHANGED', 'The card changed after it was shown')
         require(not before['busy_code'], before['busy_code'] or 'CARD_BUSY', before['busy'])
-        parts = layout(disk['size'], args.linux_mib, args.swap_mib)
+        parts = layout(disk['size'], args.linux_mib, args.swap_mib, getattr(args, 'files_fs', None) or 'vfat')
         progress('card-table', 0, len(parts) + 2)
         context.write_table(disk, parts)
         context.make_filesystems(disk, parts, progress)
@@ -407,10 +446,10 @@ def apply(context, args, progress):
         progress('card-check', len(parts) + 1, len(parts) + 2)
         after = context.describe(context.disk(args.disk))
         made = [(row['start_bytes'], row['size_bytes'], row['fs_type']) for row in after['partitions']]
-        require(after['table'] == 'mbr' and made == [(part['start'], part['bytes'], FILESYSTEMS[part['kind']]) for part in parts],
+        require(after['table'] == 'mbr' and made == [(part['start'], part['bytes'], part_fs(part)) for part in parts],
                 'CARD_NOT_AS_WRITTEN', 'The card does not show the partitions that were written', seen=made)
         progress('card-check', len(parts) + 2, len(parts) + 2)
-        return {'disk': after, 'created': [{'kind': part['kind'], 'size_bytes': part['bytes']} for part in parts]}
+        return {'disk': after, 'created': [{'kind': part['kind'], 'size_bytes': part['bytes'], 'fs': part_fs(part)} for part in parts]}
 
 
 def parser():
@@ -425,6 +464,7 @@ def parser():
     command.add_argument('--expected-token', required=True)
     command.add_argument('--linux-mib', type=int, default=0)
     command.add_argument('--swap-mib', type=int, default=0)
+    command.add_argument('--files-fs', choices=FILES_FS, default='vfat')
     command.add_argument('--confirm', action='store_true')
     return result
 

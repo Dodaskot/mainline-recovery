@@ -29,7 +29,7 @@ volume that keeps the settings, with a copy in RAM. The interface reads only the
 | `name`, `note` | Plain text, under 48 and 80 bytes. |
 | `dark` | Picks the default status colors. Without it the background decides. |
 | `layout` | `tiles` for the large home page, `list` for the plain one. |
-| `glass` | How much of the picture shows through the cards. `surface_alpha` is at least 96. |
+| `glass` | Card opacity, edge opacity and shadow strength range from 0 to 255, with a minimum of 96 for `surface_alpha`. Optional `blur` (0–100, default 0) softens the wallpaper and leaves text sharp. |
 | `colors` | `bg`, `panel`, `text`, `muted`, `accent` and `on_accent` are required. Any other name from `COLORS` in `themes.py`, `tile_fill`, `tile_ink` (six colors each), `terminal_bg` and `terminal_fg` may be added; the rest is derived. |
 | `terminal` | Colors for the terminal. A file with only this section adds terminal colors and no theme. |
 | `image` | The background, at most 540 x 1204. It is stretched to the panel. |

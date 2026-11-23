@@ -5,7 +5,8 @@ LDLIBS ?= -lm
 CROSS_COMPILE ?= aarch64-linux-gnu-
 # MT6833 has Cortex-A76 and A55 cores, which share this instruction set.
 ARM64_TUNE ?= -O3 -mcpu=cortex-a76 -fno-semantic-interposition
-UI_HEADERS = androidlog_ui.h updates_ui.h json_min.h font_data.h font_extra.h clock_font.h native_canvas.h i18n_data.h flash_ui.h theme.h theme_files.h theme_assets.h kinetic_scroll.h terminal_model.h terminal_ui.h terminal_font.h systems_ui.h install_types.h install_ui.h wifi_ui.h installer_ui.h images_ui.h adb_ui.h packages_ui.h identity_ui.h android_plan_ui.h wipe_ui.h android_ui.h card_ui.h copies_ui.h source_ui.h screenshot_ui.h charger_ui.h shells_ui.h locale_ui.h zones_data.h app_icons_data.h linuxdata_ui.h
+UI_HEADERS = web_ui.h sound_ui.h android_tools_types.h android_tools_ui.h android_session_ui.h automount_ui.h android_format_ui.h android_data_backup_ui.h androidlog_ui.h updates_ui.h json_min.h font_data.h font_extra.h clock_font.h native_canvas.h i18n_data.h flash_ui.h theme.h theme_files.h theme_editor.h theme_assets.h kinetic_scroll.h terminal_model.h terminal_ui.h terminal_font.h systems_ui.h install_types.h install_ui.h wifi_ui.h installer_ui.h images_ui.h adb_ui.h packages_ui.h identity_ui.h android_plan_ui.h wipe_ui.h android_ui.h card_ui.h copies_ui.h source_ui.h screenshot_ui.h charger_ui.h shells_ui.h locale_ui.h zones_data.h app_icons_data.h linuxdata_ui.h \
+	qs_types.h shade_ui.h media_ui.h media_client.h player_ui.h bluetooth_ui.h file_install_ui.h recents_ui.h
 
 all: a22x-recovery-ui
 
@@ -26,6 +27,27 @@ arm64:
 
 test: a22x-recovery-ui
 	./a22x-recovery-ui --self-test
+	python3 tools/test_cpu_policy.py
+
+# The browser compositor on the host (2026-11-20): frame slots, acknowledgements and the UI's own
+# frame socket, with a Wayland client drawing numbered frames. Needs wayland-server/-client and
+# wayland-protocols; the phone's build is musl (see docs/browser-fps-20261120.uk.md).
+WAYLAND_PROTOCOLS ?= /usr/share/wayland-protocols
+WL = .web-compositor-test
+web-compositor-test: web_compositor.c web_dmabuf.h test_web_compositor.c
+	mkdir -p $(WL)
+	wayland-scanner server-header $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $(WL)/xdg-shell-server-protocol.h
+	wayland-scanner client-header $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $(WL)/xdg-shell-client-protocol.h
+	wayland-scanner private-code $(WAYLAND_PROTOCOLS)/stable/xdg-shell/xdg-shell.xml $(WL)/xdg-shell-protocol.c
+	wayland-scanner server-header $(WAYLAND_PROTOCOLS)/unstable/linux-dmabuf/linux-dmabuf-unstable-v1.xml $(WL)/linux-dmabuf-server-protocol.h
+	wayland-scanner private-code $(WAYLAND_PROTOCOLS)/unstable/linux-dmabuf/linux-dmabuf-unstable-v1.xml $(WL)/linux-dmabuf-protocol.c
+	wayland-scanner server-header $(WAYLAND_PROTOCOLS)/stable/presentation-time/presentation-time.xml $(WL)/presentation-time-server-protocol.h
+	wayland-scanner client-header $(WAYLAND_PROTOCOLS)/stable/presentation-time/presentation-time.xml $(WL)/presentation-time-client-protocol.h
+	wayland-scanner private-code $(WAYLAND_PROTOCOLS)/stable/presentation-time/presentation-time.xml $(WL)/presentation-time-protocol.c
+	$(CC) -std=c17 -O2 -Wall -Wextra -Werror -I$(WL) web_compositor.c $(WL)/xdg-shell-protocol.c $(WL)/linux-dmabuf-protocol.c $(WL)/presentation-time-protocol.c -lwayland-server -o $(WL)/web-compositor
+	$(CC) -std=c17 -O2 -Wall -Wextra -Werror -I$(WL) test_web_compositor.c $(WL)/xdg-shell-protocol.c $(WL)/presentation-time-protocol.c -lwayland-client -o $(WL)/test-web-compositor
+	./$(WL)/test-web-compositor ./$(WL)/web-compositor direct
+	./$(WL)/test-web-compositor ./$(WL)/web-compositor relay
 
 integration: a22x-recovery-ui
 	python3 tools/test_integration.py
@@ -144,6 +166,61 @@ preview: a22x-recovery-ui
 	python3 tools/ppm_to_png.py previews
 
 clean:
-	rm -f a22x-recovery-ui a22x-recovery-ui-static a22x-recovery-ui-aarch64
+	rm -f theme-editor-test a22x-recovery-ui a22x-recovery-ui-static a22x-recovery-ui-aarch64 android-unlock-test android-format-test android-policy-settings-test
 
-.PHONY: i18n all static arm64 test integration files-integration v03-integration interaction-integration motion-integration linux-integration usb-ui-integration terminal-model-test terminal-ui-integration display-ui-integration touch-input-test systems-ui-integration install-ui-integration install-backend-integration preview clean
+.PHONY: android-unlock-test android-format-test i18n all static arm64 test integration files-integration v03-integration interaction-integration motion-integration linux-integration usb-ui-integration terminal-model-test terminal-ui-integration display-ui-integration touch-input-test systems-ui-integration install-ui-integration install-backend-integration preview clean
+
+android-unlock-test: test_android_unlock.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_android_unlock.c json_min.c $(LDFLAGS) -o android-unlock-test $(LDLIBS)
+	./android-unlock-test
+
+android-format-test: test_android_format.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_android_format.c json_min.c $(LDFLAGS) -o android-format-test $(LDLIBS)
+	./android-format-test
+
+# Mounting at start end to end: the interface, automount.py and filesystem.py on fixture volumes.
+.PHONY: automount-ui-test
+automount-ui-test: test_automount_ui.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_automount_ui.c json_min.c $(LDFLAGS) -o automount-ui-test $(LDLIBS)
+	./automount-ui-test .. $(shell command -v python3)
+
+.PHONY: android-session-test
+android-session-test: test_android_session.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_android_session.c json_min.c $(LDFLAGS) -o android-session-test $(LDLIBS)
+	./android-session-test
+
+.PHONY: android-policy-settings-integration
+android-policy-settings-test: test_android_policy_settings.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_android_policy_settings.c json_min.c $(LDFLAGS) -o android-policy-settings-test $(LDLIBS)
+
+android-policy-settings-integration: android-policy-settings-test
+	python3 -B tools/test_android_policy_settings.py
+
+.PHONY: android-media-ui-integration
+android-data-backup-ui-test: test_android_data_backup_ui.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_android_data_backup_ui.c json_min.c $(LDFLAGS) -o $@ $(LDLIBS)
+
+android-media-ui-integration: android-data-backup-ui-test
+	python3 -B tools/test_android_media_ui.py
+
+ui-audit-test: test_ui_audit.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_ui_audit.c json_min.c $(LDFLAGS) -o ui-audit-test $(LDLIBS)
+	./ui-audit-test
+
+android-tools-test: test_android_tools.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_android_tools.c json_min.c $(LDFLAGS) -o android-tools-test $(LDLIBS)
+	./android-tools-test
+
+.PHONY: android-tools-report-test
+android-tools-report-test: android-tools-test
+	PYTHONDONTWRITEBYTECODE=1 python3 -B ../tests/test_android_tools_ui.py
+
+theme-editor-test: test_theme_editor.c recovery_ui.c json_min.c $(UI_HEADERS)
+	$(CC) $(CFLAGS) test_theme_editor.c json_min.c $(LDFLAGS) -o $@ $(LDLIBS)
+
+.PHONY: theme-editor-integration
+theme-editor-integration: theme-editor-test
+	@set -e; root=$$(mktemp -d); trap 'rm -rf "$$root"' EXIT; \
+	echo '{"schema":"a22x.filesystem.fixture.v1","volumes":[]}' > "$$root/filesystem-fixture.json"; \
+	A22X_THEMES_RAM="$$root/ram" A22X_THEMES_BUNDLED="$$root/bundled" \
+	A22X_RECOVERY_THEMES_HELPER="$(abspath ../themes.py)" ./theme-editor-test "$$root"

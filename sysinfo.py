@@ -29,6 +29,15 @@ def read(path, limit=8192):
         return ''
 
 
+def running_for(seconds):
+    """Days, hours, minutes and seconds, as phones show it (2026-11-22, a tester, #11): 1d 2h 3m 4s. The row is
+    called Uptime, as in Android (the same tester)."""
+    days, rest = divmod(int(seconds), 86400)
+    hours, rest = divmod(rest, 3600)
+    minutes, seconds = divmod(rest, 60)
+    return (f'{days}d ' if days else '') + (f'{hours}h ' if days or hours else '') + f'{minutes}m {seconds}s'
+
+
 def number(text, base=10):
     try:
         return int(text, base)
@@ -72,12 +81,13 @@ class Phone:
                 counts.setdefault(int(part.group(1), 16), []).append(int(cpu.group(1)))
         groups = []
         for part, members in counts.items():
-            fastest = 0
+            fastest, now = 0, ''
             for policy in self.glob('sys/devices/system/cpu/cpufreq/policy*'):
                 related = self.text(policy.relative_to(self.root) / 'related_cpus').split()
                 if str(members[0]) in related:
                     fastest = number(self.text(policy.relative_to(self.root) / 'cpuinfo_max_freq')) or 0
-            groups.append({'name': CORES.get(part, hex(part)), 'count': len(members), 'khz': fastest})
+                    now = str(policy / 'scaling_cur_freq')
+            groups.append({'name': CORES.get(part, hex(part)), 'count': len(members), 'khz': fastest, 'now': now})
         return sorted(groups, key=lambda group: -group['khz'])
 
     def memory(self):
@@ -104,14 +114,16 @@ class Phone:
         return sectors * 512 if sectors else 0
 
     def temperature(self, *names):
-        readings = []
+        """(The warmest of the named zones in °C or None, the files they are read from)."""
+        readings, files = [], []
         for zone in self.glob('sys/class/thermal/thermal_zone*'):
             relative = zone.relative_to(self.root)
             if self.text(relative / 'type') in names:
                 value = number(self.text(relative / 'temp'))
                 if value is not None:
                     readings.append(value)
-        return max(readings) / 1000 if readings else None
+                    files.append(str(zone / 'temp'))
+        return (max(readings) / 1000 if readings else None), files
 
     def battery(self):
         folder = Path('sys/class/power_supply/battery')
@@ -185,13 +197,21 @@ def describe(root='/'):
     kernel = phone.text('proc/version')
     uptime = number((phone.text('proc/uptime').split() or ['0'])[0].split('.')[0]) or 0
 
+    # 2026-11-21, a tester (#11): the readings that move carry where they come from (a fourth field),
+    # and the interface reads them again every second while About phone is shown. A refresh rate is
+    # known to the interface only, so its row comes without a value.
     def rows(*items):
-        return [list(item) for item in items if item[1] not in ('', None)]
+        return [list(item) for item in items if item[1] not in ('', None) or item[3:] == ('refresh',)]
 
     processor = [(('Performance cores' if index == 0 and len(groups) > 1 else 'Efficiency cores' if len(groups) > 1 else 'Cores'),
                   f"{group['count']} × {group['name']}" + (f", {group['khz'] / 1000000:.1f}" if group['khz'] else ''),
                   'GHz' if group['khz'] else '') for index, group in enumerate(groups)]
-    heat = phone.temperature('soc-thermal', 'cpu-big-thermal', 'cpu-little-thermal')
+    clocks = [(('Performance cores now' if index == 0 and len(groups) > 1 else 'Efficiency cores now' if len(groups) > 1 else 'Cores now'),
+               f"{khz / 1000000:.2f}", 'GHz', 'clock:' + group['now'])
+              for index, group in enumerate(groups) for khz in [number(read(group['now'])) if group['now'] else None] if khz]
+    heat, zones = phone.temperature('soc-thermal', 'cpu-big-thermal', 'cpu-little-thermal')
+    battery_folder = str(phone.path('sys/class/power_supply/battery'))
+    panel = phone.panel()
     maker = ''
     if internal is not None:
         maker = ' '.join(item for item in (STORAGE_MAKERS.get(number(phone.text(internal / 'manfid'), 16) or 0, ''), phone.text(internal / 'name')) if item)
@@ -205,7 +225,8 @@ def describe(root='/'):
             ('Serial number', boot.get('androidboot.serialno', ''), ''),
             ('Board revision', boot.get('androidboot.hw_id', ''), ''),
             ('Region', ' / '.join(item for item in (boot.get('androidboot.sales_code', ''), boot.get('androidboot.carrierid', '')) if item), ''))},
-        {'title': 'Processor', 'rows': rows(('Chip', chip, ''), *processor, ('Temperature', f'{heat:.0f}' if heat is not None else '', '°C'))},
+        {'title': 'Processor', 'rows': rows(('Chip', chip, ''), *processor, *clocks,
+                                            ('Temperature', f'{heat:.1f}' if heat is not None else '', '°C', 'temp:' + ','.join(zones)))},
         {'title': 'Memory and storage', 'rows': rows(
             ('Memory', str(fitted) if fitted else '', 'GB'),
             ('Available memory', f"{(memory.get('MemAvailable') or 0) / 1024 / 1024:.1f}" if memory.get('MemAvailable') else '', 'GB'),
@@ -214,11 +235,12 @@ def describe(root='/'):
             ('Chip made', phone.text(internal / 'date') if internal is not None else '', ''),
             ('Storage wear', wear(internal, phone) if internal is not None else '', '%'),
             ('Memory card', gigabytes(memory_card) if memory_card else '', 'GB'))},
-        {'title': 'Display', 'rows': rows(('Resolution', phone.panel().replace('x', ' × '), ''), ('Touch panel', phone.touch(), ''))},
+        {'title': 'Display', 'rows': rows(('Resolution', panel.replace('x', ' × '), ''), *([('Refresh rate', '', 'Hz', 'refresh')] if panel else []),
+                                          ('Touch panel', phone.touch(), ''))},
         {'title': 'Battery', 'rows': rows(
-            ('Level', battery['capacity'], '%'), ('State', status if status in BATTERY_STATES else '', ''),
-            ('Voltage', f'{voltage / 1000000:.2f}' if voltage else '', 'V'),
-            ('Current', f'{flow / 1000:+.0f}' if flow is not None else '', 'mA'),
+            ('Level', battery['capacity'], '%', 'level'), ('State', status if status in BATTERY_STATES else '', '', f'state:{battery_folder}/status'),
+            ('Voltage', f'{voltage / 1000000:.2f}' if voltage else '', 'V', f'volt:{battery_folder}/voltage_now'),
+            ('Current', f'{flow / 1000:+.0f}' if flow is not None else '', 'mA', f'curr:{battery_folder}/current_now'),
             ('Design capacity', str(design // 1000) if design else '', 'mAh'), ('Type', battery['technology'], ''))},
         {'title': 'Software', 'rows': rows(
             ('Recovery', recovery_version(phone), ''),
@@ -227,7 +249,7 @@ def describe(root='/'):
             ('Bootloader', boot.get('androidboot.bootloader', ''), ''),
             ('Bootloader lock', boot.get('androidboot.vbmeta.device_state', '').capitalize(), ''),
             ('Verified boot', boot.get('androidboot.verifiedbootstate', '').capitalize(), ''),
-            ('Running for', f'{uptime // 3600}:{uptime // 60 % 60:02d}' if uptime else '', ''))},
+            ('Uptime', running_for(uptime) if uptime else '', '', 'uptime:' + str(phone.path('proc/uptime'))))},
     ]
     cores = sum(group['count'] for group in groups)
     summary = rows(('Processor', f"{max((group['khz'] for group in groups), default=0) / 1000000:.1f}" if groups else '', 'GHz'),

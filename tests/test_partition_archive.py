@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import resource
+import subprocess
 import shutil
 import signal
 import sys
@@ -38,6 +39,49 @@ class EncryptedWriter(unittest.TestCase):
             writer.finish(b'{}')
         self.assertEqual(caught.exception.code, 'FILE_TOO_LARGE')
 
+
+
+@unittest.skipUnless(shutil.which('zstd'), 'zstd is needed')
+class PartitionStreamIntegrity(unittest.TestCase):
+    def test_truncated_zstd_with_valid_footer_is_rejected(self):
+        # Unlike a missing footer, this damaged archive still advertises valid
+        # metadata.  A late decompressor failure must not count as verification.
+        with tempfile.TemporaryDirectory(prefix='a22x-partial-stream-', dir=os.environ.get('TMPDIR')) as folder:
+            archive = Path(folder) / 'copy.tar.zst'
+            marker = Path(folder) / 'unrelated.txt'
+            marker.write_bytes(b'untouched neighboring file')
+            manifest = b'{"schema":"fixture","partitions":["boot"]}'
+            data = b'partition image contents' + b'A' * 8192
+            fd = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            try:
+                writer = pa.Writer(fd, threads=1)
+                writer.begin('boot.img', len(data))
+                writer.write(data)
+                writer.finish(manifest)
+            finally:
+                os.close(fd)
+            complete = archive.read_bytes()
+            footer_start = len(complete) - len(manifest) - 24
+            self.assertGreater(footer_start, 8)
+            corrupted = complete[:footer_start - 1] + complete[footer_start:]
+            archive.write_bytes(corrupted)
+            # Independent zstd detects the missing last frame byte, even though
+            # the complete partition payload has already been streamed.
+            decoded = subprocess.run([pa.zstd_path(), '-q', '-d', '-c'],
+                                     input=corrupted[:footer_start - 1], capture_output=True)
+            self.assertNotEqual(decoded.returncode, 0)
+            self.assertIn(data, decoded.stdout)
+            with archive.open('rb') as stream:
+                self.assertEqual(pa.footer(stream.fileno()), manifest)
+                with self.assertRaises(pa.ArchiveError) as caught:
+                    with pa.members(stream.fileno()) as entries:
+                        for _name, _size, member in entries:
+                            member.read()
+                self.assertEqual(caught.exception.code, 'BACKUP_DAMAGED')
+            self.assertEqual(marker.read_bytes(), b'untouched neighboring file')
+            self.assertEqual(archive.read_bytes(), corrupted)
+            self.assertEqual({item.name for item in Path(folder).iterdir()},
+                             {'copy.tar.zst', 'unrelated.txt'})
 
 if __name__ == '__main__':
     unittest.main()

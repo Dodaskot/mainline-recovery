@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Native UI -> actual distro/filesystem helpers, owned directory fixtures only."""
+import copy
 import hashlib
 import importlib.util
 import json
@@ -16,7 +17,7 @@ spec = importlib.util.spec_from_file_location('a22x_distro_fixture', ROOT/'tests
 fixture_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fixture_module)
 distro = fixture_module.d
-CASES = ('roundtrip', 'tamper', 'resume', 'rollback', 'accounts', 'unmounted', 'readonly', 'no-profile', 'android-plan', 'remove-refused')
+CASES = ('roundtrip', 'tamper', 'resume', 'rollback', 'accounts', 'unmounted', 'readonly', 'no-profile', 'android-plan', 'remove-refused', 'android-mounted-ro', 'android-mounted-rw', 'android-unmounted', 'android-script')
 
 
 def main():
@@ -37,6 +38,37 @@ def main():
                 # 2026-11-10: an image saved on the phone; it must stay through both switches.
                 (f.live/distro.STORE_DIR).mkdir()
                 (f.live/distro.STORE_DIR/'rootfs.tar.gz').write_bytes((f.sd/'rootfs.tar.gz').read_bytes())
+            if case == 'android-script':
+                f.context_json['volumes'][0].update(fs_type='f2fs', mounted=True, read_only=False)
+                (root/'filesystem-fixture.json').write_text(json.dumps(f.context_json))
+                (f.live/'setup.sh').write_text('#!/bin/sh\necho planned only\n')
+            elif case.startswith('android-') and case != 'android-plan':
+                # Match Files' decrypted Android mount: still F2FS/fscrypt, not Linux.
+                f.context_json['volumes'][0].update(fs_type='f2fs', fscrypt_feature=True,
+                    mounted=case != 'android-unmounted', read_only=case != 'android-mounted-rw')
+                (root/'filesystem-fixture.json').write_text(json.dumps(f.context_json))
+                status = {**distro.status(f.context), 'ok': True, 'mode': 'fixture', 'operation': 'status'}
+                assert status['foreign'] and status['initialized'] is None
+                assert status['transaction_state'] == ('unknown-unmounted' if case == 'android-unmounted' else 'none')
+                # Every malformed/contradictory variant must stay rejected, not become
+                # an empty Linux root or silently clear a boot safety blocker.
+                mutations = [dict(initialized=True), dict(initialized=False), dict(foreign=False),
+                    dict(active='stale-linux'), dict(slots=[{'id': 'stale-linux', 'name': 'Stale', 'active': True, 'hardware_boot_tested': True}]),
+                    dict(transaction={'id': 'tx', 'source': 'old', 'target': 'new', 'step': 0, 'total': 1, 'actions': ['resume']}),
+                    dict(transaction_state='unknown-unmounted' if status['mounted'] else 'none'),
+                    dict(empty_userdata=True), dict(normal_boot_safety_known=True),
+                    dict(mode='device'), dict(operation='import')]
+                bad_statuses = [{**status, **mutation} for mutation in mutations]
+                # Unmounted foreign:false is valid; replace that mutation with an invalid initialized value.
+                if not status['mounted']:
+                    bad_statuses[2] = {**status, 'initialized': 'unknown'}
+                for key in ('initialized', 'foreign', 'transaction', 'mounted', 'read_only', 'volume_token', 'normal_boot_safety_known'):
+                    malformed = copy.deepcopy(status)
+                    del malformed[key]
+                    bad_statuses.append(malformed)
+                for index, malformed in enumerate(bad_statuses):
+                    (root/f'invalid-status-{index}.json').write_text(json.dumps(malformed))
+                (root/'invalid-status-count').write_text(str(len(bad_statuses)))
             if case in ('resume', 'rollback'):
                 plan = f.imported()
                 def stop(name, index):
@@ -85,7 +117,22 @@ def main():
             f.assert_home(unittest.TestCase())
             if case == 'android-plan':
                 assert not (root/'cache/a22x-recovery/install-plan.json').exists()  # discarded on the page
-            if case not in ('unmounted', 'readonly', 'no-profile', 'android-plan'):
+            if case == 'android-script':
+                assert not f.context.volume('userdata')['mounted']
+                assert f.context.volume('userdata')['fs_type'] == 'f2fs'
+                plans = root/'privateplans'
+                staged, = plans.glob('linux-script-*.sh')
+                plan, = plans.glob('distro-*.json')
+                binding = json.loads(plan.read_text())['plan']['binding']
+                assert staged.read_bytes() == (f.live/'setup.sh').read_bytes()
+                assert binding['options']['script']['path'] == str(staged)
+                assert binding['script']['sha256'] == hashlib.sha256(staged.read_bytes()).hexdigest()
+                assert not (f.live/distro.MANAGER).exists()
+            elif case.startswith('android-') and case != 'android-plan':
+                assert f.context.volume('userdata')['mounted'] == f.context_json['volumes'][0]['mounted']
+                assert f.context.volume('userdata')['read_only'] == f.context_json['volumes'][0]['read_only']
+                assert not (f.live/distro.MANAGER).exists()
+            if case not in ('unmounted', 'readonly', 'no-profile', 'android-plan') and not case.startswith('android-'):
                 status = distro.status(f.context)
                 expected = 'new-linux' if case == 'resume' else 'original'
                 assert status['active'] == expected and not status['transaction']

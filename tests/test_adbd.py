@@ -302,3 +302,72 @@ class TestWithTheAdbClient(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FastClockTest(unittest.TestCase):
+    """2026-11-21: a file moving over USB runs the cluster of the USB interrupt at its top clock."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root)
+        for policy, cpus, top, low in (('policy0', '0 1 2 3 4 5', '2000000', '500000'), ('policy6', '6 7', '2203000', '1468666')):
+            folder = self.root / 'sys/devices/system/cpu/cpufreq' / policy
+            folder.mkdir(parents=True)
+            (folder / 'related_cpus').write_text(cpus + '\n')
+            (folder / 'cpuinfo_max_freq').write_text(top + '\n')
+            (folder / 'scaling_min_freq').write_text(low + '\n')
+        (self.root / 'proc/irq/148').mkdir(parents=True)
+        (self.root / 'proc/interrupts').write_text('           CPU0       CPU1\n 148:   16098854          0  GICv3 128 Level     musb-hdrc.2.auto\n')
+        self.irq('0')
+        self.clock = adbd.FastClock(self.root)
+
+    def irq(self, cpus):
+        (self.root / 'proc/irq/148/effective_affinity_list').write_text(cpus + '\n')
+
+    def floor(self, policy):
+        return (self.root / 'sys/devices/system/cpu/cpufreq' / policy / 'scaling_min_freq').read_text().strip()
+
+    def test_the_little_cluster_runs_at_its_top_while_a_file_moves(self):
+        with self.clock():
+            self.assertEqual(self.floor('policy0'), '2000000')
+            with self.clock():  # a second transfer at the same time
+                pass
+            self.assertEqual(self.floor('policy0'), '2000000')
+            self.assertEqual(self.floor('policy6'), '1468666')  # the interface's floor stays
+        self.assertEqual(self.floor('policy0'), '500000')
+
+    def test_the_floor_comes_back_though_the_kernel_shows_it_late(self):
+        # On the phone the floor is applied later: a read right after the write shows the old one.
+        floor = self.root / 'sys/devices/system/cpu/cpufreq/policy0/scaling_min_freq'
+        with self.clock():
+            floor.write_text('500000\n')
+        self.assertEqual(self.floor('policy0'), '500000')
+        with self.clock():
+            self.assertEqual(self.floor('policy0'), '2000000')
+        self.assertEqual(self.floor('policy0'), '500000')
+
+    def test_the_interrupt_on_the_fastest_cluster_changes_nothing(self):
+        self.irq('6')
+        with self.clock():
+            self.assertEqual((self.floor('policy0'), self.floor('policy6')), ('500000', '1468666'))
+
+    def test_without_a_usb_controller_nothing_changes(self):
+        (self.root / 'proc/interrupts').write_text('           CPU0\n  11:   5  GICv3  27 Level  arch_timer\n')
+        with self.clock():
+            self.assertEqual(self.floor('policy0'), '500000')
+
+
+class ChecksumTest(unittest.TestCase):
+    """2026-11-21: a computer of version 0x01000001 or later checks no payload sum; an older one does."""
+
+    def sent(self, version):
+        written = []
+        transport = mock.Mock(write=written.append)
+        connection = adbd.Connection(transport, None, None, 'usb')
+        connection.peer_version = version
+        connection.send(adbd.A_WRTE, 1, 2, b'\x01\x02\x03')
+        return struct.unpack('<6I', written[0])[4]
+
+    def test_the_sum_only_for_an_old_computer(self):
+        self.assertEqual(self.sent(adbd.VERSION), 0)
+        self.assertEqual(self.sent(0x01000000), 6)

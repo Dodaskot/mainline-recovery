@@ -47,7 +47,8 @@ class Stick(unittest.TestCase):
         self.root = Path(tempfile.mkdtemp(prefix='a22x-usb-', dir=os.environ.get('TMPDIR')))
         self.addCleanup(shutil.rmtree, self.root, True)
         rows = []
-        for ident, kind in (('usb-p1', 'exfat'), ('usb-p2', 'vfat'), ('usb-p3', 'ext4'), ('sdcard-p1', 'ext4')):
+        for ident, kind in (('usb-p1', 'exfat'), ('usb-p2', 'vfat'), ('usb-p3', 'ext4'), ('usb-p4', 'erofs'),
+                            ('sdcard-p1', 'ext4'), ('sdcard-p2', 'f2fs')):
             (self.root / ident).mkdir()
             rows.append({'id': ident, 'path': ident, 'fs_type': kind, 'mounted': True, 'read_only': True})
         (self.root / 'filesystem-fixture.json').write_text(json.dumps({'schema': 'a22x.filesystem.fixture.v1', 'volumes': rows}))
@@ -66,30 +67,43 @@ class Stick(unittest.TestCase):
         self.context.prepare_usb_backup('usb-p1', True)
         self.assertTrue((folder / 'old-backup').is_dir())
 
-    def test_fat32_is_refused_before_anything_changes(self):
-        with self.assertRaises(fs.FilesystemError) as caught:
-            self.context.prepare_usb_backup('usb-p2', True)
-        self.assertEqual(caught.exception.code, 'BACKUP_FILESYSTEM_UNSUITED')
-        self.assertTrue(self.context.volume('usb-p2')['read_only'])
-        self.assertFalse((self.root / 'usb-p2/A22xBackups').exists())
+    def test_fat32_holds_backups_too(self):
+        # 2026-11-20, the owner: every filesystem the kernel writes; a file there stops at 4 GiB.
+        result = self.context.prepare_usb_backup('usb-p2', True)
+        self.assertTrue(Path(result['repository']).is_dir())
+        self.assertFalse(self.context.volume('usb-p2')['read_only'])
 
-    def test_only_a_stick_can_be_prepared_and_writes_need_confirmation(self):
+    def test_a_filesystem_the_kernel_does_not_write_is_refused_before_anything_changes(self):
         with self.assertRaises(fs.FilesystemError) as caught:
-            self.context.prepare_usb_backup('sdcard-p1', True)
-        self.assertEqual(caught.exception.code, 'NOT_USB_VOLUME')
+            self.context.prepare_usb_backup('usb-p4', True)
+        self.assertEqual(caught.exception.code, 'BACKUP_FILESYSTEM_UNSUITED')
+        self.assertTrue(self.context.volume('usb-p4')['read_only'])
+        self.assertFalse((self.root / 'usb-p4/A22xBackups').exists())
+
+    def test_a_second_sd_partition_holds_backups_and_the_first_stays_the_store(self):
+        result = self.context.prepare_usb_backup('sdcard-p2', True)
+        self.assertEqual(Path(result['repository']), self.root / 'sdcard-p2/A22xBackups')
+        self.assertIn('sdcard-p2', [item['id'] for item in result['volumes']])
+
+    def test_only_a_card_or_a_stick_can_be_prepared_and_writes_need_confirmation(self):
+        # The card's first partition too (2026-11-21); never a partition of the phone.
+        with self.assertRaises(fs.FilesystemError) as caught:
+            self.context.prepare_usb_backup('userdata', True)
+        self.assertIn(caught.exception.code, ('NOT_BACKUP_VOLUME', 'VOLUME_UNAVAILABLE'))
+        self.assertTrue(fs.backup_partition('sdcard-p1') and not fs.backup_partition('userdata'))
         with self.assertRaises(fs.FilesystemError):
             self.context.prepare_usb_backup('usb-p1', False)
         self.assertFalse((self.root / 'usb-p1/A22xBackups').exists())
 
     def test_eject_unmounts_sticks_and_leaves_the_sd_alone(self):
-        self.assertEqual(self.context.eject_usb()['volumes'], [])
-        for ident in ('usb-p1', 'usb-p2', 'usb-p3'):
+        self.assertEqual([item['id'] for item in self.context.eject_usb()['volumes']], ['sdcard-p1', 'sdcard-p2'])
+        for ident in ('usb-p1', 'usb-p2', 'usb-p3', 'usb-p4'):
             self.assertFalse(self.context.volume(ident)['mounted'])
         self.assertTrue(self.context.volume('sdcard-p1')['mounted'])
 
-    def test_sync_reports_mounted_sticks_only(self):
+    def test_sync_reports_every_partition_that_can_hold_backups(self):
         ids = [item['id'] for item in self.context.sync_usb()['volumes']]
-        self.assertEqual(ids, ['usb-p1', 'usb-p2', 'usb-p3'])
+        self.assertEqual(sorted(ids), ['sdcard-p1', 'sdcard-p2', 'usb-p1', 'usb-p2', 'usb-p3'])
 
 
 class Identity(unittest.TestCase):
@@ -143,12 +157,14 @@ class Filesystem(unittest.TestCase):
                 pass
         linux_workflow._offline(Context(), [], {'filesystem': filesystem})
 
-    def test_ext4_and_exfat_hold_a_large_archive_and_fat32_does_not(self):
-        self.check('ext4')
-        self.check('exfat')
-        with self.assertRaises(RecoveryError) as caught:
-            self.check('vfat')
-        self.assertEqual(caught.exception.code, 'LINUX_REPOSITORY_UNQUALIFIED_FS')
+    def test_every_filesystem_the_kernel_writes_may_hold_linux_backups(self):
+        # 2026-11-20, the owner: FAT32 too; its 4 GiB file limit is the plan's to check.
+        for filesystem in ('ext4', 'exfat', 'f2fs', 'btrfs', 'udf', 'vfat'):
+            self.check(filesystem)
+        for filesystem in ('erofs', 'iso9660'):
+            with self.assertRaises(RecoveryError) as caught:
+                self.check(filesystem)
+            self.assertEqual(caught.exception.code, 'LINUX_REPOSITORY_UNQUALIFIED_FS')
 
 
 if __name__ == '__main__':

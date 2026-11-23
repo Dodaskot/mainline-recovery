@@ -46,6 +46,9 @@ LINUX_BOOT_K121 = "e3542fcdd905a4b89a10eb828fa983bc9f0837a2635155d0124c692f6c5fb
 LINUX_BOOT_K122 = "9701f48ddced60c648e79a502885778935d1cb5610a011d77fc1898eea01d41a"
 # Kernel 138 (BOOT v147, 2026-11-12): the battery percent kept in the PMIC; same modules.
 LINUX_BOOT_K138 = "5faafaa0035bff7bd77251ab01e2b4c395798755ad24db7b3240cc3d6139ad0f"
+# Kernel 165 (BOOT v1r8, 2026-11-22): k138 with the recovery kernel #164's fixes (panels, touch, display
+# select), a neutral banner; same modules (release 7.2.0-a22x+). Live: Debian 13 boots, Wi-Fi, BT, sound, sleep.
+LINUX_BOOT_K165 = "c09c126596d7bd4180706135543d439dfa353a0685fed277da0241e29f49524c"
 LABELS = ("boot", "userdata")
 RESERVE = 64 * 1024 * 1024
 METADATA_ALLOWANCE = 1024 * 1024
@@ -115,14 +118,46 @@ def _repo_pin(context, repo):
         os.close(fd)
 
 
+REPOSITORY_FILESYSTEMS = ("ext4", "exfat", "f2fs", "btrfs", "udf", "vfat")
+FAT32_FILE_LIMIT = (4 << 30) - 1
+
+
 def _offline(context, parts, repo):
     context.assert_recovery()
     context.assert_offline(parts, repo)
     for part in parts:
         context.graph.require_no_holders(part["device"])
-    # A compact archive can pass 4 GiB, which rules out FAT32.
-    if context.mode == "device" and repo["filesystem"] not in ("ext4", "exfat"):
-        fail("LINUX_REPOSITORY_UNQUALIFIED_FS", "Linux backups need external storage formatted as ext4 or exFAT")
+    # 2026-11-20, the owner: every filesystem the kernel writes. On FAT32 a file stops at 4 GiB, so
+    # there the plan refuses an archive that would pass it (make_backup_plan), before anything is written.
+    if context.mode == "device" and repo["filesystem"] not in REPOSITORY_FILESYSTEMS:
+        fail("LINUX_REPOSITORY_UNQUALIFIED_FS",
+             "Linux backups need external storage formatted as ext4, exFAT, F2FS, Btrfs, UDF or FAT32")
+
+
+def reclaim_partials(repo, keep=None):
+    """Space of copies that never finished (2026-11-22, live: a Linux copy cancelled at 28 % left 172 MB in
+    its .partial folder, which counted against the next plan's free space, and a copy cut by power or a
+    hard kill writes no FAILED.json at all). Under the operation lease no other copy is being written, so
+    every .NAME.partial-ID folder without COMPLETE.json but KEEP loses its data files; a FAILED.json says
+    why it is there (written when the copy itself could not). Returns the bytes freed."""
+    freed = 0
+    base = Path(repo["path"])
+    for folder in base.glob(".*.partial-*"):
+        if keep is not None and folder == keep or folder.is_symlink() or not folder.is_dir() \
+                or (folder / "COMPLETE.json").exists():
+            continue
+        for child in folder.iterdir():
+            if child.name == "FAILED.json" or child.is_symlink() or not child.is_file():
+                continue
+            with contextlib.suppress(OSError):
+                size = child.stat().st_size
+                child.unlink()
+                freed += size
+        if not (folder / "FAILED.json").exists():
+            with contextlib.suppress(OSError):
+                write_json_new(folder / "FAILED.json", {"schema": "a22x.failed.v2", "utc": utc(), "restorable": False,
+                                                        "error": "INTERRUPTED"})
+    return freed
 
 
 def _free(repo, required=0):
@@ -272,16 +307,23 @@ def make_backup_plan(context, repository, name, progress=None):
         destination = Path(repo["path"]) / name
         if os.path.lexists(destination):
             fail("BACKUP_EXISTS", "Backup name already exists", path=str(destination))
+        reclaim_partials(repo)
         free = _free(repo)
         with contextlib.ExitStack() as stack:
             sources = {p["label"]: stack.enter_context(context.open_partition(p)) for p in parts}
             # Stop as soon as the archive cannot fit, instead of finishing a long measuring pass.
             budget = max(1, min(free - RESERVE - METADATA_ALLOWANCE, _compact().MAX_ARCHIVE_BYTES))
+            fat_limited = repo["filesystem"] == "vfat" and budget > FAT32_FILE_LIMIT
+            if fat_limited:
+                budget = FAT32_FILE_LIMIT
             try:
                 estimate = _compact().estimate(sources["userdata"].fileno(), parts[1]["size_bytes"],
                                                progress=progress, tool_paths=tools["paths"], inherited_fds=(lease,),
                                                max_archive_bytes=budget)
             except RecoveryError as error:
+                if error.code == "BACKUP_SPACE_LIMIT" and fat_limited:
+                    fail("FILE_TOO_LARGE", "This backup is larger than 4 GiB, the most a FAT32 file holds. "
+                         "Use a partition in ext4, exFAT, F2FS or Btrfs", limit_bytes=FAT32_FILE_LIMIT)
                 if error.code == "BACKUP_SPACE_LIMIT":
                     fail("INSUFFICIENT_SPACE", "The backup does not fit on this storage. Choose one with more free space",
                          free_bytes=free, reserve_bytes=RESERVE)
@@ -317,7 +359,7 @@ def _manifest(context, plan, entries):
 
 
 TESTED_LINUX_BOOTS = frozenset((LINUX_BOOT_K108, LINUX_BOOT_CHARGER_OFF, LINUX_BOOT_K116, LINUX_BOOT_K121,
-                                LINUX_BOOT_K122, LINUX_BOOT_K138))
+                                LINUX_BOOT_K122, LINUX_BOOT_K138, LINUX_BOOT_K165))
 
 
 def _backup_boot_admitted(qualification, directory, entry):
@@ -444,6 +486,7 @@ def backup(context, plan, confirmation, progress=None):
         context = context.refresh()
         tools = qualified.toolchain(context)
         parts, repo = _check_plan(context, plan, "backup", confirmation, tools)
+        reclaim_partials(repo)
         _free(repo, plan["space"]["estimated_archive_bytes"])
         destination = Path(repo["path"]) / plan["name"]
         validate_name(plan["name"])
@@ -502,6 +545,8 @@ def backup(context, plan, confirmation, progress=None):
                     write_json_new(temporary / "FAILED.json", {"schema": "a22x.failed.v2", "utc": utc(),
                                                               "snapshot_id": plan["snapshot_id"], "restorable": False,
                                                               "error": getattr(exc, "code", type(exc).__name__)})
+                # Its data never becomes a copy: the space goes back now (FAILED.json stays as the record).
+                reclaim_partials(repo)
             if isinstance(exc, RecoveryError):
                 exc.details["partial_path"] = str(temporary)
             raise

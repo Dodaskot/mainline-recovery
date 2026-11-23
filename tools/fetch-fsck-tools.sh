@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# fsck.f2fs and fsck.fat for the recovery (2026-11-13): Arch Linux ARM's own packages, each checked
+# fsck.f2fs and fsck.fat for the recovery (2026-11-13), mkfs.exfat and fsck.exfat (2026-11-20): Arch Linux ARM's own packages, each checked
 # against its signature with the key in keys/archlinuxarm.asc and against the SHA-256 pinned here.
 # The tools run with the glibc the recovery already carries (glibc-runtime, as make_f2fs does).
 #
@@ -26,11 +26,13 @@ EOF
 fetch core dosfstools-4.2-5-aarch64.pkg.tar.xz c41120c6c89469f259d5248ea2ed0a7bea19f8a38d493682f7ff82037a862c21
 fetch extra f2fs-tools-1.17.0-1-aarch64.pkg.tar.xz 12fd18e3ef163d4c2bdeb15a94c5574832700a9ce305eca32b0217fcab3d7c24
 fetch core util-linux-libs-2.42.4-1-aarch64.pkg.tar.xz fc33959229b44ee81ab4c66177783b65cae4390868552a81493dc94be0cf9c60
+fetch extra exfatprogs-1.4.5-1-aarch64.pkg.tar.xz 38d8d4c0196901cab4e6f6fc40fc5e77b063618899ffcb15bf2003b41db72e2e
 mkdir -p "$WORK/glibc-runtime/bin" "$WORK/glibc-runtime/lib" "$WORK/rt-wrappers"
-cp "$T/x/usr/bin/fsck.f2fs" "$T/x/usr/bin/fsck.fat" "$WORK/glibc-runtime/bin/"
+cp "$T/x/usr/bin/fsck.f2fs" "$T/x/usr/bin/fsck.fat" "$T/x/usr/bin/mkfs.exfat" "$T/x/usr/bin/fsck.exfat" "$WORK/glibc-runtime/bin/"
 cp "$T/x/usr/lib/libf2fs.so.11.0.0" "$WORK/glibc-runtime/lib/libf2fs.so.11"
 cp "$T/x/usr/lib/libuuid.so.1.3.0" "$WORK/glibc-runtime/lib/libuuid.so.1"
-for tool in fsck.f2fs fsck.fat; do
+cp "$T/x/usr/lib/libblkid.so.1.1.0" "$WORK/glibc-runtime/lib/libblkid.so.1"
+for tool in fsck.f2fs fsck.fat mkfs.exfat fsck.exfat; do
     printf '#!/bin/sh\nunset LD_LIBRARY_PATH\nG=/opt/a22x-recovery/glibc\nexec $G/lib/ld-linux-aarch64.so.1 --library-path $G/lib $G/bin/%s "$@"\n' "$tool" > "$WORK/rt-wrappers/$tool"
     chmod 755 "$WORK/rt-wrappers/$tool"
 done

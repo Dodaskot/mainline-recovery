@@ -49,7 +49,7 @@ int main(int argc,char**argv){
     copy(a->repositories[0],PATH_LEN,argv[7]);a->repository_count=1;
     CHECK(snprintf(a->workdir,sizeof(a->workdir),"%s/privateplans",argv[1])<(int)sizeof(a->workdir)&&private_workdir(a->workdir));
     screen(a,HOME);render(a);CHECK(!a->job.pid&&!a->install.known);
-    screen(a,ANDROID_MENU);render(a);CHECK(test_press(a,A_INSTALL,50)&&settle_install(a)&&a->screen==INSTALL&&a->install.known);
+    screen(a,ANDROID_MENU);render(a);a->page_scroll=page_max_scroll(a);render(a);CHECK(test_press(a,A_INSTALL,50)&&settle_install(a)&&a->screen==INSTALL&&a->install.known);
     if(resume){
         CHECK(a->install.pending_count==1&&a->install.reboot_blocked&&!test_press(a,A_INSTALL_REVIEW,50));
         CHECK(test_press(a,A_INSTALL_PENDING,50)&&a->job.kind==J_INSTALL_STATUS&&settle_install(a));
@@ -66,8 +66,10 @@ int main(int argc,char**argv){
     if(noop)CHECK(!changed&&!a->install.order_count&&skipped==(stock?7u:1u));
     else CHECK(changed>0);
     CHECK(!test_press(a,A_INSTALL_CONFIRM,6000)&&!a->job.pid);
-    CHECK(review_all_install_rows(a));unsigned hold=stock?5000:3000;
-    CHECK(a->install.hold_ms==hold&&test_press(a,A_INSTALL_CONFIRM,hold-1)&&!a->job.pid);
+    /* The plan asks 5 s for stock and 3 s for BOOT; since 2026-11-20 the button holds 2 s and 1 s, as its label says. */
+    CHECK(review_all_install_rows(a));unsigned hold=stock?2000:1000;CHECK(a->install.hold_ms==(stock?5000u:3000u));
+    render(a);Button*confirm=test_button(a,A_INSTALL_CONFIRM);CHECK(confirm&&confirm->hold_ms==(int)hold);
+    CHECK(test_press(a,A_INSTALL_CONFIRM,hold-1)&&!a->job.pid);
     if(!strcmp(which,"tamper")){
         int fd=open(a->install.plan_path,O_WRONLY|O_APPEND|O_NOFOLLOW|O_CLOEXEC);CHECK(fd>=0);
         ssize_t put=write(fd," ",1);int closed=close(fd);CHECK(put==1&&closed==0);

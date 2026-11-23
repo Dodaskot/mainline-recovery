@@ -104,7 +104,8 @@ node. Only DAC_OVERRIDE and FOWNER remain; seccomp denies escape/mount/network,
 foreign-process control, process creation and flock. The responder cannot
 unlock the inherited storage lease. Its parent-death signal is SIGKILL.
 
-The supervisor and responder both retain the lease. Stop disconnects USB,
+The supervisor and responder both retain the lease, shared: the terminal, file copies and exports run
+beside the export, while mounting, formatting and flashing wait for its stop (2026-11-21). Stop disconnects USB,
 terminates/reaps the responder, syncs the pinned source filesystem, restores
 only its own added FunctionFS link/function and the original NCM UDC binding,
 then releases the lease. Failure is recorded as failed/unclean, never as a clean
