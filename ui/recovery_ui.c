@@ -3773,7 +3773,8 @@ static const char*job_name(int kind){
         "files-inventory","files-mount","files-unmount","files-list","files-read","files-write","files-mkdir","files-rename","files-copy","files-delete",
         "files-stat","files-chmod","files-chown","files-resolve","files-copy-tree","files-format","files-check","files-resize","diagnostic-status","diagnostic-export","display-status","display-set","wipe-plan","wipe","usb-status","usb-start","usb-stop",
         "terminal-status","terminal-start","terminal-read","terminal-write","terminal-resize","terminal-stop","systems-status","systems-import-plan","systems-switch-plan","systems-import","systems-switch","systems-recover","systems-remove",
-        "install-status","install-boot-plan","install-stock-plan","install-resume-plan","install-execute","flash-targets","flash-check","flash-write","flash-members","usb-sync","usb-backup","usb-eject"};
+        "install-status","install-boot-plan","install-stock-plan","install-resume-plan","install-execute","flash-targets","flash-check","flash-write","flash-members","flash-payload-stage","usb-sync","usb-backup","usb-eject"};
+    _Static_assert(sizeof(n)/sizeof(n[0])==J_USB_EJECT+1,"native job names must match JobKind");
     return kind>=0&&kind<=J_USB_EJECT?n[kind]:"";
 }
 static bool file_job(int kind){return kind==J_ANDROID_FORMAT_AUTH||kind==J_ANDROID_FORMAT_CANCEL||kind==J_ANDROID_PREPARE||kind==J_ANDROID_CANCEL||(kind>=J_FS_INVENTORY&&kind<=J_FS_RESIZE)||kind==J_FS_DELETE_MANY||kind==J_FS_DELETE_PREVIEW||kind==J_ARCHIVE_PACK||kind==J_ARCHIVE_UNPACK;}
@@ -7370,6 +7371,34 @@ static void animation_tick(App*a){
     if(now||before)a->dirty=true;
     before=now;
 }
+/* Hidden visual animations do not need frames. Keep a short service cadence
+ * while a child, input hold or a scheduled operation still needs polling; the
+ * event fds remain in poll so input and media wake it immediately. */
+static bool loop_can_present(const App*a,bool soft_presented){return !(a->display_blank_known&&a->display_blanked)&&(!a->soft_blanked||!soft_presented);}
+/* terminal_pump has no event fd: it must drain an active or exited session
+ * on its short cadence even when the panel is hidden. */
+static bool terminal_needs_service(const App*a){
+    if(a->preview||(!terminal_screen(a)&&!a->terminal_left))return false;
+    if(a->terminal_close_requested||a->terminal_pending||(a->terminal_autostart&&a->terminal_known))return true;
+    return terminal_session_open(a)&&a->terminal_available&&!a->terminal_paused&&
+           (!strcmp(a->terminal_state,"active")||!strcmp(a->terminal_state,"exited"));
+}
+static int loop_poll_timeout(const App*a,bool dark,bool soft_presented,uint64_t last_frame,bool drm){
+    bool hidden=dark||a->soft_blanked;
+    if(a->soft_blanked&&!dark&&!soft_presented)return 1; /* paint black once */
+    if(hidden){
+        bool busy=a->job.pid||a->side.pid||a->display_control.pid||a->settings_pid||a->shot_pid||a->android_warm_pid||
+                  a->pointer_down||a->display_power_down||a->sound_key_held||a->android_cancel_requested||a->hotplug_pending||
+                  (a->input_rescan_at&&!a->input_path[0])||terminal_needs_service(a)||
+                  (a->screen==USB_FILES&&usb_waiting(a));
+        return busy?40:SLEEP_POLL_MS;
+    }
+    bool moving=a->pointer_down||a->kb_bubble_until||a->kinetic.active||a->tr.active||a->tr.armed||a->nav_settle_end||
+                sound_animating(a)||web_animating(a)||recents_animating(a)||(a->qs.visible&&a->qs.settle_at)||
+                (a->job.pid&&job_long(a->job.kind))||web_frame_wanted(a);
+    unsigned int frame=moving?(drm?1u:(a->display_hz==90?11u:16u)):70u;
+    return moving?(a->now-last_frame>=frame?1:(int)(frame-(a->now-last_frame))):40;
+}
 /* A screenshot chord takes the volume key for itself: its repeat stops and the step it made is taken back
    (2026-11-21, #7: the volume kept changing after the screenshot combination). */
 static void sound_key_cancel(App*a){
@@ -10146,6 +10175,44 @@ static int test_settings_reset(void){
     assert(ui_language==1&&a->utc_offset==120&&a->lock_mode==0&&!a->access_mode);
     ui_language=language;ui_theme=theme;ui_terminal=scheme;free(a->pixels);free(a);return 1;
 }
+static int test_hidden_poll(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->now=10000;
+    a->tr.active=true;a->tr.started=9999;a->display_blank_known=a->display_blanked=true;
+    assert(loop_poll_timeout(a,true,false,9990,true)==SLEEP_POLL_MS&&!loop_can_present(a,false));
+    transition_cancel(a);assert(!a->tr.active&&a->dirty);
+    a->tr.armed=true;assert(loop_poll_timeout(a,true,false,9990,true)==SLEEP_POLL_MS);transition_cancel(a);assert(!a->tr.armed);
+    a->screen=WEB_BROWSER;a->web_fd=99;copy(a->web_url,sizeof(a->web_url),"https://example.invalid/");
+    assert(web_starting(a)&&loop_poll_timeout(a,true,false,9990,true)==SLEEP_POLL_MS);
+    a->screen=HOME;a->web_fd=-1;
+    a->side.pid=1;assert(loop_poll_timeout(a,true,false,9990,true)==40);a->side.pid=0;
+    a->android_warm_pid=1;assert(loop_poll_timeout(a,true,false,9990,true)==40);a->android_warm_pid=0;
+    a->display_power_down=true;assert(loop_poll_timeout(a,true,false,9990,true)==40);a->display_power_down=false;
+    a->input_rescan_at=10010;assert(loop_poll_timeout(a,true,false,9990,true)==40);a->input_rescan_at=0;
+    a->screen=TERMINAL;a->terminal_available=true;copy(a->terminal_session,sizeof(a->terminal_session),"session");
+    copy(a->terminal_state,sizeof(a->terminal_state),"active");a->terminal_next_poll=10040;
+    assert(loop_poll_timeout(a,true,false,9990,true)==40);a->display_blanked=false;a->soft_blanked=true;
+    assert(loop_poll_timeout(a,false,true,9990,true)==40);a->terminal_paused=true;
+    assert(loop_poll_timeout(a,false,true,9990,true)==SLEEP_POLL_MS);a->terminal_paused=false;
+    copy(a->terminal_state,sizeof(a->terminal_state),"exited");assert(loop_poll_timeout(a,false,true,9990,true)==40);
+    copy(a->terminal_state,sizeof(a->terminal_state),"active");
+    a->screen=HOME;a->terminal_left=true;assert(loop_poll_timeout(a,false,true,9990,true)==40);
+    a->terminal_left=false;a->terminal_session[0]=0;a->soft_blanked=false;a->display_blanked=true;
+    a->display_blanked=false;a->soft_blanked=true;a->tr.active=true;
+    assert(loop_poll_timeout(a,false,false,9990,true)==1&&loop_can_present(a,false));
+    assert(loop_poll_timeout(a,false,true,9990,true)==SLEEP_POLL_MS&&!loop_can_present(a,true));
+    transition_cancel(a);a->soft_blanked=false;a->tr.active=true;
+    assert(loop_can_present(a,true)&&loop_poll_timeout(a,false,true,9990,true)==1);
+    /* A wake/input or service fd still interrupts the sleeping timeout. */
+    int p[2];assert(!pipe(p));assert(write(p[1],"x",1)==1);struct pollfd fd={p[0],POLLIN,0};
+    assert(poll(&fd,1,SLEEP_POLL_MS)==1&&(fd.revents&POLLIN));close(p[0]);close(p[1]);
+    /* Soft blank stops video frames but leaves audio and the player connection. */
+    int pair[2];assert(!socketpair(AF_UNIX,SOCK_STREAM,0,pair));a->mu.player_fd=pair[0];a->mu.video=true;
+    a->mu.asked_w=320;a->mu.asked_h=240;a->mu.local.playing=true;a->soft_blanked=true;media_pump(a);
+    char msg[32]={0};ssize_t count=recv(pair[1],msg,sizeof(msg)-1,MSG_DONTWAIT);assert(count>0&&!strcmp(msg,"video 0 0\n")&&a->mu.local.playing);
+    close(pair[1]);media_pump(a);assert(a->mu.player_fd==-1); /* EOF is retired, so poll cannot spin */
+    assert(!socketpair(AF_UNIX,SOCK_STREAM,0,pair));a->web_frames_fd=pair[0];close(pair[1]);web_poll(a);assert(a->web_frames_fd==-1);
+    free(a->pixels);free(a);return 1;
+}
 static int self_test(void){
     App*a=calloc(1,sizeof(*a));assert(a);initialize(a);int tests=0;
     JsonToken tokens[64];Json j;assert(json_parse(&j,"{\"ok\":true,\"nested\":{\"x\":7},\"name\":\"quote\\\"\",\"arr\":[1,2]}",tokens,64)>0);assert(json_bool(&j,json_get(&j,0,"ok"),0)==1);char s[64];assert(json_string(&j,json_get(&j,0,"name"),s,sizeof(s))>=0&&!strcmp(s,"quote\""));assert(json_uint(&j,json_get(&j,json_get(&j,0,"nested"),"x"),0)==7);tests++;
@@ -10242,7 +10309,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_flash_file_return();tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_hw_keyboard();tests+=test_mouse();tests+=test_flash_payload();tests+=test_status_sleep_and_amoled();tests+=test_busy_offer();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_web_activity();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_switch_and_kinds();tests+=test_review_fixes();tests+=test_first_boot_progress();tests+=test_file_details();tests+=test_android_variants();tests+=test_gsi_keep_data();tests+=test_zip_root_app();tests+=test_linux_stages();tests+=test_nofbe_choice();tests+=test_system_live();tests+=test_display_without_blanking();tests+=test_media_parts();tests+=test_shell();tests+=test_web_overlays();tests+=test_recents_keep_browser();tests+=test_operation_exit();tests+=test_files_beside();tests+=test_web_float();tests+=test_shade_over_video();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_hidden_poll();tests+=test_flash_file_return();tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_hw_keyboard();tests+=test_mouse();tests+=test_flash_payload();tests+=test_status_sleep_and_amoled();tests+=test_busy_offer();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_web_activity();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_switch_and_kinds();tests+=test_review_fixes();tests+=test_first_boot_progress();tests+=test_file_details();tests+=test_android_variants();tests+=test_gsi_keep_data();tests+=test_zip_root_app();tests+=test_linux_stages();tests+=test_nofbe_choice();tests+=test_system_live();tests+=test_display_without_blanking();tests+=test_media_parts();tests+=test_shell();tests+=test_web_overlays();tests+=test_recents_keep_browser();tests+=test_operation_exit();tests+=test_files_beside();tests+=test_web_float();tests+=test_shade_over_video();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;
@@ -10669,7 +10736,7 @@ int main(int argc,char**argv){
     for(int n=0;n<count;n++)if(inputs[n].xmax>inputs[n].xmin&&inputs[n].ymax>inputs[n].ymin)a->touch_seen=true;
     signal(SIGINT,on_signal);signal(SIGTERM,on_signal);update_battery(a);start_job(a,J_INVENTORY);
     a->display_input_blocked=true;if(!start_display_control(a,DC_STATUS,0))a->display_input_blocked=false;
-    uint64_t last_frame=0,last_battery=milliseconds(),splash_start=last_battery,splash_end=last_battery+1300;a->last_activity=last_battery;
+    bool soft_presented=false;uint64_t last_frame=0,last_battery=milliseconds(),splash_start=last_battery,splash_end=last_battery+1300;a->last_activity=last_battery;
     /* Explicit opt-in: no frame telemetry on normal boots or credential screens. */
     const char*fp_env=getenv("A22X_RECOVERY_PROFILE_FRAMES");
     frame_pacing_live.enabled=a->device&&fp_env&&!strcmp(fp_env,"1");
@@ -10699,12 +10766,9 @@ int main(int argc,char**argv){
         p[count+2]=(struct pollfd){a->web_frames_fd,POLLIN,0};
         p[count+3]=(struct pollfd){a->mu.svc_fd,POLLIN,0};
         p[count+4]=(struct pollfd){a->mu.player_fd,POLLIN,0};
-        /* A page frame counts only where it is drawn: one of a browser left behind kept the loop at 1 ms
-           (2026-11-22). */
-        bool moving=a->pointer_down||a->kb_bubble_until||a->kinetic.active||a->tr.active||a->tr.armed||a->nav_settle_end||sound_animating(a)||web_animating(a)||recents_animating(a)||(a->qs.visible&&a->qs.settle_at)||
-                    (a->job.pid&&job_long(a->job.kind))||(web_frame_wanted(a)&&!dark);
-        unsigned int frame_ms=moving?(display.drm>0?1u:(a->display_hz==90?11u:16u)):70u;
-        int timeout=moving?(a->now-last_frame>=frame_ms?1:(int)(frame_ms-(a->now-last_frame))):(asleep?SLEEP_POLL_MS:40);
+        if((dark||a->soft_blanked)&&(a->tr.active||a->tr.armed))transition_cancel(a);
+        int timeout=loop_poll_timeout(a,dark,soft_presented,last_frame,display.drm>0);
+        unsigned int frame_ms;
         int ready=poll(p,(nfds_t)count+5,timeout);
         if(ready>0&&(p[count+1].revents||p[count+2].revents))web_poll(a);
         if(ready>0)for(int n=0;n<count;n++)if(p[n].revents&POLLIN)handle_input(a,&inputs[n],&display);
@@ -10725,7 +10789,10 @@ int main(int argc,char**argv){
                 if(setup_input(&inputs[count],path)){inputs[count].number=n;fprintf(stderr,"[recovery-ui] input added=%s\n",inputs[count].name);count++;}
             }
         }
-        a->now=milliseconds();tick_inertia(a,a->now);browser_maybe_load(a);terminal_pump(a);(void)screen_timeout_tick(a);(void)qs_tick(a);media_pump(a);media_tick(a);overview_tick(a);
+        a->now=milliseconds();
+        if(!a->soft_blanked)soft_presented=false;
+        if(((a->display_blank_known&&a->display_blanked)||a->soft_blanked)&&(a->tr.active||a->tr.armed))transition_cancel(a);
+        tick_inertia(a,a->now);browser_maybe_load(a);terminal_pump(a);(void)screen_timeout_tick(a);(void)qs_tick(a);media_pump(a);media_tick(a);overview_tick(a);
         /* An operation that ended: what is installed may have changed; nothing stays folded. */
         {static pid_t running;if(running&&!a->job.pid){overview_stale(a);a->shell.collapsed=false;}running=a->job.pid;}
         if((a->pointer_down&&!a->web_drag)||a->screen==PROGRESS||(a->job.pid&&job_long(a->job.kind)))a->dirty=true;
@@ -10749,7 +10816,7 @@ int main(int argc,char**argv){
         /* Under something of the interface the ring turns in the whole picture, not on its own rows. */
         if(web_ring_due(a)&&web_page_covered(a))a->dirty=true;
         frame_ms=web_frame||a->pointer_down||(a->qs.visible&&a->qs.settle_at)||sound_animating(a)||web_animating(a)||recents_animating(a)||a->kinetic.active||a->tr.active||a->tr.armed||(a->screen==FILE_PROMPT&&secret_animating(a))||(a->job.pid&&job_long(a->job.kind))?(display.drm>0?1u:(a->display_hz==90?11u:16u)):70u;
-        if((a->dirty||web_frame)&&!(a->display_blank_known&&a->display_blanked)&&a->now-last_frame>=frame_ms){
+        if((a->dirty||web_frame)&&loop_can_present(a,soft_presented)&&a->now-last_frame>=frame_ms){
             bool fp_enabled=frame_pacing_live.enabled;
             uint64_t fp_before=fp_enabled?frame_pacing_clock_ns():0;
             uint64_t before=milliseconds();
@@ -10771,7 +10838,7 @@ int main(int argc,char**argv){
             }
             if(a->tr.active){uint64_t cost=milliseconds()-before;a->tr.frames++;if(cost>a->tr.worst)a->tr.worst=cost;}
             if(a->kinetic.active){uint64_t cost=milliseconds()-before;a->motion_frames++;a->motion_render_total+=cost;if(cost>a->motion_render_max)a->motion_render_max=cost;}
-            last_frame=a->now;
+            last_frame=a->now;if(a->soft_blanked)soft_presented=true;
         }else if(web_ring_due(a)&&!a->dirty&&!a->tr.active&&!a->tr.armed&&!(a->display_blank_known&&a->display_blanked)&&!a->soft_blanked){
             web_ring_draw(a);
             if(!present_web_ring(a,&display,true)){fprintf(stderr,"[recovery-ui] native frame allocation or projection failed\n");a->exit_code=1;break;}

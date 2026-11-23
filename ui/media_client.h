@@ -309,6 +309,6 @@ static void media_pump(App*a){
     bool needed=a->screen==PLAYER||a->screen==BT_PAGE||a->mu.count>0;
     media_link(a,needed);
     media_service_read(a);media_player_read(a);
-    if(a->display_blank_known&&a->display_blanked&&a->mu.video&&a->mu.asked_w)media_frame_size(a,0,0);
+    if(((a->display_blank_known&&a->display_blanked)||a->soft_blanked)&&a->mu.video&&a->mu.asked_w)media_frame_size(a,0,0);
 }
 #endif
