@@ -10167,6 +10167,17 @@ static int test_review_fixes(void){
         "\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"identity\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"file_bytes\":4096}}";
     a->flash_restore=true;a->flash_offline=true;assert(json_parse(&j,review,t,64)>0);complete_flash_job(a,&j,J_FLASH_CHECK,true);
     assert(a->screen==FLASH_REVIEW&&a->flash_review_valid&&!a->flash_offline);render(a);assert(!test_button(a,A_FLASH_CONFIRM)->enabled);
+    /* An identical image is a no-op, with a translated label rather than a hold instruction. */
+    a->flash_restore=false;a->flash_offline=true;a->flash_identical=true;render(a);
+    assert(!strcmp(flash_confirm_label(a),"Already on the partition")&&!test_button(a,A_FLASH_CONFIRM)->enabled);
+    action(a,A_FLASH_CONFIRM);assert(!a->job.pid&&a->screen==FLASH_REVIEW);
+    a->flash_identical=false;render(a);assert(!strcmp(flash_confirm_label(a),"Hold 1 second to flash")&&test_button(a,A_FLASH_CONFIRM)->enabled);
+    unsigned int saved_language=ui_language;ui_language=1;
+    assert(!strcmp(tr("Already on the partition"),"Уже на розділі"));
+    assert(strcmp(tr(file_option_label[FO_ZIP]),file_option_label[FO_ZIP])&&strcmp(tr(file_option_note[FO_ZIP]),file_option_note[FO_ZIP]));
+    assert(strcmp(tr(file_option_label[FO_MODULE]),file_option_label[FO_MODULE])&&strcmp(tr(file_option_note[FO_MODULE]),file_option_note[FO_MODULE]));
+    assert(strcmp(tr(file_option_label[FO_COMPAT]),file_option_label[FO_COMPAT])&&strcmp(tr(file_option_note[FO_COMPAT]),file_option_note[FO_COMPAT]));
+    assert(strcmp(tr(file_option_label[FO_FLASH]),file_option_label[FO_FLASH])&&strcmp(tr(file_option_note[FO_FLASH]),file_option_note[FO_FLASH]));ui_language=saved_language;
     a->job.pid=1;   /* another job runs: the reads below cannot start */
     a->root_known=false;a->root_count=3;root_read(a);assert(a->root_known&&!a->root_count);
     a->card_known=false;card_read(a);assert(a->card_known&&a->card_error[0]);

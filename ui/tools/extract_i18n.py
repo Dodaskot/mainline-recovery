@@ -171,6 +171,9 @@ def main():
     found = set()
     for name in SOURCES:
         found.update(value for value in interface_text(ROOT / name) if wanted(value))
+    # File action labels and notes are in arrays; other literals in this header include commands.
+    file_options = (ROOT / "file_install_ui.h").read_text().split("static const char*const file_option_label", 1)[1].split("static bool file_name_ends", 1)[0]
+    found.update(value for value in STRING.findall(file_options) if wanted(value))
     for name in HELPERS:
         found.update(helper_text(ROOT / name))
     # Why a volume cannot be used: filesystem.py returns these as plain text.

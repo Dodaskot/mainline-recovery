@@ -212,6 +212,7 @@ static void render_flash_super(App*a){
     char free_[64];human_bytes(a->flash_super_free,free_,sizeof(free_));snprintf(line,sizeof(line),T("Free in super: %s"),free_);text(a,40,y+10,0,MUTED,line);
     text_tile(a,y+60,0,MUTED,"Sparse or raw images. Each partition takes its image's size, as with fastboot: a larger one grows into the free space of super, a smaller one leaves the rest free.",5);
 }
+static const char*flash_confirm_label(const App*a){return a->flash_identical?"Already on the partition":(a->flash_restore?"Hold 1 second to restore":"Hold 1 second to flash");}
 static void render_flash_review(App*a){
     char size[64],line[160];human_bytes(a->flash_bytes,size,sizeof(size));
     heading(a,a->flash_restore?"Restore from an image":"Review","Nothing has been written yet.",true);
@@ -247,7 +248,7 @@ static void render_flash_review(App*a){
     if(a->flash_warnings[0])y+=text_tile(a,y,0,a->flash_offline?ORANGE:RED,a->flash_warnings,5)+16;
     if(a->flash_rollback[0]&&!a->flash_identical){snprintf(line,sizeof(line),T("The current content will be saved to %s first."),a->flash_rollback);y+=text_tile(a,y,0,MUTED,line,2)+16;}
     text_tile(a,y,0,MUTED,"Recovery stays on the phone, so you can come back here and flash again.",3);
-    button(a,(Rect){28,1320,664,104},a->flash_restore?"Hold 1 second to restore":"Hold 1 second to flash",A_FLASH_CONFIRM,ui_free(a)&&a->flash_review_valid&&!a->flash_identical&&a->flash_offline,true,3000);
+    button(a,(Rect){28,1320,664,104},flash_confirm_label(a),A_FLASH_CONFIRM,ui_free(a)&&a->flash_review_valid&&!a->flash_identical&&a->flash_offline,true,3000);
 }
 /* Choosing a file only reads, so the picker offers nothing that changes storage. */
 static bool pick_action(App*a,int id,void(*chosen)(App*)){

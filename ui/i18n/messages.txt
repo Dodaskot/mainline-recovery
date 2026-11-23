@@ -97,6 +97,7 @@ A network name has 1 to 32 bytes
 A network name has at most 32 bytes.
 A new diagnostic archive will be written to this volume. Existing archives are retained.
 A new folder A22xIdentityBackups is written with every partition and its checksum. Keep it off the phone too: no image or firmware download contains it.
+A new Linux system from this image or archive; its plan comes first
 A new partition table for an SD card or a USB drive.
 A new system formats it for Linux
 A new theme always spreads as a circle, unless animations are off.
@@ -117,8 +118,11 @@ A protected backup needs a password
 A protected copy needs a password
 A qualified stock profile is not available in this recovery.
 A reboot is required before another attempt.
+A recovery ZIP, as in TWRP: kernels, Magisk, add-ons
+A report that changes nothing: device, partitions, Android version
 A required rootfs directory is missing or symlinked
 A reset restores the default theme, terminal colours, animation, navigation, vibration, screen timeout, brightness and refresh rate. The language, time zone, password and lock, Wi-Fi networks and keys stay.
+A ROM ZIP, a GSI or Samsung firmware, reviewed before anything is written
 A running shell was not confirmed. No additional session was started.
 A selected entry is no longer in this folder
 A setup script can be at most 1 MiB
@@ -185,6 +189,7 @@ Allow this computer
 Allow this computer only if you started this yourself.
 Allow with password
 Already fills the partition: %s
+Already on the partition
 Already the same: %s.
 Already unmounted
 ALSO INSTALL
@@ -233,6 +238,7 @@ Android factory reset
 Android image
 Android image installed
 Android images
+Android installs the app after it starts; Magisk, KernelSU or APatch runs the step
 Android kernel
 Android logical-partition container; its partitions are listed as separate volumes
 Android matches the copy
@@ -273,6 +279,7 @@ Another phone
 Antarctica
 Any date
 AOSP
+AP, with BL, CP and CSC found beside it
 APatch
 APatch asks for it in its app in Android.
 APatch is in it
@@ -394,6 +401,7 @@ BOOT restored last, after userdata verification
 BOOT source
 BOOT stays as it is, and a root in it with it. Until the data is erased or the request is forgotten, a restart of the system comes back here.
 BOOT, DTBO, vbmeta and other images
+boot, recovery, vbmeta, super/system ... or an image inside an archive
 BOOT, super and the others, and Android's data as it lies there
 BOOT, super, dtbo, vbmeta and others of this phone.
 Bootloader
@@ -457,6 +465,7 @@ Check and repair: not for this filesystem
 Check backup integrity
 Check data preservation
 Check for updates
+Check if it suits this phone
 Check it before you rely on it.
 Check it, or write it back to the phone.
 Check that the device shows the same code
@@ -1040,10 +1049,15 @@ Install a new system
 Install a system
 Install Android
 Install Android or Linux
+Install as a root module
+Install as Android
+Install as Linux
 Install images, inspect compatibility, or recover modules.
+Install in Android at its next start
 Install Linux
 Install options
 INSTALL OR CHANGE
+Install Samsung firmware
 Install status
 Install system
 Install the fixed stock Android profile
@@ -1179,6 +1193,7 @@ Magisk is in it
 Magisk is not in the patched BOOT
 Magisk or APatch, into Android's BOOT
 Magisk or APatch, into Android's BOOT.
+Magisk or KernelSU Next: it joins the modules at the next start of Android
 Magisk, a kernel or another flashable ZIP runs its own script
 mAh
 Main menu
@@ -1773,6 +1788,7 @@ Root on this Samsung needs vbmeta with verification off. The bootloader locks vb
 Root on this Samsung needs verification off in vbmeta, and Android's data erased once, as the Magisk app does for Samsung. Later Magisk updates need no reset.
 Run commands directly on this phone.
 Run in the terminal
+Run its installer
 Running
 Running the installer of a ZIP must be confirmed
 Running the setup script
@@ -1810,6 +1826,7 @@ SAVED
 Saved
 SAVED AND CHECKED
 Saved archive
+Saved from the firmware, to root it or to flash it later
 Saved images
 Saved in the phone's memory and checked, for installing later.
 SAVED ON THE CARD
@@ -1875,6 +1892,7 @@ SETUP SCRIPT
 Setup script
 Setup script source
 Setup scripts must be on external SD/USB storage
+sh in a shell, in this file's folder
 Share one mounted volume with this computer.
 Shared files
 Shared files require the same group names and GIDs
@@ -1992,6 +2010,7 @@ System-image rollback coverage before the first Android boot is complete.
 Systems
 Systems could not be read.
 Tabs: %d
+Take out the stock BOOT
 Take Samsung's BOOT out of the firmware: the way back from a custom kernel
 Tap a card above: it is mounted read-only and searched. A copy is made in Backup, Phone partitions.
 Tap a partition to leave it out.

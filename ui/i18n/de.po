@@ -300,6 +300,9 @@ msgstr "Auf dieses Volume wird ein neues Diagnosearchiv geschrieben. Vorhandene 
 msgid "A new folder A22xIdentityBackups is written with every partition and its checksum. Keep it off the phone too: no image or firmware download contains it."
 msgstr "Ein neuer Ordner in A22xIdentityBackups wird mit jeder Partition und ihrer Prüfsumme geschrieben. Bewahren Sie ihn auch außerhalb des Telefons auf: kein Image und keine Firmware enthält ihn."
 
+msgid "A new Linux system from this image or archive; its plan comes first"
+msgstr ""
+
 msgid "A new partition table for an SD card or a USB drive."
 msgstr "Eine neue Partitionstabelle für eine SD-Karte oder ein USB-Laufwerk."
 
@@ -360,11 +363,20 @@ msgstr "In diesem Recovery ist kein qualifiziertes Stock-Profil verfügbar."
 msgid "A reboot is required before another attempt."
 msgstr ""
 
+msgid "A recovery ZIP, as in TWRP: kernels, Magisk, add-ons"
+msgstr ""
+
+msgid "A report that changes nothing: device, partitions, Android version"
+msgstr ""
+
 msgid "A required rootfs directory is missing or symlinked"
 msgstr "Ein benötigtes Verzeichnis des Wurzeldateisystems fehlt oder ist ein Symlink"
 
 msgid "A reset restores the default theme, terminal colours, animation, navigation, vibration, screen timeout, brightness and refresh rate. The language, time zone, password and lock, Wi-Fi networks and keys stay."
 msgstr "Das Zurücksetzen stellt Design, Terminalfarben, Animation, Navigation, Vibration, Bildschirm-Timeout, Helligkeit und Bildwiederholrate auf Standard. Sprache, Zeitzone, Passwort und Sperre, WLAN-Netze und Schlüssel bleiben."
+
+msgid "A ROM ZIP, a GSI or Samsung firmware, reviewed before anything is written"
+msgstr ""
 
 msgid "A running shell was not confirmed. No additional session was started."
 msgstr "Eine laufende Shell wurde nicht bestätigt. Es wurde keine weitere Sitzung gestartet."
@@ -564,6 +576,9 @@ msgstr "Mit Passwort zulassen"
 msgid "Already fills the partition: %s"
 msgstr "Füllt die Partition bereits: %s"
 
+msgid "Already on the partition"
+msgstr ""
+
 msgid "Already the same: %s."
 msgstr "Bereits gleich: %s."
 
@@ -708,6 +723,9 @@ msgstr "Android-Image installiert"
 msgid "Android images"
 msgstr "Android-Images"
 
+msgid "Android installs the app after it starts; Magisk, KernelSU or APatch runs the step"
+msgstr ""
+
 msgid "Android kernel"
 msgstr "Android-Kernel"
 
@@ -827,6 +845,9 @@ msgstr ""
 
 msgid "AOSP"
 msgstr "AOSP"
+
+msgid "AP, with BL, CP and CSC found beside it"
+msgstr ""
 
 msgid "APatch"
 msgstr ""
@@ -1191,6 +1212,9 @@ msgstr "BOOT bleibt, wie es ist, und ein Root darin ebenso. Bis die Daten gelös
 msgid "BOOT, DTBO, vbmeta and other images"
 msgstr "BOOT, DTBO, vbmeta und weitere Images"
 
+msgid "boot, recovery, vbmeta, super/system ... or an image inside an archive"
+msgstr ""
+
 msgid "BOOT, super and the others, and Android's data as it lies there"
 msgstr "BOOT, super und die anderen, dazu Androids Daten, wie sie dort liegen"
 
@@ -1378,6 +1402,9 @@ msgid "Check data preservation"
 msgstr "Datenerhalt prüfen"
 
 msgid "Check for updates"
+msgstr ""
+
+msgid "Check if it suits this phone"
 msgstr ""
 
 msgid "Check it before you rely on it."
@@ -3129,8 +3156,20 @@ msgstr "Android installieren"
 msgid "Install Android or Linux"
 msgstr "Android oder Linux installieren"
 
+msgid "Install as a root module"
+msgstr ""
+
+msgid "Install as Android"
+msgstr ""
+
+msgid "Install as Linux"
+msgstr ""
+
 msgid "Install images, inspect compatibility, or recover modules."
 msgstr "Images installieren, Kompatibilität prüfen oder Module wiederherstellen."
+
+msgid "Install in Android at its next start"
+msgstr ""
 
 msgid "Install Linux"
 msgstr "Linux installieren"
@@ -3140,6 +3179,9 @@ msgstr "Installationsoptionen"
 
 msgid "INSTALL OR CHANGE"
 msgstr "INSTALLIEREN ODER ÄNDERN"
+
+msgid "Install Samsung firmware"
+msgstr ""
 
 msgid "Install status"
 msgstr "Installationsstatus"
@@ -3545,6 +3587,9 @@ msgstr "Magisk oder APatch ins BOOT von Android"
 
 msgid "Magisk or APatch, into Android's BOOT."
 msgstr "Magisk oder APatch ins BOOT von Android."
+
+msgid "Magisk or KernelSU Next: it joins the modules at the next start of Android"
+msgstr ""
 
 msgid "Magisk, a kernel or another flashable ZIP runs its own script"
 msgstr "Magisk, ein Kernel oder ein anderes flashbares ZIP führt sein eigenes Skript aus"
@@ -5328,6 +5373,9 @@ msgstr "Befehle direkt am Telefon ausführen."
 msgid "Run in the terminal"
 msgstr "Im Terminal ausführen"
 
+msgid "Run its installer"
+msgstr ""
+
 msgid "Running"
 msgstr "Läuft"
 
@@ -5438,6 +5486,9 @@ msgstr "GESICHERT UND GEPRÜFT"
 
 msgid "Saved archive"
 msgstr "Gespeichertes Archiv"
+
+msgid "Saved from the firmware, to root it or to flash it later"
+msgstr ""
 
 msgid "Saved images"
 msgstr "Gespeicherte Abbilder"
@@ -5633,6 +5684,9 @@ msgstr "Quelle des Skripts"
 
 msgid "Setup scripts must be on external SD/USB storage"
 msgstr "Einrichtungsskripte müssen auf externem SD/USB-Speicher liegen"
+
+msgid "sh in a shell, in this file's folder"
+msgstr ""
 
 msgid "Share one mounted volume with this computer."
 msgstr "Ein eingehängtes Volume mit diesem Computer teilen."
@@ -5984,6 +6038,9 @@ msgstr "Die Systeme konnten nicht gelesen werden."
 
 msgid "Tabs: %d"
 msgstr "Tabs: %d"
+
+msgid "Take out the stock BOOT"
+msgstr ""
 
 msgid "Take Samsung's BOOT out of the firmware: the way back from a custom kernel"
 msgstr "Samsungs BOOT aus der Firmware holen: der Weg zurück von einem eigenen Kernel"
