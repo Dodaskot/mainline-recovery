@@ -98,6 +98,44 @@ class Flash(unittest.TestCase):
                                '--expected-sha256', result['image']['sha256'], '--expected-identity', result['image']['identity'],
                                *(('--confirm',) if confirm else ()), *extra)
 
+    def test_files_origin_entry_token_rejects_replaced_image(self):
+        import filesystem as fs
+        path = self.image(boot_image())
+        context = fs.FixtureContext(self.root)
+        with fs.PinnedVolume(context, 'usb-p1', self.token()) as pin:
+            selected = fs.pinned_stat(pin, path)['entry_token']
+        args = ('check', '--target', 'boot', '--volume', 'usb-p1',
+                '--volume-token', self.token(), '--path', path,
+                '--expected-entry-token', selected)
+        code, _, _ = self.run_helper(*args)
+        self.assertEqual(code, 0)
+        (self.root / 'usb' / 'replacement').write_bytes(b'b' * SIZES['vbmeta'])
+        os.replace(self.root / 'usb' / 'replacement', self.root / 'usb' / 'image.img')
+        code, result, _ = self.run_helper(*args)
+        self.assertNotEqual(code, 0)
+        self.assertEqual(result['error']['code'], 'ENTRY_CHANGED')
+
+    def test_files_origin_odin_archive_entry_is_pinned(self):
+        import filesystem as fs
+        archive = self.root / 'usb' / 'AP_fixture.tar'
+        image = boot_image()
+        with tarfile.open(archive, 'w') as tar:
+            info = tarfile.TarInfo('boot.img')
+            info.size = len(image)
+            tar.addfile(info, io.BytesIO(image))
+        with fs.PinnedVolume(fs.FixtureContext(self.root), 'usb-p1', self.token()) as pin:
+            selected = fs.pinned_stat(pin, '/AP_fixture.tar')['entry_token']
+        args = ('members', '--volume', 'usb-p1', '--volume-token', self.token(),
+                '--path', '/AP_fixture.tar', '--expected-entry-token', selected)
+        code, result, _ = self.run_helper(*args)
+        self.assertEqual(code, 0, result)
+        self.assertTrue(any(item['target'] == 'boot' for item in result['members']))
+        replacement = self.root / 'usb' / 'replacement'
+        replacement.write_bytes(archive.read_bytes())
+        os.replace(replacement, archive)
+        code, result, _ = self.run_helper(*args)
+        self.assertEqual((code, result['error']['code']), (2, 'ENTRY_CHANGED'))
+
     def test_targets_are_what_the_phone_has(self):
         code, result, _ = self.run_helper('targets')
         labels = [row['label'] for row in result['targets']]
@@ -776,15 +814,26 @@ class FlashLogical(unittest.TestCase):
         product = os.urandom(2 * self.MIB)
         full = tr.payload([('product', product, 'xz')])
         path = self.payload_zip(full)
-        code, listed, _ = self.run_helper('members', '--volume', 'sdcard-p1', '--volume-token', self.token('sdcard-p1'), '--path', path)
+        import filesystem as fs
+        with fs.PinnedVolume(fs.FixtureContext(self.root), 'sdcard-p1', self.token('sdcard-p1')) as pin:
+            container_token = fs.pinned_stat(pin, path)['entry_token']
+        code, listed, _ = self.run_helper('members', '--volume', 'sdcard-p1', '--volume-token', self.token('sdcard-p1'), '--path', path, '--expected-entry-token', container_token)
         self.assertEqual(code, 0, listed)
         self.assertTrue(listed['payload'])
         self.assertIn({'name': 'payload.bin/product', 'size': 2 * self.MIB, 'target': 'super/product', 'payload': True,
                        'incremental': False}, listed['members'])
-        code, staged, _ = self.stage(path, 'product')
+        stage_args = ('payload-stage', '--volume', 'sdcard-p1', '--volume-token', self.token('sdcard-p1'),
+                      '--path', path, '--partition', 'product', '--expected-entry-token')
+        code, rejected, _ = self.run_helper(*stage_args, '0' * 64)
+        self.assertEqual((code, rejected['error']['code']), (2, 'ENTRY_CHANGED'))
+        code, staged, _ = self.run_helper(*stage_args, container_token)
         self.assertEqual(code, 0, staged)
         self.assertEqual(staged['path'], '/A22xImages/ota.product.img')
         self.assertEqual((self.root / 'sd/A22xImages/ota.product.img').read_bytes(), product)
+        code, rejected, _ = self.run_helper('check', '--target', 'super/product', '--volume', 'sdcard-p1',
+                                            '--volume-token', self.token('sdcard-p1'), '--path', staged['path'],
+                                            '--expected-entry-token', container_token)
+        self.assertEqual((code, rejected['error']['code']), (2, 'ENTRY_CHANGED'))
         code, checked, _ = self.check('super/product', staged['path'], volume='sdcard-p1')
         self.assertEqual(code, 0, checked)
         self.assertEqual(checked['image']['sha256'], hashlib.sha256(product).hexdigest())

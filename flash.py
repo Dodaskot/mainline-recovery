@@ -335,7 +335,7 @@ def members(context, args):
     the partition each is for, and what else the archive is: a ROM with its own installer, a block
     OTA, an A/B payload."""
     labels = {row['label'] for row in targets(context)['targets']}
-    with source_file(context, args.volume, args.volume_token, args.path) as fd:
+    with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd:
         head = os.pread(fd, 6, 0)
         found, extra = [], {'installer': False, 'block_ota': False, 'payload': False}
         if head == sevenzip.SIGNATURE:
@@ -461,7 +461,7 @@ def payload_stage(context, args, progress):
     stem = (stem[:-4] if stem.lower().endswith('.zip') else stem)[:80]
     out_name = '%s.%s.img' % (stem, re.sub(r'[^a-z0-9_]', '', args.partition)[:32])
     with operation_lock(context.lock_path, context.mode):
-        with source_file(context, args.volume, args.volume_token, args.path) as fd, \
+        with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd, \
                 shared_offset(fd) as handle, zipfile.ZipFile(handle) as archive:
             try:
                 payload = android_rom.Payload(archive)
@@ -671,7 +671,7 @@ def identity(fd):
 
 
 @contextlib.contextmanager
-def source_file(context, volume, token, path):
+def source_file(context, volume, token, path, expected_entry=None):
     relative = fs.clean_path(path)
     with fs.PinnedVolume(context.fs, volume, token) as pin:
         with pin.parent(relative) as (parent, name):
@@ -680,6 +680,7 @@ def source_file(context, volume, token, path):
                 st = os.fstat(handle)
                 require(stat.S_ISREG(st.st_mode) and st.st_nlink == 1, 'IMAGE_REGULAR_ONLY', 'Choose a regular file')
                 pin.check_fd(handle)
+                fs.expect_entry(fs.entry_record(pin, relative, st), expected_entry)
                 fd = os.open('/proc/self/fd/' + str(handle), os.O_RDONLY | os.O_CLOEXEC)
             finally:
                 os.close(handle)
@@ -980,7 +981,7 @@ def image_kind(prefix):
 def check_logical(context, args, progress, name):
     """An image for a logical partition: it may be smaller than the partition (the rest is
     zeroed) or larger, when super and the partition's group have room for it to grow."""
-    with source_file(context, args.volume, args.volume_token, args.path) as fd:
+    with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd:
         size = os.fstat(fd).st_size
         compression = container(fd, getattr(args, 'member', None))
         super_target, sfd, found = open_super(context)
@@ -1048,7 +1049,7 @@ def write_logical(context, args, progress, name):
         require(not context.guard_path.exists(), 'INSTALL_PENDING', 'Finish the unfinished installation first')
         super_target = context.target('super')
         context.check_offline([super_target])
-        with source_file(context, args.volume, args.volume_token, args.path) as fd:
+        with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd:
             require(identity(fd) == args.expected_identity, 'IMAGE_CHANGED', 'The file changed after it was checked')
             compression = container(fd, getattr(args, 'member', None))
             _, sfd, found = open_super(context, write=True)
@@ -1151,7 +1152,7 @@ def check(context, args, progress):
     name = logical_name(args.target)
     if name:
         return check_logical(context, args, progress, name)
-    with source_file(context, args.volume, args.volume_token, args.path) as fd:
+    with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd:
         size = os.fstat(fd).st_size
         compression = container(fd, getattr(args, 'member', None))
         label = detect(fd, compression) if args.target == 'auto' else args.target
@@ -1253,7 +1254,7 @@ def write(context, args, progress):
         # Before the image is opened: it may itself lie on cache, which is remounted for the copy
         # (on the phone the copy failed while the image held cache open).
         kept = saved_boot.keep_current_boot(context, progress, args.expected_sha256) if args.target == 'boot' else None
-        with source_file(context, args.volume, args.volume_token, args.path) as fd:
+        with source_file(context, args.volume, args.volume_token, args.path, getattr(args, 'expected_entry_token', None)) as fd:
             require(identity(fd) == args.expected_identity, 'IMAGE_CHANGED', 'The file changed after it was checked')
             compression = container(fd, getattr(args, 'member', None))
             image_format = layout(fd, compression, target['size_bytes'])
@@ -1476,10 +1477,12 @@ def parser():
     listed.add_argument('--volume', required=True)
     listed.add_argument('--volume-token', required=True)
     listed.add_argument('--path', required=True)
+    listed.add_argument('--expected-entry-token')
     staged = commands.add_parser('payload-stage')
     staged.add_argument('--volume', required=True)
     staged.add_argument('--volume-token', required=True)
     staged.add_argument('--path', required=True)
+    staged.add_argument('--expected-entry-token')
     staged.add_argument('--partition', required=True)
     for name in ('check', 'write'):
         command = commands.add_parser(name)
@@ -1487,6 +1490,7 @@ def parser():
         command.add_argument('--volume', required=True)
         command.add_argument('--volume-token', required=True)
         command.add_argument('--path', required=True)
+        command.add_argument('--expected-entry-token')
         command.add_argument('--member', help='An image inside a ZIP or a tar, by its name there (a ZIP: system.img or its only image by default)')
     write_command = commands.choices['write']
     write_command.add_argument('--expected-sha256', required=True)

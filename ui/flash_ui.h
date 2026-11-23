@@ -11,16 +11,30 @@ static const char*flash_target_label(const App*a){
     if(a->flash_restore)return a->flash_label[0]?a->flash_label:"auto";
     return a->flash_selected>=0&&a->flash_selected<(int)a->flash_target_count?a->flash_targets[a->flash_selected].label:"";
 }
-static enum Screen flash_home(const App*a){return a->flash_restore?LIST:FLASH;}
+static enum Screen flash_home(const App*a){return a->flash_restore?LIST:(a->flash_from_file?FILE_INFO:FLASH);}
+/* Files can be visited while a flash runs folded. Return to the source actually
+ * selected, only if the same mounted volume is still in the inventory. */
+static void flash_return_file(App*a){
+    int n=-1;for(int i=0;i<a->volume_count;i++)if(a->volumes[i].mounted&&!strcmp(a->volumes[i].id,a->flash_origin_volume)&&
+        !strcmp(a->volumes[i].token,a->flash_origin_token)){n=i;break;}
+    a->flash_from_file=false;
+    if(n<0){a->fs_inventory_destination=FILE_VOLUMES;screen(a,FILE_VOLUMES);(void)start_files_job(a,J_FS_INVENTORY);return;}
+    a->volume_index=n;copy(a->volume_id,sizeof(a->volume_id),a->flash_origin_volume);
+    copy(a->fs_path,sizeof(a->fs_path),a->flash_origin_dir);copy(a->fs_open_root,sizeof(a->fs_open_root),a->flash_origin_root);
+    a->fs_selected=a->flash_origin_entry;a->fs_back_to_web=false;screen(a,FILE_INFO);
+}
+
 /* After an image that was refused or reviewed: the folder it was chosen in, to choose another
  * (2026-11-10, as TWRP returns to its list of files); else the list of partitions. */
 static enum Screen flash_repick(App*a,enum Screen from){
+    if(a->flash_from_file)return FILE_INFO;
     if(from!=FILE_BROWSER||!current_volume(a)||!current_volume(a)->mounted)return flash_home(a);
     a->flash_pick=true;return FILE_BROWSER;
 }
 static bool start_flash_job(App*a,int kind){
+    if(kind==J_FLASH_TARGETS&&a->flash_after_targets)a->flash_from_file=false;
     if(a->job.pid||a->preview||!flash_job(kind))return false;
-    char*args[20];int n=0;args[n++]=a->python;args[n++]=a->flash_helper;
+    char*args[24];int n=0;args[n++]=a->python;args[n++]=a->flash_helper;
     if(a->device)args[n++]="--device";else{args[n++]="--fixture";args[n++]=a->fixture;}
     args[n++]=kind==J_FLASH_TARGETS?"targets":(kind==J_FLASH_CHECK?"check":(kind==J_FLASH_MEMBERS?"members":(kind==J_FLASH_STAGE?"payload-stage":"write")));
     /* A partition of an update_engine payload is taken out into an image on the card first (2026-11-22). */
@@ -41,6 +55,12 @@ static bool start_flash_job(App*a,int kind){
         /* A logical partition grows to the checked image before it is written (2026-11-10). */
         static char payload[24];
         if(kind==J_FLASH_WRITE&&!strncmp(label,"super/",6)){snprintf(payload,sizeof(payload),"%llu",(unsigned long long)a->flash_payload);args[n++]="--image-bytes";args[n++]=payload;}
+    }
+    /* Bind the first read of a Files-origin image to the selected entry. Once
+     * payload-stage has made a new image, the checked file has its own identity. */
+    if(a->flash_from_file&&(kind==J_FLASH_CHECK||kind==J_FLASH_MEMBERS||kind==J_FLASH_STAGE)&&
+       !strcmp(a->flash_path,a->flash_origin_entry.path)){
+        args[n++]="--expected-entry-token";args[n++]=a->flash_origin_entry.token;
     }
     args[n]=NULL;if(!launch_job(a,kind,args))return false;a->result_return=flash_home(a);return true;
 }
@@ -149,7 +169,7 @@ static void complete_flash_job(App*a,const Json*j,int kind,bool ok){
 }
 static void render_flash(App*a){
     if(a->flash_from_file){
-        char note[320];snprintf(note,sizeof(note),T("Where should %s go? Tap the partition; system, vendor, product and odm are inside super."),a->fs_selected.name);
+        char note[320];snprintf(note,sizeof(note),T("Where should %s go? Tap the partition; system, vendor, product and odm are inside super."),a->flash_origin_entry.name);
         heading(a,"Flash a partition",NULL,true);raw_text(true);wrapped(a,40,176,640,0,MUTED,note,2);raw_text(false);
     }else heading(a,"Flash a partition","Pick a partition, then an image from SD, USB stick or phone storage.",true);
     if(!a->flash_known){wrapped(a,48,300,624,1,MUTED,a->job.pid?"Reading partitions...":(a->flash_reason[0]?a->flash_reason:"Partitions are unavailable."),6);return;}
@@ -258,7 +278,9 @@ static bool archive_name(const char*path){
     const char*dot=strrchr(path,'.');if(!dot)return false;
     return !strcasecmp(dot,".zip")||!strcasecmp(dot,".tar")||!strcasecmp(dot,".md5")||!strcasecmp(dot,".7z");
 }
-static void flash_chosen(App*a){FileVolume*v=current_volume(a);copy(a->flash_volume,sizeof(a->flash_volume),v->id);copy(a->flash_volume_token,sizeof(a->flash_volume_token),v->token);copy(a->flash_path,sizeof(a->flash_path),a->fs_selected.path);a->flash_pick=false;a->flash_member[0]=0;
+static void flash_chosen(App*a){
+    if(a->flash_from_file){copy(a->flash_volume,sizeof(a->flash_volume),a->flash_origin_volume);copy(a->flash_volume_token,sizeof(a->flash_volume_token),a->flash_origin_token);copy(a->flash_path,sizeof(a->flash_path),a->flash_origin_entry.path);}
+    else{FileVolume*v=current_volume(a);if(!v)return;copy(a->flash_volume,sizeof(a->flash_volume),v->id);copy(a->flash_volume_token,sizeof(a->flash_volume_token),v->token);copy(a->flash_path,sizeof(a->flash_path),a->fs_selected.path);}a->flash_pick=false;a->flash_member[0]=0;
     start_flash_job(a,!a->flash_restore&&archive_name(a->flash_path)?J_FLASH_MEMBERS:J_FLASH_CHECK);}
 static void render_flash_members(App*a){
     heading(a,"Inside the archive","Choose the image to flash. Each goes to the partition its name says.",true);
@@ -297,13 +319,19 @@ static bool theme_action(App*a,int id){
 }
 static bool flash_action(App*a,int id){
     if(id==A_RESTORE_IMAGE){
-        a->flash_restore=a->flash_pick=true;a->flash_review_valid=false;a->flash_label[0]=0;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;
+        a->flash_from_file=false;a->flash_restore=a->flash_pick=true;a->flash_review_valid=false;a->flash_label[0]=0;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;
         screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
     }
+    if((id==A_DONE||id==A_BACK)&&a->screen==RESULT&&a->flash_from_file&&a->result_return==FILE_INFO){flash_return_file(a);return true;}
     if(id==A_BACK&&a->screen==FLASH){a->flash_after_targets=false;a->flash_after_label[0]=0;
-        if(a->flash_from_file){a->flash_from_file=false;screen(a,FILE_INFO);return true;}}  /* then the usual Back */
+        if(a->flash_from_file){flash_return_file(a);return true;}}  /* then the usual Back */
     /* From a file's page: the partitions are listed and the one tapped takes this file (#8). */
     if(id==A_FS_FLASH&&a->screen==FILE_INFO&&file_is_regular(&a->fs_selected)){
+        FileVolume*v=current_volume(a);if(!v||!v->mounted||!v->token[0])return true;
+        if(!valid_sha256(a->fs_selected.token)){files_problem(a,"ENTRY_IDENTITY_MISSING","Inspect the selected entry again before continuing.",FILE_INFO);return true;}
+        a->flash_origin_entry=a->fs_selected;copy(a->flash_origin_dir,sizeof(a->flash_origin_dir),a->fs_path);
+        copy(a->flash_origin_root,sizeof(a->flash_origin_root),a->fs_open_root);copy(a->flash_origin_volume,sizeof(a->flash_origin_volume),v->id);
+        copy(a->flash_origin_token,sizeof(a->flash_origin_token),v->token);
         a->flash_after_targets=false;a->flash_after_label[0]=0;a->flash_restore=false;a->flash_pick=a->flash_review_valid=false;
         a->flash_known=false;a->flash_reason[0]=0;a->flash_from_file=true;screen(a,FLASH);start_flash_job(a,J_FLASH_TARGETS);return true;
     }
@@ -312,7 +340,7 @@ static bool flash_action(App*a,int id){
     if(id==A_BACK&&a->screen==FLASH_SUPER){screen(a,FLASH);return true;}
     if((a->screen==FLASH||a->screen==FLASH_SUPER)&&id>=A_FLASH_TARGET&&id<A_FLASH_TARGET+(int)a->flash_target_count){
         a->flash_selected=id-A_FLASH_TARGET;
-        if(a->flash_from_file){a->flash_from_file=false;flash_chosen(a);return true;}
+        if(a->flash_from_file){flash_chosen(a);return true;}
         a->flash_pick=true;a->volume_scroll=0;a->fs_inventory_destination=FILE_VOLUMES;screen(a,FILE_VOLUMES);start_files_job(a,J_FS_INVENTORY);return true;
     }
     if(a->flash_pick){
@@ -332,12 +360,12 @@ static bool flash_action(App*a,int id){
         if(strcmp(flash_target_label(a),m->target))return true;
         copy(a->flash_member,sizeof(a->flash_member),m->name);start_flash_job(a,m->payload?J_FLASH_STAGE:J_FLASH_CHECK);return true;
     }
-    if(id==A_BACK&&a->screen==FLASH_MEMBERS){reopen(a,flash_repick(a,came_from(a,flash_home(a))));return true;}
+    if(id==A_BACK&&a->screen==FLASH_MEMBERS){if(a->flash_from_file)flash_return_file(a);else reopen(a,flash_repick(a,came_from(a,flash_home(a))));return true;}
     if(id==A_FLASH_CONFIRM&&a->screen==FLASH_REVIEW){if(a->flash_review_valid&&!a->flash_identical)start_flash_job(a,J_FLASH_WRITE);return true;}
     /* Flash a partition also opens from Root and after a stock BOOT was taken out: Back returns there. */
     if(id==A_BACK&&a->screen==FLASH){reopen(a,came_from(a,OS_MENU));return true;}
     /* The review returns to the folder the image was chosen in, to choose another. */
-    if(id==A_BACK&&a->screen==FLASH_REVIEW){reopen(a,flash_repick(a,came_from(a,flash_home(a))));return true;}
+    if(id==A_BACK&&a->screen==FLASH_REVIEW){if(a->flash_from_file)flash_return_file(a);else reopen(a,flash_repick(a,came_from(a,flash_home(a))));return true;}
     return false;
 }
 #endif

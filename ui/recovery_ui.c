@@ -519,7 +519,8 @@ typedef struct {
     pid_t android_warm_pid;bool android_warm_started;
     bool android_policy_needs_refresh,android_policy_inventory_pending,android_format_reusable,android_startup_handled;
     enum AndroidStartupStage android_startup_stage;
-    bool fs_back_to_web,flash_from_file;  /* flash_from_file: Flash from a file's page in Files; its partition is chosen next */
+    bool fs_back_to_web,flash_from_file;  /* Flash originated at a file page until its result or cancellation returns there. */
+    FileEntry flash_origin_entry;char flash_origin_dir[PATH_LEN],flash_origin_root[16],flash_origin_volume[128],flash_origin_token[80];
     /* A file installed from its own page (file_install_ui.h): the sheet of ways, Linux waiting for the Systems
        status, the Continue page reached from a file, a script's command for the shell, a download to open. */
     bool fs_install_sheet,files_linux_pending,files_linux_from_file;char terminal_command[6*PATH_LEN],web_show_file[256];
@@ -1814,7 +1815,7 @@ static void render_result(App*a){
     const char*storage_state=a->successful?NULL:storage_result_title(a->status);
     heading(a,storage_state?storage_state:(a->successful?"Completed":"Not completed"),NULL,false);
     bool diagnostic=a->result_return==TOOLS||a->result_return==TOOLS_EXPORT,second=!a->successful&&a->systems_remove_offer;
-    second=second||(a->successful&&a->result_return==FLASH&&!a->flash_restore&&a->allow_power&&(!strcmp(flash_target_label(a),"recovery")||!strcmp(flash_target_label(a),"boot")));
+    second=second||(a->successful&&(a->result_return==FLASH||(a->result_return==FILE_INFO&&a->flash_from_file))&&!a->flash_restore&&a->allow_power&&(!strcmp(flash_target_label(a),"recovery")||!strcmp(flash_target_label(a),"boot")));
     second=second||(a->successful&&a->result_return==ANDROID_MENU&&((a->android_installed&&a->allow_power)||a->stock_boot_path[0]));
     second=second||(a->successful&&a->zip_ran&&(a->allow_power||a->zip_reset));
     second=second||(a->successful&&a->root_app_offer);
@@ -1864,7 +1865,7 @@ static void render_result(App*a){
     else if(busy_terminal)button(a,(Rect){28,1206,664,96},"Close the terminal",A_BUSY_CLOSE_TERMINAL,ui_free(a),false,0);
     /* After a flash of the recovery or BOOT the next step is a restart, as TWRP offers it
        (2026-11-10): the same confirmation with a hold as on the Power page. */
-    if(a->successful&&a->result_return==FLASH&&!a->flash_restore&&a->allow_power){
+    if(a->successful&&(a->result_return==FLASH||(a->result_return==FILE_INFO&&a->flash_from_file))&&!a->flash_restore&&a->allow_power){
         const char*label=flash_target_label(a);bool recovery=!strcmp(label,"recovery");
         if(recovery||!strcmp(label,"boot"))button(a,(Rect){28,1206,664,96},recovery?"Reboot recovery":"Reboot system",recovery?A_REBOOT_RECOVERY:A_REBOOT,
                                                   ui_free(a)&&(recovery||(!a->systems_reboot_blocked&&!a->install.reboot_blocked)),false,0);
@@ -3625,7 +3626,7 @@ static void screen(App*a,enum Screen s){
     if(s!=a->screen)a->mu.output_sheet=false;  /* the sheet of where the sound goes belongs to the page it opened on */
     android_format_on_screen(a,s);
     if(a->screen==ANDROID_MODULE_CONFIRM&&s!=ANDROID_MODULE_CONFIRM&&s!=PROGRESS){a->modules_plan_allowed=false;a->modules_plan_sha[0]=0;}
-    if(s==HOME){a->compat_pick=false;a->modules_data_route=a->modules_data_open=false;}
+    if(s==HOME){a->compat_pick=false;a->modules_data_route=a->modules_data_open=false;if(!(a->job.pid&&flash_job(a->job.kind))&&!a->shell.result_waiting)a->flash_from_file=false;}
     if(a->screen==FILE_PROMPT&&s!=FILE_PROMPT&&a->fs_prompt_kind==J_ANDROID_UNLOCK)android_cancel_schedule(a);
     if(a->screen==PROGRESS&&s!=PROGRESS&&a->job.pid&&a->job.kind==J_ANDROID_PREPARE){a->android_prepare_abandoned=true;a->android_startup_stage=AS_IDLE;}
     if(a->android_secret&&s!=FILE_PROMPT)android_secret_clear(a);
@@ -9174,6 +9175,51 @@ static int test_torch(void){
 /* 2026-11-11, as TWRP's Restore defaults: a hold on the last button of Settings puts the ways the
    recovery behaves back; the language and the time zone are the user's and stay. */
 /* 2026-11-13: a long press selects, taps add and remove, select all, delete the selected; a full hold acts with the finger still down. */
+/* Files -> selected image -> partition -> review -> verified result is a distinct
+ * origin from Install -> Flash. Responses below are fixtures, never a device write. */
+static int test_flash_file_return(void){
+    App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->preview=true;
+    a->volume_count=1;a->volume_index=0;a->volumes[0].mounted=true;
+    copy(a->volume_id,sizeof(a->volume_id),"userdata");copy(a->volumes[0].id,sizeof(a->volumes[0].id),"userdata");
+    copy(a->volumes[0].token,sizeof(a->volumes[0].token),"volume-token");
+    copy(a->fs_path,sizeof(a->fs_path),"/media/0/Download");copy(a->fs_selected.name,sizeof(a->fs_selected.name),"vendor.img");
+    copy(a->fs_selected.path,sizeof(a->fs_selected.path),"/media/0/Download/vendor.img");copy(a->fs_selected.type,sizeof(a->fs_selected.type),"file");
+    memset(a->fs_selected.token,'a',64);a->fs_selected.token[64]=0;
+    a->flash_target_count=1;copy(a->flash_targets[0].label,sizeof(a->flash_targets[0].label),"vendor");
+    screen(a,FILE_BROWSER);screen(a,FILE_INFO);action_run(a,A_FS_FLASH);assert(a->screen==FLASH&&a->flash_from_file);
+    /* Switch through Recents to Files B and back; the chooser still means A. */
+    a->recent_count=1;a->recents[0].screen=FILE_BROWSER;copy(a->recents[0].title,sizeof(a->recents[0].title),"Files");
+    render(a);recents_open(a);int files=-1;for(int i=0;i<a->recent_count;i++)if(a->recents[i].screen==FILE_BROWSER)files=i;
+    assert(files>=0);recents_go(a,files);assert(a->screen==FILE_BROWSER);
+    copy(a->fs_selected.name,sizeof(a->fs_selected.name),"other.img");copy(a->fs_selected.path,sizeof(a->fs_selected.path),"/other.img");
+    a->volume_count=2;copy(a->volumes[1].id,sizeof(a->volumes[1].id),"sdcard-p1");
+    copy(a->volumes[1].token,sizeof(a->volumes[1].token),"other-token");a->volumes[1].mounted=true;a->volume_index=1;
+    recents_open(a);int flash=-1;for(int i=0;i<a->recent_count;i++)if(a->recents[i].screen==FLASH)flash=i;
+    assert(flash>=0);recents_go(a,flash);assert(a->screen==FLASH&&a->flash_from_file);
+    action_run(a,A_FLASH_TARGET);assert(a->flash_from_file&&!strcmp(a->flash_volume,"userdata")&&!strcmp(a->flash_volume_token,"volume-token")&&!strcmp(a->flash_path,"/media/0/Download/vendor.img"));
+    a->volume_index=-1;action_run(a,A_FLASH_TARGET);assert(!strcmp(a->flash_volume,"userdata")&&!strcmp(a->flash_path,"/media/0/Download/vendor.img"));
+    Json j;JsonToken t[100];const char*check="{\"target\":{\"label\":\"vendor\",\"offline\":true},\"image\":{\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"identity\":\"2222222222222222222222222222222222222222222222222222222222222222\"}}";
+    assert(json_parse(&j,check,t,100)>0);complete_flash_job(a,&j,J_FLASH_CHECK,true);assert(a->screen==FLASH_REVIEW&&a->flash_review_valid);
+    action_run(a,A_BACK);assert(a->screen==FILE_INFO&&!a->flash_from_file&&!strcmp(a->fs_path,"/media/0/Download"));
+    action_run(a,A_FS_FLASH);action_run(a,A_FLASH_TARGET);assert(json_parse(&j,check,t,100)>0);complete_flash_job(a,&j,J_FLASH_CHECK,true);
+    const char*written="{\"verified\":true,\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\"}";
+    assert(json_parse(&j,written,t,100)>0);complete_flash_job(a,&j,J_FLASH_WRITE,true);assert(a->screen==RESULT&&a->successful&&a->result_return==FILE_INFO);
+    a->shell.result_waiting=true;screen(a,HOME);assert(a->flash_from_file);a->shell.result_waiting=false;screen(a,RESULT);
+    copy(a->fs_path,sizeof(a->fs_path),"/another");copy(a->fs_selected.path,sizeof(a->fs_selected.path),"/another/file");
+    action_run(a,A_DONE);assert(a->screen==FILE_INFO&&!a->flash_from_file&&!strcmp(a->fs_path,"/media/0/Download")&&!strcmp(a->fs_selected.path,"/media/0/Download/vendor.img")&&!strcmp(a->volume_id,"userdata"));
+    action_run(a,A_FS_FLASH);action_run(a,A_FLASH_TARGET);assert(json_parse(&j,check,t,100)>0);complete_flash_job(a,&j,J_FLASH_CHECK,true);
+    assert(json_parse(&j,written,t,100)>0);complete_flash_job(a,&j,J_FLASH_WRITE,true);action_run(a,A_BACK);assert(a->screen==FILE_INFO&&!a->flash_from_file);
+    /* A refused check also returns to the source instead of the partition menu. */
+    action_run(a,A_FS_FLASH);action_run(a,A_FLASH_TARGET);complete_flash_job(a,NULL,J_FLASH_CHECK,false);
+    assert(a->screen==RESULT&&!a->successful&&a->result_return==FILE_INFO);action_run(a,A_DONE);assert(a->screen==FILE_INFO&&!a->flash_from_file);
+    /* If the original volume changed while the job ran, do not reuse its old file page. */
+    action_run(a,A_FS_FLASH);action_run(a,A_FLASH_TARGET);assert(json_parse(&j,check,t,100)>0);complete_flash_job(a,&j,J_FLASH_CHECK,true);
+    assert(json_parse(&j,written,t,100)>0);complete_flash_job(a,&j,J_FLASH_WRITE,true);copy(a->volumes[0].token,sizeof(a->volumes[0].token),"changed-token");
+    action_run(a,A_DONE);assert(a->screen==FILE_VOLUMES&&!a->flash_from_file);
+    /* Install -> Flash retains the original partition page result. */
+    action_run(a,A_FLASH);assert(a->screen==FLASH&&!a->flash_from_file&&flash_home(a)==FLASH);
+    free(a->pixels);free(a);return 1;
+}
 static int test_files_select(void){
     App*a=calloc(1,sizeof(*a));assert(a);initialize(a);a->preview=true;a->inventory_ok=true;
     a->volume_count=1;a->volume_index=0;copy(a->volumes[0].id,sizeof(a->volumes[0].id),"sdcard-p1");copy(a->volume_id,sizeof(a->volume_id),"sdcard-p1");
@@ -9215,7 +9261,7 @@ static int test_files_select(void){
     assert(binary_file_name("DCIM.JPG")&&binary_file_name("recovery.img")&&!binary_file_name("notes.txt")&&!binary_file_name("config"));
     /* An image's page flashes it: the partitions come next, Back returns to the file (#8). */
     assert(image_file_name("boot.img")&&image_file_name("vendor.img.lz4")&&!image_file_name("img.txt")&&!image_file_name("photo.png"));
-    copy(a->files[0].name,sizeof(a->files[0].name),"boot.img");copy(a->files[0].path,sizeof(a->files[0].path),"/x/boot.img");a->screen=FILE_BROWSER;
+    copy(a->files[0].name,sizeof(a->files[0].name),"boot.img");copy(a->files[0].path,sizeof(a->files[0].path),"/x/boot.img");memset(a->files[0].token,'a',64);a->files[0].token[64]=0;a->screen=FILE_BROWSER;
     assert(test_press(a,A_FS_ENTRY+0,50)&&a->screen==FILE_INFO);render(a);assert(test_button(a,A_FS_FLASH)&&!test_button(a,A_FS_READ));
     action_run(a,A_FS_FLASH);assert(a->screen==FLASH&&a->flash_from_file);
     action_run(a,A_BACK);assert(a->screen==FILE_INFO&&!a->flash_from_file);
@@ -10196,7 +10242,7 @@ static int self_test(void){
     }
     theme_apply(a,0);tests++;
     ui_language=1;assert(strcmp(tr("Settings"),"Settings")&&!strcmp(tr("no such text"),"no such text"));raw_text(true);assert(!strcmp(tr("Settings"),"Settings"));raw_text(false);ui_language=0;assert(!strcmp(tr("Settings"),"Settings"));tests++;
-    tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_hw_keyboard();tests+=test_mouse();tests+=test_flash_payload();tests+=test_status_sleep_and_amoled();tests+=test_busy_offer();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_web_activity();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_switch_and_kinds();tests+=test_review_fixes();tests+=test_first_boot_progress();tests+=test_file_details();tests+=test_android_variants();tests+=test_gsi_keep_data();tests+=test_zip_root_app();tests+=test_linux_stages();tests+=test_nofbe_choice();tests+=test_system_live();tests+=test_display_without_blanking();tests+=test_media_parts();tests+=test_shell();tests+=test_web_overlays();tests+=test_recents_keep_browser();tests+=test_operation_exit();tests+=test_files_beside();tests+=test_web_float();tests+=test_shade_over_video();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
+    tests+=test_flash_file_return();tests+=test_linux_plan_guards();tests+=test_settings_reset();tests+=test_screenshot_keys();tests+=test_hw_keyboard();tests+=test_mouse();tests+=test_flash_payload();tests+=test_status_sleep_and_amoled();tests+=test_busy_offer();tests+=test_android_log();tests+=test_updates_page();tests+=test_torch();tests+=test_web_activity();tests+=test_battery();tests+=test_reset_request();tests+=test_zip_queue();tests+=test_files_select();tests+=test_linux_data();tests+=test_switch_and_kinds();tests+=test_review_fixes();tests+=test_first_boot_progress();tests+=test_file_details();tests+=test_android_variants();tests+=test_gsi_keep_data();tests+=test_zip_root_app();tests+=test_linux_stages();tests+=test_nofbe_choice();tests+=test_system_live();tests+=test_display_without_blanking();tests+=test_media_parts();tests+=test_shell();tests+=test_web_overlays();tests+=test_recents_keep_browser();tests+=test_operation_exit();tests+=test_files_beside();tests+=test_web_float();tests+=test_shade_over_video();free(a->pixels);free(a);printf("{\"ok\":true,\"ui_self_tests\":%d,\"device_io\":false}\n",tests);return 0;
 }
 static bool await_job(App*a){
     uint64_t deadline=milliseconds()+60000;
